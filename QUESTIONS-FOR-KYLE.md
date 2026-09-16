@@ -5,57 +5,62 @@ items are struck out at the bottom and moved to DESIGN.md.
 
 ## Draft email (final)
 
-**Subject:** ED hiring tool — clickable mock to look at + a few questions
+**Subject:** ED hiring tool — mock to look at (+ a few questions)
 
 Hi Kyle, Amanda,
 
-I've put together a **clickable mock** so you can see the proposed workflow before I
-build it for real:
+I've built a **clickable mock** of a tool to run our hiring process end-to-end. Have a look:
 
 **https://dralvinyang.github.io/ED-motion-voting/tools/interviews/mock.html**
+Password: **edleadership**
 
-Enter the password **edleadership** when it loads (the interview questions are kept
-encrypted so they aren't public). It uses sample data with made-up candidate names.
-Use the **"Viewing as"** dropdown at the top to switch between a committee member and
-an applicant. It walks through five stages: **Screen → Availability → Panels → Score →
-Ranking**.
+**Please note:** this is only a *mock* with made-up candidate names to show the idea —
+nothing is saved and it isn't the finished tool. Once you confirm the details below, the
+real working version takes me about **a day** to build.
 
-The plan: each committee member reviews the CV/cover letter (linked straight to the
-OneDrive folder), flags anyone they feel is unqualified (a candidate drops off at
-**2+ flags**, same as last year), and can optionally give a 1–5 priority rating.
-Individual input stays private to the member and leadership. The tool then gathers
-everyone's availability and **auto-suggests interview panels** that meet the rules
-(3–5 members, you present, ≥1 male + ≥1 female), flagging any slot that's short on
-interviewers. I can add/remove candidates if the list changes, and the **screening**
-step will be ready well before **Sept 23**.
+**How it would work, start to finish:**
 
-A few questions when you have them:
+1. **Screen the applications.** Each committee member opens the tool and, for every
+   applicant, reads their CV and cover letter (linked from the OneDrive folder) and
+   flags anyone they don't think is qualified. If **2 or more** people flag the same
+   person, they come off the interview list (same rule as last year). You can also give
+   a quick **1–5 priority** score. Your input is private — only leadership sees the totals.
 
-1. **Interview dates & format.** I have Oct 1 from 10am (~6 interviews). Please send
-   the full slate when ready — which days, how long each interview, how many per day.
-   And will interviews run **one at a time (sequential)** or **several panels in
-   parallel**? (If you're on every panel, they'd need to be sequential.)
+2. **Collect availability.** Interviewers tick which interview times they can do, and
+   whether they can be **in person, on Zoom, or either**. Applicants get **one link**,
+   type their name, and pick the times that work for them.
 
-2. **Chairing & panel rules.** Each panel is set to: 3–5 members, **you present**,
-   and ≥1 male + ≥1 female. (a) Must **you personally** be on every panel, or can a
-   delegate chair some (so more can run in parallel)? (b) Any other rules — e.g.,
-   should an interviewer who **flagged** a candidate be kept off that candidate's
-   panel? (c) A cap on how many interviews one person does in a day?
+3. **Auto-build panels.** The tool suggests an interview panel for each time slot that
+   follows the rules — **3–5 people, you present, at least one man and one woman** — and
+   **flags any time slot that's short on interviewers** so it can be fixed.
 
-3. **Scoring method.** The guide has one overall **1–5** rating per interview. Keep it
-   **overall-only**, or also rate **each question 1–5**? And how should the **final
-   ranking** be produced — average of interviewers' scores, or scores as input to a
-   committee discussion? Any tie-break preference?
+4. **Score the interviews.** Each panel member scores the candidate out of 5 using our
+   standard interview guide, with notes per question.
 
-4. **Access — who sees what.** Should some views be **admin-only** — e.g., only you
-   (not the whole committee) can see the **final scoring summary / ranking**? And who
-   should have admin access — you and Amanda?
+5. **Rank.** The tool averages the scores into a **ranked list** to help decide the
+   4–6 offers.
 
-FYI on scheduling: interviewers and candidates each select **all** the slots that work
-for them and mark whether they **can** do each in person, by Zoom, or either; the tool
-then builds compliant panels around that.
+**A few things I need from you to build the real one:**
 
-Thanks — I'll have the screening step ready to circulate shortly.
+1. **Interview dates & format.** I have Oct 1 from 10am (~6 interviews). Please send the
+   full set of dates when ready — which days, how long each interview, how many per day.
+   And will interviews run **one at a time**, or **several panels at once**? (If you're
+   on every panel, they'd need to be one at a time.)
+
+2. **Chairing & panel rules.** Each panel is set to 3–5 people, **you present**, and at
+   least one man + one woman. (a) Must **you personally** be on every panel, or can a
+   delegate chair some? (b) Any other rules — e.g., should someone who **flagged** a
+   candidate be kept off that candidate's panel? (c) A cap on how many interviews one
+   person does in a day?
+
+3. **Scoring.** The guide has one overall **1–5** rating. Keep it that way, or also rate
+   **each question 1–5**? And how should the **final ranking** be decided — a straight
+   average of scores, or scores as a starting point for a group discussion?
+
+4. **Access.** Should some views be **leadership-only** (e.g., only you see the final
+   ranking)? And who should have admin access?
+
+Thanks — happy to tweak the mock based on what you think.
 
 Alvin
 
