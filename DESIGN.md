@@ -103,6 +103,8 @@ applicant PII out of a repo that feeds a public Pages site.
 - Admin can **override** any auto-proposed panel; tool warns on infeasible slots.
 - No email-sending in-tool: it's the source of truth and **exports** the schedule/CSV;
   Amanda notifies candidates.
+- **Ranking (results) hidden until all interviews are complete** — anti-bias; admin can
+  reveal. (Alvin's default in the Kyle email; Kyle can veto.)
 - **Separate Firebase project**, locked Firestore rules, **delete data after the round**.
 
 ## Mock
@@ -119,13 +121,18 @@ the matching logic itself is still to be built (Phase 2). All tabs carry seeded 
 data. Uses the real OneDrive folder link. Amanda is not referenced in the tool UI
 (she remains in the email/coordination plan).
 
-## Still pending Kyle/Amanda (see QUESTIONS-FOR-KYLE.md)
-- Full interview date/time slate (length, count/day).
-- Interviews sequential vs parallel; must Kyle chair every panel or a delegate?
+## Still pending Kyle (email sent 2026-09-16; awaiting reply)
+Asked in the email:
 - Additional panel rules (e.g. exclude an interviewer who flagged a candidate);
   cap on interviews/person/day.
-- Scoring: per-question 1–5 vs overall-only; final-ranking algorithm; tie-breaks.
-- Admin-only views (who sees final scoring/ranking); who holds admin access.
+- Scoring: per-question 1–5 vs overall-only; final-ranking algorithm (average vs
+  discussion); any specific logic.
+- Access: confirm Ranking-hidden-until-complete (Alvin's proposed default).
+
+Deferred / not asked (working assumptions stand until told otherwise):
+- **Dates:** Kyle will confirm the final time slots later.
+- **Sequential vs parallel** interviews and **must-Kyle-chair-every-panel** were not
+  asked; assume interviews run one at a time with Kyle chairing (safe default).
 
 ## Open logic decisions / edge cases (my working assumptions)
 - **Screening rating** is an optional 1–5 *priority* hint, separate from the interview

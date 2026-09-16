@@ -348,7 +348,9 @@ async function tryUnlock(pw, silent){
 function renderRanking(){
   const ranked = CANDIDATES.map((c,i)=>({c, avg:FAKE_AVG[i], n:FAKE_N[i]})).sort((a,b)=>b.avg-a.avg);
   $("#ranking").innerHTML = `
-    <div class="note"><b>Ranking.</b> Candidates ordered by average interview score (sample data).</div>
+    <div class="note"><b>Ranking.</b> Candidates ordered by average interview score.
+      <span class="warn">In the live tool this stays hidden until all interviews are complete,
+      so it can't bias interviewers (shown here with sample data for the mock).</span></div>
     <table><thead><tr><th>#</th><th>Candidate</th><th>Avg score</th><th># scored</th></tr></thead>
       <tbody>${ranked.map((r,i)=>`<tr><td class="rankn">${i+1}</td><td>${r.c}</td>
         <td><b>${r.avg.toFixed(1)}</b></td><td>${r.n}</td></tr>`).join("")}</tbody></table>`;

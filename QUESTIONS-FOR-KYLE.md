@@ -75,10 +75,14 @@ Alvin
 - ~~Candidate self-scheduling~~ → candidates select all working slots via private link.
 - ~~In-person vs Zoom~~ → per-person, per-slot toggle (default either); listed slots agnostic.
 
-## Still open (in the email above)
-1. Full interview date/time slate + interview length + count per day.
-2. Interviews **sequential or parallel**? (Drives double-booking + whether Kyle can be on all.)
-3. Must **Kyle personally** be on every panel, or can a delegate chair some?
-4. Any additional panel rules (e.g. flagged-interviewer conflict); cap on interviews/person/day.
-5. Scoring: **per-question 1–5** vs **overall-only**; how the **final ranking** is computed; tie-breaks.
-6. **Admin-only** views (who sees final scoring/ranking); who has admin access.
+## Status — SENT to Kyle 2026-09-16 (greeting to Kyle only), awaiting reply
+
+Still open (asked):
+1. Any additional panel rules (e.g. flagged-interviewer conflict); cap on interviews/person/day.
+2. Scoring: **per-question 1–5** vs **overall-only**; **final ranking** = average vs discussion; specific logic.
+3. Confirm **Ranking hidden until all interviews complete** (Alvin's proposed default).
+
+Deferred / not asked:
+- **Dates:** Kyle to confirm final time slots later.
+- **Sequential vs parallel** + **Kyle-chairs-every-panel** — not asked; assume sequential
+  with Kyle chairing until told otherwise.
