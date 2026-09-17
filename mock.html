@@ -150,7 +150,7 @@ const ISSUES = [
   "Dr Alex Romano — none of their available slots yields a rule-valid panel; schedule manually."];
 
 // ---------- seeded mock data (viewing as Vojdani = index 0) ----------
-const state = { mode:"committee", who:0, candIdx:0, tab:"screen",
+const state = { mode:"committee", who:0, candIdx:0, tab:"screen", isAdmin:false,
   flags:{ "Dr Jamie Singh":{0:"Limited independent ED volume"} },
   ratings:{ "Dr Jordan Avery":{0:5}, "Dr Riley Chen":{0:4}, "Dr Taylor Brooks":{0:3} },
   savedReason:{ "Dr Jamie Singh|0":true },
@@ -332,9 +332,17 @@ async function decryptContent(pw){
   if(!Array.isArray(obj.q)||!Array.isArray(obj.s)) throw new Error("bad");
   return obj;
 }
-async function tryUnlock(pw, silent){
-  try{ const d=await decryptContent(pw); QUESTIONS=d.q; SCALE=d.s; GUIDE=d.g||[];
-    sessionStorage.setItem("ed_pw",pw); const g=$("#gate"); if(g) g.remove(); updateView(); }
+function applyRole(){
+  const rt=document.querySelector('nav.tabs [data-tab="ranking"]');
+  if(rt) rt.classList.toggle("hidden", !state.isAdmin);       // admins only see tab 5
+  if(!state.isAdmin && state.tab==="ranking") state.tab="screen";
+}
+async function tryUnlock(typed, silent){
+  const admin = typed.endsWith("!");             // a trailing "!" on the password = admin
+  const key = admin ? typed.slice(0,-1) : typed; // decryption key never appears in source
+  try{ const d=await decryptContent(key); QUESTIONS=d.q; SCALE=d.s; GUIDE=d.g||[];
+    state.isAdmin=admin; sessionStorage.setItem("ed_pw",typed);
+    applyRole(); const g=$("#gate"); if(g) g.remove(); updateView(); }
   catch(e){ if(!silent) $("#gerr").textContent="Incorrect password."; }
 }
 (function initGate(){

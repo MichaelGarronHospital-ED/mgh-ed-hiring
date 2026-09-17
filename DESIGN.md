@@ -123,7 +123,10 @@ applicant PII out of a repo that feeds a public Pages site.
 
 ## Mock
 `mock.html` — self-contained, "MOCK" banner, **10 fictitious candidate names**,
-**password-gated (`edleadership`)**. The confidential interview questions + evaluation
+**password-gated, two tiers**: `edleadership` = regular (no tab 5), `edleadership!` =
+admin (sees the tab 5 Ranking). The admin password is the regular one + `!`; the app
+strips the `!` to derive the (single) decryption key, so **no password is stored in the
+source**. The confidential interview questions + evaluation
 scale are stored **encrypted** (PBKDF2-SHA256 keystream, XOR) and decrypted only after
 login, so they are not readable in the public page source. Five tabs: **Screen ·
 Availability · Panels · Score · Ranking** (no committee-vs-admin toggle). "Viewing as" defaults to **Vojdani (Kyle)** and switches between any committee
