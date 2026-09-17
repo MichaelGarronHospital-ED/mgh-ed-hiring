@@ -128,8 +128,11 @@ function renderScreen() {
         <td><button class="linky" onclick="IV.removeCand('${c.id}',${!c.removed})">${c.removed ? "restore" : "remove"}</button></td></tr>`;
     }).join("");
     html += `<div class="note"><b>Admin · collation.</b> A candidate drops off at <b>≥2 flags</b>. Reasons are admin-only.</div>
-      <div class="adminbar"><span class="muted">${submitted.size}/${COMMITTEE.length} members have submitted</span>
-        <button class="flagbtn" onclick="IV.addCand()">+ Add candidate</button></div>
+      <div class="adminbar"><span class="muted">${submitted.size}/${COMMITTEE.length} members have submitted</span></div>
+      <div class="card"><b>Add candidates</b>
+        <div class="muted small">Paste applicant names, one per line, then Add all. (Stored in this tool, not in code.)</div>
+        <textarea id="bulkAdd" rows="4" placeholder="Dr Jane Doe&#10;Dr John Smith"></textarea>
+        <div style="margin-top:.4rem"><button class="savebtn" onclick="IV.addCands()">Add all</button></div></div>
       <table><thead><tr><th>Candidate</th><th>Flags</th><th>Reasons</th><th>Avg rating</th><th>Status</th><th></th></tr></thead>
         <tbody>${rows}</tbody></table><h3 class="muted">Your review</h3>`;
   }
@@ -251,7 +254,14 @@ window.IV = {
   toggleFlag: (id) => { const cur = (S.screening[key(ui.member, id)] || {}).flag; store.setScreening(ui.member, id, { flag: !cur, reason: cur ? "" : (S.screening[key(ui.member, id)] || {}).reason || "" }); },
   saveReason: (id) => { const v = $("#rsn-" + id).value; store.setScreening(ui.member, id, { reason: v }); toast("Saved"); },
   rate: (id, n) => { const cur = (S.screening[key(ui.member, id)] || {}).rating; store.setScreening(ui.member, id, { rating: cur === n ? 0 : n }); },
-  addCand: async () => { const n = prompt("Candidate name:"); if (n && n.trim()) await store.addCandidate(n.trim()); },
+  addCands: async () => {
+    const t = $("#bulkAdd"); if (!t) return;
+    const existing = new Set(S.candidates.map((c) => c.name.trim().toLowerCase()));
+    const names = t.value.split("\n").map((s) => s.trim()).filter(Boolean);
+    let n = 0;
+    for (const nm of names) { if (!existing.has(nm.toLowerCase())) { existing.add(nm.toLowerCase()); await store.addCandidate(nm); n++; } }
+    t.value = ""; toast(n ? `Added ${n}` : "No new names");
+  },
   removeCand: (id, v) => store.setCandidateRemoved(id, v),
   avail: (i, v) => { const cur = (S.availIv[ui.member] || {})[String(i)]; store.setAvail("iv", ui.member, String(i), cur === v ? null : v); },
   pickScore: (id) => { ui.scoreCand = id; renderScore(); },
