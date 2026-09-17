@@ -75,9 +75,9 @@ scale, 2026-09-17):
   several questions aren't 1–5-ratable; keeping one overall rating lowers reviewer
   burden. (My recommendation to Kyle; easy to add per-question later if he wants.)
 - Aggregate → ranked list for **4–6 offers**, shown on an **admin-only Ranking view,
-  hidden until all interviews are complete** (anti-bias; Kyle confirmed). Default:
-  ranked by **average score as decision support** for the committee's final discussion
-  (not a purely mechanical cut).
+  hidden until all interviews are complete** (anti-bias; Kyle confirmed). Ranked simply
+  by **average score** (Alvin, 2026-09-17) — decision support for the committee's final
+  discussion, no other weighting.
 
 ### Interview questions & evaluation scale — CONFIDENTIAL, not stored here
 The 10 questions (pronouns icebreaker + Q1–Q10) and the 1–5 evaluation scale come from
@@ -145,10 +145,9 @@ Amanda is not referenced in the tool UI (she remains in the email/coordination p
 - Booking view: **in-person encouraged**.
 - **Revised overall rating scale** supplied and incorporated.
 - Dates: **Amanda will send** the interview times.
+- **Final ranking = simple average score** (Alvin, 2026-09-17); no other logic.
 
 ## Still open / working defaults
-- **Final-ranking method** not explicitly answered → default: average score as
-  **decision support** for the committee discussion (admin-only). Confirm with Kyle.
 - **Dates**: awaiting Amanda's time slots.
 - **Sequential vs parallel** + **chair-every-panel** not raised → assume sequential
   with Kyle chairing (safe default).

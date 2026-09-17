@@ -97,9 +97,8 @@ Thanks Kyle — all really helpful. I've updated the mock (same link + password)
   Easy to add per-question scoring later if you'd like — happy to try it either way.
 - **Dates:** great, I'll wait for Amanda's times.
 
-One small thing when you get a sec: for the final list, is it enough for the tool to rank
-candidates by their average score as a starting point for our discussion, or did you want
-any particular logic baked in?
+For the final list, the tool will simply rank candidates by their average score as a
+starting point for our discussion.
 
 Alvin
 
