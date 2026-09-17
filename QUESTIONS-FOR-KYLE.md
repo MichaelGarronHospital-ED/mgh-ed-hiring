@@ -75,7 +75,37 @@ Alvin
 - ~~Candidate self-scheduling~~ → candidates select all working slots via private link.
 - ~~In-person vs Zoom~~ → per-person, per-slot toggle (default either); listed slots agnostic.
 
-## Status — SENT to Kyle 2026-09-16 (greeting to Kyle only), awaiting reply
+## Reply to Kyle (draft, 2026-09-17)
+
+**Subject:** RE: ED hiring tool
+
+Thanks Kyle — all really helpful. I've updated the mock (same link + password):
+
+- **Panels:** reworked so it's not framed as a male/female rule. Behind the scenes it
+  still makes sure each panel has at least one person who identifies as female and one
+  who identifies as male, plus you as chair — but the tool just shows it as a "balanced
+  panel," and your presence isn't shown as a rule. No other panel rules added.
+- **Ranking:** now an admin-only view, hidden until all interviews are done, so it can't
+  bias anyone.
+- **Booking view:** added that in-person interviews are encouraged where possible.
+- **Rating scale:** dropped in your revised guide (it reads really well) plus the
+  panelist guidance.
+- On **rating each question vs one overall score:** my suggestion is to keep a single
+  overall 1–5 (using your revised guide) with written notes per question, rather than
+  scoring all ten questions. A few of them (pronouns, "any questions for us") aren't
+  really 1–5 items, and one overall rating keeps it quick so people actually finish it.
+  Easy to add per-question scoring later if you'd like — happy to try it either way.
+- **Dates:** great, I'll wait for Amanda's times.
+
+One small thing when you get a sec: for the final list, is it enough for the tool to rank
+candidates by their average score as a starting point for our discussion, or did you want
+any particular logic baked in?
+
+Alvin
+
+---
+
+## Status — SENT to Kyle 2026-09-16; reply received 2026-09-17 (see above)
 
 Still open (asked):
 1. Any additional panel rules (e.g. flagged-interviewer conflict); cap on interviews/person/day.

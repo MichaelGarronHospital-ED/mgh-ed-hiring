@@ -99,7 +99,7 @@
   <button data-tab="availability">2 · Availability</button>
   <button data-tab="panels">3 · Panels</button>
   <button data-tab="score">4 · Score</button>
-  <button data-tab="ranking">5 · Ranking</button>
+  <button data-tab="ranking">5 · Ranking (admin)</button>
 </nav>
 
 <main>
@@ -128,14 +128,14 @@ const SLOTS = ["Oct 1 · 10:00","Oct 1 · 10:45","Oct 1 · 11:30","Oct 1 · 13:0
 // (PBKDF2/SHA-256 keystream, XOR) and decrypted only after the login password.
 let QUESTIONS = [];
 const ENC_SALT="ZWQtbW9jay1zYWx0LTAxIQ==", ENC_ITER=100000;
-const ENC_CIPHER="f++kJ2SENpqrHzPeIYzkbzKGTaQiR+CurCYu6LN8OlJGxolfQBF44zESaoGvozSkkCKa4QqV5T6xM4F4+mVAQ8HBWG4W6Fbwrd0fvrJcHaNAerdvHp/Wcjt9+SCroaTe1EuGJ7f1BIAfdGLcHOGRmaTe7SRxWo/7OPEg6LGLnj5CsQB2ngUfgnAOInz0q/2OG9qpWQEabuyUqKQLg5Gz9VU2JcLpnPOCCZ8r+ARtbxnMKtuL7CIzwW67foSpzk2/jrQWU9yL640caAcPWIVUIfvIhuNwHhm9pzpYkJ1+WFBy93V+V/ekdCYPwTwZqnXkXkQmcaMqq5/ICzE5xhx9pMBA556I6InqxR2CE5eG+39HacLiMLc+iJCLH5WdwFGGLF5lZyErRsxzVKJ0CCm1/qB/DP0taXLeG+2wFSYsul+dMTNgyVIAfD0TClqOPY5Dyx4to3GoNHuvFk3lOUtdERW8NQf/teCRk80mhl1OKhmg3B79CG8+c4uGQrrv+B5FOQuw/UGbi+wbMgpeGFDG246dhDnfuuIdr698d6G5AxxR2NyB7jsLErjEYas/yo9DkJfy0dYwZg/M1IJ7nJc+ReLVjvNUL8AF2J2fdyocZu+0m+b/s8H6Lvf8LrxrvebSmK5ucVArRff4EvJSv8GcdbacsYernUr4bubmcLeS36yuWFHHT57h6U+lM2PCdhsXRTfmSrOu6Vg5NcNBMDn0DAx8oWFoSi2kAGuQb39xJsKnBA13Pu1ZZ9KZg2l4leg3yh3sS+fv5kSLFRLcjeKlQMmLSUmG/cYKDUBh3Em1uQa8UN4t7vfI6Rpqp7AFMCWhm4ejsFTTqxF2atdUuznTvqkRQWNubIXpzlWNUf3JwXs1/IM2F6kZq6prPDLYjGdMwKKj4ByRuh07UJQfRNyJYfKNGljYw0TIapb6N5HPbgBwDSakXvclZE1f71OD/inh89ZuF2Khuzzo2tPui52k01QPXIFfh5acLdgdqX+4zEB9ikuu39NSJKa/Bc62ti0j0aLNuqxdC/UzTDG1xUPFgsiZIVqwE934FB731C4XHHHHkqbxEyPs5M1oTO3M2JNscmGmzWpzLwuGb65c/n3liaQc2Brl4Laanx4hyRt1iXMGAel+NmEEQOfFMk98biYc4zdeDfRIHa+EOFGN5fM6PeBVQ8NxbATlT7kUmFsz2R2LhEDrThKttYBhu1zUrXThFvan3+4=";
+const ENC_CIPHER="f++kJ2SENpqrHzPeIYzkbzKGTaQiR+CurCYu6LN8OlJGxolfQBF44zESaoGvozSkkCKa4QqV5T6xM4F4+mVAQ8HBWG4W6Fbwrd0fvrJcHaNAerdvHp/Wcjt9+SCroaTe1EuGJ7f1BIAfdGLcHOGRmaTe7SRxWo/7OPEg6LGLnj5CsQB2ngUfgnAOInz0q/2OG9qpWQEabuyUqKQLg5Gz9VU2JcLpnPOCCZ8r+ARtbxnMKtuL7CIzwW67foSpzk2/jrQWU9yL640caAcPWIVUIfvIhuNwHhm9pzpYkJ1+WFBy93V+V/ekdCYPwTwZqnXkXkQmcaMqq5/ICzE5xhx9pMBA556I6InqxR2CE5eG+39HacLiMLc+iJCLH5WdwFGGLF5lZyErRsxzVKJ0CCm1/qB/DP0taXLeG+2wFSYsul+dMTNgyVIAfD0TClqOPY5Dyx4to3GoNHuvFk3lOUtdERW8NQf/teCRk80mhl1OKhmg3B79CG8+c4uGQrrv+B5FOQuw/UGbi+wbMgpeGFDG246dhDnfuuIdr698d6G5AxxR2NyB7jsLErjEYas/yo9DkJfy0dYwZg/M1IJ7nJc+ReLVjvNUL8AF2J2fdyocZu+0m+b/s8H6Lvf8LrxrvebSmK5ucVArRff4EvJSv8GcdbacsYernUr4bubmcLeS36yuWFHHT57h6U+lM2PCdhsXRTfmSrOu6Vg5NcNBMDn0DAx8oWFoSi2kAGuQb39xJsKnBA13Pu1ZZ9KZg2l4leg3yh3sS+fv5kSLFRLcjeKlQMmLSUmG/cYKDUBh3Em1uQa8UN4t7vfI6Rpqp7AFMCWhm4ejsFTTqxF2atdUuznTvqkRQWNubIXpzlWNUf3JwXs1/IM2F6kZq6prPDLYjGdOzrXo4EmMvB0wUphRwXN+JOyYEFXCgFHUZtngZZbJcklqAm+kTvcjZE1X4RLOqmLD+J86CzDstyrx0tTqzoe11x0VWs9I1dHfOtQcuDatxEV5klvh0J8aJO2cBM6yoGMm2KCZoqccC/V6TSPnwybiyZqpJxy3H8isDQP2lzwbDDfF2u+gKi/n88ohTuqAnd47UiQhOY1zJgiGK/Zc723027dZzBf896GK1g4hlApkn38XCfh5OmoIFO3VZgttdjcc5DxPDPUcWOrRXUacoMAYdPxTTdgiruMQH6dbxls9ylyLh0/gQhTouM1kt1/V4WHnD+bx+7PGp93aznRLjujKXR1f8Zv3HCJmLolMS5RbIhQE2zl6YNalxAg534hc5Scrojy0vMy91UgiNtPJTM2Im7TwpcpBRkxn9BaXSvD2bZB+vvP3VZmGNWcpfkZ5QmV1yfXQrM7yDIO3Ew7qGNsTyX7ruzV4v0RtkXapNnklpOXUeIMzGJ/WN9iJOgaCGOOJK9vYRIOSY5MvoW43vTPFiUhPgf4Z0CMxlBqi6TMuqFR23xmGfcrHF0ciX0JuvWfwfo59uFhimvaHxsc31Cf4vnP4XIGMa3LtGyG5NAdi2MjBddlBRhUCGvXUxFWT7mrBH1b7HZkuRe1WwPqkjgeebqY/wKhG2sZKnI3jAWA/pt6BUFde7dHxQDDAwdcIg/Kh5pfyhfNB9CB6/9MnYD0zHz/Wa7LFKg9kTWvf4vA7Dj/LsmIabrZqlVUJ89V3CNJ+WgHtcFPUxMagowgZAxkru29CGxJ5pMYCKrT9DKBx50pFcl8LNNk+VjmRFSv/TT0MBPxGkMARZzIhcyB7zDzTeigtf0Lsq6qKr6pDSq2Ko4z222XWLjmVfroMzCOo43Ldi/APAZdvLdS+NBgFfCzeY6SIyyHKR29OAzOTe8N9j//oIUFBl4dqFm4yxd9xr7HNr3JoLlYWQ8Ibr9KSfqpzmmmsN+XNELSafDJK2ewCiK8BYb34pmQx9MMH1RwPnPUKwXfJo6L+fnx+sfxlZKdwt6DAOLpV45AiOEq6y0SVoN+9+7/jbrXWJdCh8scJCg1V0HkJXmfU2s4RlFoeIUYsayuTyNAkXXtan2nVlPvNTPQISBXERshhjcJ2BEg2poei5LMg9/wBlW4GXYnS1UEQbDjivpA0q8+2aBpMogtuHFSnk1fPiszD+dXK5b1d056PbVfZb79kBjOJ0TmWJ8zbLlsZAMErjBspYFDbBIW5grgaP4pnFHPAELsQzDnXBIEh7INz3tWt/U/yWSN0v2fgBQaMBR4joUcb5OiIpGyaPOp3P6qOXOjynL2wXGo7M2KcGX6d6GScc1QdUnfADsXruqgAmLkzfhB/l96Dbv4CRMAvK15813ms5d9LO1dhdLcuVam5VIx2uTuWYjTHFCLOCZX7Auz9+utT8m0eFFSlM1Oxfets8wzC/fAhJTYFBXGZC4nPlFWBgz6nRhGBygwv4pvZeehLBuQpEcvcZU322r3Y8zFNV+bpW+bnAhsJhSioHxYEuArq16Q7F1V70qUxyPbW1kgF3gRpXonW8g17Egsw1KZ4hkir1M9mm3CmOx3RCom+0SxWXSWXTiy5ORHoHXfn9C5+gdUqdzyjgG3f6uSEhfWQBXd1tITe76BAE1G6gBT+yzOB0n/Oa2nPlKCDw6ikITLIhLz/vC2+6Zj5HSIDMzHYKs0IK9SxZMt3Dhvdkpqrn9mxUgeoG1tKbS2Eoy/6CAdjRbZpNtYku0yCYY5kvm9OtE+NwvGnVs3I11CQAzVif2f3saZtOH8vJyr4pCY8/wK5WaGUogxnCTGs/455KwQZCm1i6JPNMGB95x9a6iAgXCc2oCHk5I7slA6S4w3LP1JLyzffAOn8pV4sO+kzzWb5eisQqIYf2g44xvEP+3QX9CimRYLRxAV4vIVbdYteGTRtIBnzl4sYVEKxIfXgNUbWvVrF75irmUtzmWi+tHWEFo61/87tqMEsuHYGFSXx5Pphx/FurEcMVR907oqsLegNTvsR3fhqOXMbw9/yJ7gnP/R+VTIkVj79SodWSH/TrepYkVHaBunfOYVXSGCqslI/nJxvc2K0UctBVGRklKiNCvR8HpL66kt12mdMtZE1xo0ecqIQlVHEH0cnhY25xBpsknolAn7JXj3Veoi3vh3KN5rIPC27nHTs4XB3w1z4chiwmzvUWJVjvG9CWYJdko+tcs494j3NatuaZTWkUjNDkVoW9qnSA+omidzczATCHHhvQGgV1NKy1Fx1EQgyADeCtE6x6+wgKkRL0MtRHnWk7lQOabqZfbhzQjA/5nlHXAgK/4KGg8qQ600grYT3lFRYQ+ejWM46W1Hr2Ck104yUT1xd2KUOY6XlZVKD8+5MRQsvKbr4XPIQRmsUxshrzc7QRWyUkuU0VR4JGMeDuF+Pp7jw6T4Df8DcN0j7MeLRPe8JlQJdDwlzFQ==";
 const NOTES_SAMPLE = ["they/them",
   "CCFP-EM; 4 yrs community ED; strong teaching interest — good MGH fit.","",
   "Runs post-shift debriefs; peer-support lead at prior site.","",
   "Learner-centred; would escalate via PD with documentation.","",
   "Led a sepsis pathway QI — door-to-antibiotic down 22%.","",
   "~10 shifts/mo; flexible; could start January."];
-let SCALE = []; // decrypted with QUESTIONS after login
+let SCALE = [], GUIDE = []; // decrypted with QUESTIONS after login
 const FAKE_AVG = [4.2,3.6,4.6,3.0,4.0,3.4,4.4,2.8,3.8,3.2];
 const FAKE_N   = [5,4,5,3,4,5,4,3,5,4];
 // auto-suggested panels (sample) + problem flags
@@ -144,7 +144,7 @@ const PANELS = [
   {c:"Dr Riley Chen",   slot:1, mod:"Zoom",      members:["Vojdani","Klaiman","Porfiris","Hayre"]},
   {c:"Dr Sam Okafor",   slot:2, mod:"In-person", members:["Vojdani","Reynolds","Bahar"]},
   {c:"Dr Casey Nwosu",  slot:3, mod:"In-person", members:["Vojdani","Losier","Jha"],
-     warn:"No female interviewer available for this slot — swap someone in"}];
+     warn:"Panel composition needs a swap to meet the diversity guideline"}];
 const ISSUES = [
   "Oct 1 · 13:45 — understaffed: only 2 interviewers available (need ≥3).",
   "Dr Alex Romano — none of their available slots yields a rule-valid panel; schedule manually."];
@@ -249,20 +249,19 @@ window.setMode = (si,v)=>{ const av=state.avail[me()];
 // ---------- 3 · Panels (auto-suggested) ----------
 function renderPanels(){
   $("#panels").innerHTML = `
-    <div class="note"><b>Auto-suggested panels.</b> Built from everyone's availability to meet the hard rules
-      — 3–5 members, Kyle present, ≥1 male + ≥1 female. Problem slots are flagged for a manual fix.
+    <div class="note"><b>Auto-suggested panels.</b> Built automatically from everyone's availability into
+      balanced panels of the right size. Slots that need a manual fix are flagged.
       <span class="warn">(Sample data — the matching logic is still to be built.)</span></div>
     ${PANELS.map(p=>{
-      const gs=p.members.map(genderOf), size=p.members.length;
-      const hasM=gs.includes("M"), hasF=gs.includes("F"), kyle=p.members.includes("Vojdani");
-      const bad = p.warn||!(size>=3&&size<=5)||!kyle||!(hasM&&hasF);
-      const b=(ok,t)=>`<span class="badge ${ok?'ok':'bad'}">${ok?'✓':'✗'} ${t}</span>`;
+      const size=p.members.length, bad = !!p.warn || !(size>=3&&size<=5);
       return `<div class="panelbox ${bad?'bad':''}">
         <div class="row"><div class="grow"><b>${p.c}</b> · ${SLOTS[p.slot]}
           <span class="pill ${p.mod==='In-person'?'ip':'zoom'}">${p.mod}</span></div>
           <button class="flagbtn">edit</button></div>
-        <div class="small" style="margin-top:.3rem;">${p.members.map(m=>`${m} <span class="pill ${genderOf(m)==='M'?'m':'f'}">${genderOf(m)}</span>`).join(" · ")}</div>
-        <div class="badges">${b(size>=3&&size<=5,"3–5 members")}${b(kyle,"Kyle present")}${b(hasM&&hasF,"≥1 M + ≥1 F")}</div>
+        <div class="small" style="margin-top:.3rem;">${p.members.join(" · ")}</div>
+        <div class="badges">
+          <span class="badge ${size>=3&&size<=5?'ok':'bad'}">${size>=3&&size<=5?'✓':'✗'} ${size} members</span>
+          <span class="badge ${bad?'bad':'ok'}">${bad?'✗ composition needs review':'✓ balanced panel'}</span></div>
         ${p.warn?`<div class="small warn" style="margin-top:.35rem;">⚠ ${p.warn}</div>`:''}
       </div>`;
     }).join("")}
@@ -280,7 +279,8 @@ function renderCandidate(){
     <div class="card"><div class="muted small">Signed in as</div><div class="name">${name}</div></div>
     <div class="card"><b>Select the interview times you can attend</b>
       <div class="muted small" style="margin:.2rem 0 .7rem;">For each time you can make, choose whether you
-        <b>can</b> attend in person, by Zoom, or either. Leave the rest untouched. You can come back and update.</div>
+        <b>can</b> attend in person, by Zoom, or either. <b>In-person interviews are encouraged where possible.</b>
+        Leave the rest untouched. You can come back and update.</div>
       <div class="slotgrid"><div class="h">Slot</div><div class="h">I can attend…</div>
         ${slotRows(av,"setCandMode")}</div>
       <div class="row" style="margin-top:.9rem; align-items:center;">
@@ -299,7 +299,7 @@ function renderScore(){
   const myScore=(state.scores[cand]||{})[state.who]||0;
   $("#score").innerHTML = `
     <div class="note">Scoring uses the 2026 Interview Guide: notes per question, then <b>one overall 1–5
-      rating</b>. Your score is private to you and leadership.</div>
+      rating</b> using your judgement against the guide below. Your score is private to you and leadership.</div>
     <div class="card"><div class="row" style="align-items:center;">
       <div class="muted small" style="width:110px;">Scoring</div>
       <select id="scoreCand" onchange="pickScoreCand(this.value)" style="font:inherit; padding:.35rem .5rem; border:1px solid var(--line); border-radius:8px;">
@@ -307,9 +307,11 @@ function renderScore(){
       </select></div></div>
     ${QUESTIONS.map((q,i)=>`<div class="card"><div class="small muted">Q${i}</div><div>${q}</div>
       <textarea placeholder="Notes" oninput="saveNote(${i},this.value)">${notes[i]||""}</textarea></div>`).join("")}
-    <div class="card"><b>Overall rating (Evaluation Scale)</b>
+    <div class="card"><b>Overall rating</b>
       <div class="rate" style="margin:.5rem 0;">${[1,2,3,4,5].map(n=>`<button class="${myScore===n?'on':''}" onclick="setScore(${n})">${n}</button>`).join("")}</div>
-      <div class="legend">${SCALE.map((s,i)=>`<div><b>${i+1}</b> — ${s}</div>`).join("")}</div></div>`;
+      <div class="legend">${SCALE.map((s,i)=>`<div style="margin:.3rem 0;"><b>${i+1}</b> — ${s}</div>`).join("")}</div></div>
+    <div class="card"><b>Guidance for panelists</b>
+      <ul class="small" style="margin:.4rem 0 0; padding-left:1.1rem;">${GUIDE.map(g=>`<li style="margin:.25rem 0;">${g}</li>`).join("")}</ul></div>`;
 }
 window.pickScoreCand = v => { state.scoreCand=+v; renderScore(); };
 window.saveNote = (qi,val) => { const c=CANDIDATES[state.scoreCand];
@@ -331,7 +333,7 @@ async function decryptContent(pw){
   return obj;
 }
 async function tryUnlock(pw, silent){
-  try{ const d=await decryptContent(pw); QUESTIONS=d.q; SCALE=d.s;
+  try{ const d=await decryptContent(pw); QUESTIONS=d.q; SCALE=d.s; GUIDE=d.g||[];
     sessionStorage.setItem("ed_pw",pw); const g=$("#gate"); if(g) g.remove(); updateView(); }
   catch(e){ if(!silent) $("#gerr").textContent="Incorrect password."; }
 }
@@ -348,9 +350,9 @@ async function tryUnlock(pw, silent){
 function renderRanking(){
   const ranked = CANDIDATES.map((c,i)=>({c, avg:FAKE_AVG[i], n:FAKE_N[i]})).sort((a,b)=>b.avg-a.avg);
   $("#ranking").innerHTML = `
-    <div class="note"><b>Ranking.</b> Candidates ordered by average interview score.
-      <span class="warn">In the live tool this stays hidden until all interviews are complete,
-      so it can't bias interviewers (shown here with sample data for the mock).</span></div>
+    <div class="note"><b>Ranking — admin only.</b> Candidates ordered by average interview score.
+      <span class="warn">In the live tool this is a leadership-only view, hidden until all interviews are
+      complete, so it can't bias interviewers (shown here with sample data for the mock).</span></div>
     <table><thead><tr><th>#</th><th>Candidate</th><th>Avg score</th><th># scored</th></tr></thead>
       <tbody>${ranked.map((r,i)=>`<tr><td class="rankn">${i+1}</td><td>${r.c}</td>
         <td><b>${r.avg.toFixed(1)}</b></td><td>${r.n}</td></tr>`).join("")}</tbody></table>`;
