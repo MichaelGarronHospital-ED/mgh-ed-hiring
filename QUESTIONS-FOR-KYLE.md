@@ -12,7 +12,7 @@ Hi Kyle, Amanda,
 I've built a **clickable mock** of a tool to run our hiring process end-to-end. Have a look:
 
 **https://dralvinyang.github.io/ED-motion-voting/tools/interviews/mock.html**
-Password: **edleadership**
+Password: **(the committee code — sent separately)**
 
 **Please note:** this is only a *mock* with made-up candidate names to show the idea —
 nothing is saved and it isn't the finished tool. Once you confirm the details below, the

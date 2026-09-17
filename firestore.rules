@@ -1,0 +1,19 @@
+rules_version = '2';
+// Baseline rules for the interviews tool. Every client (committee members and
+// applicants) signs in ANONYMOUSLY, so this requires sign-in but does NOT, on its
+// own, separate committee access from applicant access. That separation is done
+// in the app (committee code) — see README.md → "Security" before putting real
+// applicant data in. For a hard boundary, add Firebase Auth accounts / custom
+// claims and tighten the per-collection rules below.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+
+    match /interviews_candidates/{doc} { allow read, write: if signedIn(); }
+    match /interviews_availCand/{doc}  { allow read, write: if signedIn(); }
+    match /interviews_availIv/{doc}    { allow read, write: if signedIn(); }
+    match /interviews_screening/{doc}  { allow read, write: if signedIn(); }
+    match /interviews_scores/{doc}     { allow read, write: if signedIn(); }
+    match /interviews_meta/{doc}       { allow read, write: if signedIn(); }
+  }
+}

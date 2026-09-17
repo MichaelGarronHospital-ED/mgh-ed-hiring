@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Interview booking</title>
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+<header>
+  <h1 id="orgName">ED Physician Hiring</h1>
+  <p class="muted">Interview availability</p>
+</header>
+<main id="app" style="max-width:560px">
+  <section id="signin">
+    <div class="note">Enter your name to pick the interview times that work for you. You won't see other
+      applicants.</div>
+    <div class="card">
+      <b>Your name</b>
+      <input id="nameIn" type="text" placeholder="First and last name" autocomplete="name" />
+      <div style="margin-top:.5rem"><button class="primary" id="nameBtn" style="width:auto; padding:.5rem 1rem">Continue</button></div>
+      <div id="nameErr" class="err"></div>
+    </div>
+  </section>
+  <section id="booking" class="hidden"></section>
+</main>
+<div id="toast" class="toast hide"></div>
+<script type="module" src="js/book.js"></script>
+</body>
+</html>

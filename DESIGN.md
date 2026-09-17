@@ -1,9 +1,17 @@
 # ED Physician Hiring — Interviews Tool (Design)
 
-One app, three phases, for the MGH ED 26-27 physician hiring round. Same stack as
-Motion Voting (Firebase/Firestore, static site on GitHub Pages). Recommend a
-**separate Firebase project** from voting — this holds candidate names +
-evaluations, so keep the data isolated.
+One app, five stages (Screen · Availability · Panels · Score · Ranking), for the
+MGH ED 26-27 physician hiring round. Same stack as Motion Voting (Firebase/Firestore,
+static site on GitHub Pages). Recommend a **separate Firebase project** from voting —
+this holds candidate names + evaluations, so keep the data isolated.
+
+## Build status (2026-09-17)
+The real tool is built — committee app [`index.html`](index.html), applicant booking
+[`book.html`](book.html) — see [`README.md`](README.md). Runs in **local mode**
+(localStorage) out of the box for demo/testing; paste a Firebase config to go
+multi-device. The auto-paneling algorithm ([`js/panels.js`](js/panels.js)) was
+validated against a Python prototype. Code path was static-validated but not yet
+run end-to-end against a live Firebase project (needs the user's project + a browser).
 
 ## Identity model
 
@@ -123,7 +131,7 @@ applicant PII out of a repo that feeds a public Pages site.
 
 ## Mock
 `mock.html` — self-contained, "MOCK" banner, **10 fictitious candidate names**,
-**password-gated, two tiers**: `edleadership` = regular (no tab 5), `edleadership!` =
+**password-gated, two tiers**: the committee code = regular (no tab 5), the code + `!` =
 admin (sees the tab 5 Ranking). The admin password is the regular one + `!`; the app
 strips the `!` to derive the (single) decryption key, so **no password is stored in the
 source**. The confidential interview questions + evaluation

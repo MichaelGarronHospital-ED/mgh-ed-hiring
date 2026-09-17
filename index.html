@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ED Physician Hiring</title>
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+<!-- login gate: committee code (also decrypts the confidential questions) -->
+<div id="gate" class="overlay">
+  <div class="overlay-box">
+    <h2 id="gateTitle">ED Physician Hiring</h2>
+    <p class="muted">Committee access — enter your code.</p>
+    <input id="gpw" type="password" placeholder="Code" autocomplete="off" autofocus />
+    <button id="gbtn" class="primary">Enter</button>
+    <div id="gerr" class="err"></div>
+  </div>
+</div>
+
+<!-- pick your name (committee identity) -->
+<div id="memberpick" class="overlay hidden">
+  <div class="overlay-box">
+    <h2>Who are you?</h2>
+    <p class="muted">Pick your name so your input is saved to you.</p>
+    <select id="memberSel"></select>
+    <button id="memberBtn" class="primary">Continue</button>
+  </div>
+</div>
+
+<header id="appHeader" class="hidden">
+  <h1 id="orgName">ED Physician Hiring</h1>
+  <div class="who">
+    <span id="whoLine" class="muted"></span>
+    <button id="changeMember" class="linky">change</button>
+    <span id="adminTag" class="tag hidden">admin</span>
+  </div>
+</header>
+
+<nav id="tabs" class="tabs hidden"></nav>
+
+<main id="app" class="hidden">
+  <section id="screen"></section>
+  <section id="availability" class="hidden"></section>
+  <section id="score" class="hidden"></section>
+  <section id="panels" class="hidden"></section>
+  <section id="ranking" class="hidden"></section>
+</main>
+
+<div id="toast" class="toast hide"></div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
