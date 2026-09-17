@@ -39,10 +39,9 @@ export const COMMITTEE = [
 ];
 
 // ---- 6. Interview time slots ----------------------------------------------
-// Refine once Amanda confirms the dates. Admins can also add slots in-app.
+// Only Oct 1 · 10:00 is confirmed so far. Add the rest once Amanda sends the times.
 export const SLOTS = [
-  "Oct 1 · 10:00", "Oct 1 · 10:45", "Oct 1 · 11:30",
-  "Oct 1 · 13:00", "Oct 1 · 13:45", "Oct 1 · 14:30",
+  "Oct 1 · 10:00",
 ];
 
 // ---- 7. OneDrive applications folder --------------------------------------

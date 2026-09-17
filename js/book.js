@@ -25,20 +25,11 @@ async function loadFirestore() {
 async function init() {
   $("#orgName").textContent = ORG_NAME;
   if (isConfigured()) store = new FirestoreStore(await loadFirestore());
-  else { store = new LocalStore(); await seedDemoIfEmpty(); }
+  else store = new LocalStore();
   store.subscribe((s) => { S = s; if (candId) renderBooking(); });
   S = store.getState();
   const saved = sessionStorage.getItem("ed_iv_cand");
   if (saved && S.candidates.some((c) => c.id === saved && !c.removed)) { candId = saved; renderBooking(); }
-}
-
-// demo only: seed the same candidate names as the committee app so a tester can
-// type e.g. "Dr Jordan Avery" here even if they opened this page first.
-async function seedDemoIfEmpty() {
-  if (localStorage.getItem("ed_iv_seeded") || store.getState().candidates.length) return;
-  localStorage.setItem("ed_iv_seeded", "1");
-  for (const n of ["Dr Jordan Avery", "Dr Sam Okafor", "Dr Riley Chen", "Dr Morgan Patel", "Dr Casey Nwosu", "Dr Taylor Brooks"])
-    await store.addCandidate(n);
 }
 
 function signIn() {

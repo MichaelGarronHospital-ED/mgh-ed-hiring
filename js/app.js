@@ -41,7 +41,6 @@ async function initStore() {
     store = new FirestoreStore(fb);
   } else {
     store = new LocalStore();
-    await seedDemoIfEmpty();
   }
   store.subscribe((s) => { S = s; if (!$("#app").classList.contains("hidden")) render(); });
   S = store.getState();
@@ -59,36 +58,6 @@ async function loadFirestore() {
     db: f.getFirestore(app), collection: f.collection, doc: f.doc,
     setDoc: f.setDoc, updateDoc: f.updateDoc, onSnapshot: f.onSnapshot,
   };
-}
-
-// seed a small, deliberate demo dataset the first time (local mode only) so every
-// tab has something to show — including valid panels AND flagged issues.
-async function seedDemoIfEmpty() {
-  if (localStorage.getItem("ed_iv_seeded") || store.getState().candidates.length) return;
-  localStorage.setItem("ed_iv_seeded", "1");
-  const names = ["Dr Jordan Avery", "Dr Sam Okafor", "Dr Riley Chen", "Dr Morgan Patel", "Dr Casey Nwosu", "Dr Taylor Brooks"];
-  for (const n of names) await store.addCandidate(n);
-  // interviewer availability — chair + a gender mix across slots 0–2 so panels form
-  const iv = {
-    Vojdani: { 0: "ip", 1: "ip", 2: "ip" }, Rivera: { 0: "ip", 1: "ip" },
-    Lindqvist: { 1: "either", 2: "either" }, Nassar: { 0: "ip", 2: "ip" },
-    Petrova: { 0: "zoom", 1: "zoom" }, Okonkwo: { 0: "ip", 2: "ip" },
-    Barese: { 1: "either" }, Whitfield: { 2: "ip" },
-  };
-  for (const [m, slots] of Object.entries(iv))
-    for (const [s, v] of Object.entries(slots)) store.setAvail("iv", m, s, v);
-  // candidate availability — some schedulable, some contended, one with no chair slot
-  const ids = store.getState().candidates.map((c) => c.id);
-  const candSlot = [0, 1, 2, 0, 4, 1], candMod = ["ip", "either", "ip", "either", "ip", "either"];
-  ids.forEach((id, i) => store.setAvail("cand", id, String(candSlot[i]), candMod[i]));
-  // a little screening + score data so the admin views aren't empty
-  store.setScreening("Rivera", ids[5], { flag: true, reason: "Limited high-acuity exposure" });
-  store.setScreening("Okonkwo", ids[5], { flag: true, reason: "Same concern" });
-  store.setScreening("Vojdani", ids[0], { rating: 5 });
-  store.setScreening("Rivera", ids[0], { rating: 4 });
-  store.setScore("Vojdani", ids[0], { overall: 5 });
-  store.setScore("Rivera", ids[0], { overall: 4 });
-  store.setScore("Vojdani", ids[2], { overall: 3 });
 }
 
 // ------------------------------------------------------------ member pick
@@ -296,5 +265,6 @@ $("#gbtn").onclick = () => unlock($("#gpw").value.trim(), false);
 $("#gpw").addEventListener("keydown", (e) => { if (e.key === "Enter") unlock($("#gpw").value.trim(), false); });
 $("#memberBtn").onclick = () => { ui.member = $("#memberSel").value; sessionStorage.setItem("ed_iv_member", ui.member); showApp(); };
 $("#changeMember").onclick = () => { sessionStorage.removeItem("ed_iv_member"); ui.member = null; ["#appHeader", "#tabs", "#app"].forEach((s) => $(s).classList.add("hidden")); proceedToMemberPick(); };
+$("#logout").onclick = () => { sessionStorage.removeItem("ed_iv_code"); sessionStorage.removeItem("ed_iv_member"); location.reload(); };
 const savedCode = sessionStorage.getItem("ed_iv_code");
 if (savedCode) unlock(savedCode, true);
