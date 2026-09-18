@@ -73,9 +73,20 @@ export const COMMITTEE = [
 ];
 
 // ---- 6. Interview time slots ----------------------------------------------
-// Only Oct 1 · 10:00 is confirmed so far. Add the rest once Amanda sends the times.
+// From Amanda (Sept 2026): 7 one-hour slots on Oct 1 + 3 on Oct 7 = 10 interviews.
+// Oct 8 can be added if more are needed. Availability is keyed by list INDEX, so
+// once people have submitted, only append — don't reorder or insert.
 export const SLOTS = [
-  "Oct 1 · 10:00",
+  "Oct 1 · 9:00–10:00 am",
+  "Oct 1 · 10:00–11:00 am",
+  "Oct 1 · 11:00 am–12:00 pm",
+  "Oct 1 · 12:00–1:00 pm",
+  "Oct 1 · 1:30–2:30 pm",
+  "Oct 1 · 2:30–3:30 pm",
+  "Oct 1 · 3:30–4:30 pm",
+  "Oct 7 · 9:00–10:00 am",
+  "Oct 7 · 10:00–11:00 am",
+  "Oct 7 · 11:00 am–12:00 pm",
 ];
 
 // ---- 7. OneDrive applications folder --------------------------------------

@@ -48,8 +48,9 @@ Admin view:
 ## Phase 2 — Availability → panels
 
 Sequence:
-1. Amanda defines **interview days + slots** (Oct 1 from 10am, ~6 that day; more
-   dates added as they arrive).
+1. Amanda defines **interview days + slots**: Oct 1 — 9–10, 10–11, 11–12, 12–1,
+   1:30–2:30, 2:30–3:30, 3:30–4:30; Oct 7 — 9–10, 10–11, 11–12 (10 one-hour
+   interviews). Oct 8 available as overflow if needed.
 2. **Interviewers** select **all slots that work for them**.
 3. **Candidates** submit **all slots that work for them** via their private link.
 4. Each person marks a **modality per selected slot**: in-person / Zoom / either
@@ -156,7 +157,8 @@ Amanda is not referenced in the tool UI (she remains in the email/coordination p
 - **Final ranking = simple average score** (Alvin, 2026-09-17); no other logic.
 
 ## Still open / working defaults
-- **Dates**: awaiting Amanda's time slots.
+- **Dates**: set from Amanda — 7 slots Oct 1 + 3 slots Oct 7 (10 total, 1 h each);
+  Oct 8 can be added if more are needed.
 - **Sequential vs parallel** + **chair-every-panel** not raised → assume sequential
   with Kyle chairing (safe default).
 

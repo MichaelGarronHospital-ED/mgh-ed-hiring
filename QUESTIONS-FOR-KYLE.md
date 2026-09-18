@@ -112,6 +112,7 @@ Still open (asked):
 3. Confirm **Ranking hidden until all interviews complete** (Alvin's proposed default).
 
 Deferred / not asked:
-- **Dates:** Kyle to confirm final time slots later.
+- ~~**Dates:**~~ → Amanda sent them: Oct 1 (7 × 1 h, 9am–4:30pm with a 1:00–1:30 break
+  before the afternoon) + Oct 7 9am–12pm (3 × 1 h) = 10 interviews; Oct 8 as overflow.
 - **Sequential vs parallel** + **Kyle-chairs-every-panel** — not asked; assume sequential
   with Kyle chairing until told otherwise.
