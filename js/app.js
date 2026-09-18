@@ -258,6 +258,8 @@ function render() {
 // Setup lives in a modal over the current page (so it's clear you're editing
 // settings, not navigating away).
 function openSetup() {
+  // always open with every card collapsed
+  ["setChair", "setCommittee", "setSlots", "setOneDrive"].forEach((k) => delete ui.openSections[k]);
   renderSettings(); wireSections();
   $("#setupModal").classList.remove("hidden");
   $("#setupBtn").classList.add("active");
@@ -571,10 +573,10 @@ function renderSettings() {
   $("#settings").innerHTML = `<div class="note tip"><b>Setup (admin).</b> Everything here is stored privately in your database, never in
       the app's code — so the tool is <b>fully reusable each hiring round</b>: just update the committee, chair, times, and (on the
       Screen tab) the applicant list. Nothing is hard-coded.</div>
-    ${section("setChair", "Panel chair", chair, chairBody, { info: "The chair is on every interview panel. Pick from your committee list below." })}
-    ${section("setCommittee", "Committee (interviewers)", `${committee.length} members`, committeeBody, { open: true, info: "Your interviewers. One per line as ‘Name, F’ or ‘Name, M’. The F/M is self-identified and used only to build balanced panels — it is never shown as a label. Saving replaces the whole list." })}
-    ${section("setSlots", "Interview times", `${slots.length} time${slots.length === 1 ? "" : "s"}`, slotsBody, { open: true, info: "The interview time slots. Interviewers and applicants both choose from these. Add or remove them any time." })}
-    ${section("setOneDrive", "Applications folder (OneDrive)", "", odBody, { info: "Link to the access-controlled OneDrive folder holding the CVs/cover letters. Committee members open applicant files from here. Stored privately, never in the app's code." })}
+    ${section("setChair", "Panel chair", chair, chairBody, { open: false, info: "The chair is on every interview panel. Pick from your committee list below." })}
+    ${section("setCommittee", "Committee (interviewers)", `${committee.length} members`, committeeBody, { open: false, info: "Your interviewers. One per line as ‘Name, F’ or ‘Name, M’. The F/M is self-identified and used only to build balanced panels — it is never shown as a label. Saving replaces the whole list." })}
+    ${section("setSlots", "Interview times", `${slots.length} time${slots.length === 1 ? "" : "s"}`, slotsBody, { open: false, info: "The interview time slots. Interviewers and applicants both choose from these. Add or remove them any time." })}
+    ${section("setOneDrive", "Applications folder (OneDrive)", "", odBody, { open: false, info: "Link to the access-controlled OneDrive folder holding the CVs/cover letters. Committee members open applicant files from here. Stored privately, never in the app's code." })}
     <div class="note" style="margin-top:1rem">Add or remove <b>applicants (interviewees)</b> on the <b>Screen</b> tab → “Add candidates”.</div>`;
 }
 
