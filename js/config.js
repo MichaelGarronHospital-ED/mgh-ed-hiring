@@ -40,7 +40,7 @@ export const CANDIDATE_CODE_LOCAL = "guest2026";
 // The role EMAILS are public identifiers (safe here). The account PASSWORDS are
 // the shared secrets and live only in the Firebase console — never in this file.
 export const AUTH = {
-  mode: "anon",
+  mode: "roles",
   adminEmail: "admin@ed-hiring.app",
   committeeEmail: "committee@ed-hiring.app",
   candidateEmail: "applicant@ed-hiring.app",
