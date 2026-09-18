@@ -82,6 +82,13 @@ b64 = lambda b: base64.b64encode(b).decode()
 print("ENC_CIPHER    =", b64(enc)); print("ENC_WRAP_STAFF =", b64(wS)); print("ENC_WRAP_ADMIN =", b64(wA))
 ```
 
+**Yearly rotation (manual).** The codes can't auto-rotate (the question key is baked
+into the file and the Firebase passwords are static), but bumping the year is a ~2-min
+job: re-run the recipe above with next year's codes (e.g. `erdr2027` / `guest2027`),
+paste the new blobs, push, then update the two Firebase account passwords in the
+console. **Current staff/guest codes carry the `2026` suffix — next bump: the 2027
+hiring round.**
+
 ## One link, three audiences
 The same `index.html` serves everyone; what you can do depends on the code you type:
 - **ED physician / committee** — the staff code → Screen · Availability · Score.

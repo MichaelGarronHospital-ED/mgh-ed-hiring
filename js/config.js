@@ -17,20 +17,17 @@ export const firebaseConfig = {
 };
 
 // ---- 2. Access ------------------------------------------------------------
-// There is NO committee code stored here on purpose. The committee code (shared
-// with the team out-of-band) is what people type to enter, and it doubles as the
-// key that decrypts the (otherwise unreadable) interview questions. Admins use
-// the same code + "!" and additionally see the Ranking tab. To change the code
-// you must re-encrypt the questions — see README.md → "Changing the committee code".
-//
-// APPLICANTS use a DIFFERENT code on the same link and are taken straight to
-// their own scheduling (they never see the roster, questions, scores, or other
-// applicants). See AUTH below for how this is enforced for real with Firestore.
+// THREE independent codes, none stored here: a STAFF code (ED physicians) and an
+// ADMIN code each independently decrypt the questions (wrapped keys in data.js);
+// admins additionally see Panels/Ranking/Setup. A separate GUEST code takes
+// applicants straight to their own scheduling (they never see the roster,
+// questions, scores, or other applicants). To change the staff/admin codes or the
+// questions, re-run the re-keying recipe in README → "Re-keying".
 
 // Applicant/guest code for local mode (no Firebase). Low-value tier (guests only
 // pick their own interview times and see nothing else). In the real (roles) model
 // this same word is the applicant Firebase account password (set in the console).
-export const CANDIDATE_CODE_LOCAL = "guest";
+export const CANDIDATE_CODE_LOCAL = "guest2026";
 
 // ---- 2b. Auth / security model -------------------------------------------
 // mode "anon"  → every client signs in anonymously (baseline; matches the
