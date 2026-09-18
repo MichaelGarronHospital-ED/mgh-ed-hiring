@@ -407,10 +407,12 @@ function panelEditor(p) {
   members.add(chair);
   const slotSel = `<select id="ovslot-${p.cand}" aria-label="Slot">
     ${slotChoices.map((s) => `<option value="${s}" ${String(p.slot) === String(s) ? "selected" : ""}>${escapeHtml(EFF().slots[+s] || s)}${avail[s] ? " · " + avail[s] : ""}</option>`).join("")}</select>`;
-  const memToggles = committee.map((m) => {
+  // pass the committee INDEX (not the name) so names with quotes/apostrophes
+  // (e.g. O'Brien) can't break the inline handler.
+  const memToggles = committee.map((m, idx) => {
     const on = members.has(m.name), isChair = m.name === chair;
     return `<label class="chip" style="cursor:${isChair ? "default" : "pointer"}"><input type="checkbox" ${on ? "checked" : ""} ${isChair ? "disabled" : ""}
-      onchange="IV.toggleMember('${p.cand}','${escapeHtml(m.name)}',this.checked)" style="margin-right:.35rem"/>${escapeHtml(m.name)}${isChair ? " (chair)" : ""}</label>`;
+      onchange="IV.toggleMember('${p.cand}',${idx},this.checked)" style="margin-right:.35rem"/>${escapeHtml(m.name)}${isChair ? " (chair)" : ""}</label>`;
   }).join("");
   return `<div style="margin-top:.7rem; border-top:1px solid var(--line-2); padding-top:.7rem">
     <div class="row center" style="gap:.5rem; flex-wrap:wrap"><span class="muted small">Time</span>${slotSel}</div>
@@ -551,7 +553,8 @@ window.IV = {
   },
   // panels
   editPanel: (cid) => { ui.editPanel = ui.editPanel === cid ? null : cid; renderPanels(); },
-  toggleMember: (cid, name, on) => {
+  toggleMember: (cid, idx, on) => {
+    const name = (EFF().committee[idx] || {}).name; if (!name) return;
     ui._draft = ui._draft || {};
     const p = computePanels().panels.find((x) => x.cand === cid);
     const base = (ui._draft[cid] && ui._draft[cid].members) || (EFF().overrides[cid] && EFF().overrides[cid].members) || (p && p.members) || [EFF().chair];

@@ -48,15 +48,27 @@ sample candidates. Data does **not** sync across devices in this mode.
 The questions are encrypted with the code, so changing it means re-encrypting them.
 Run this (Python 3), then paste the new `ENC_CIPHER` into [`js/data.js`](js/data.js):
 
+The keystream is `HKDF-Expand(SHA-256)` of a PBKDF2-derived PRK (this two-step is
+what lets the same cipher decrypt in Firefox as well as Chrome/Safari). Run this
+(Python 3), then paste the new `ENC_CIPHER` into [`js/data.js`](js/data.js) **and**
+`mock.html`:
+
 ```python
-import hashlib, json, base64
+import hashlib, hmac, json, base64
 CODE = "your-new-code"            # committee code (no trailing "!")
 QUESTIONS = [ ... ]               # the 10 questions
 SCALE = [ ... ]; GUIDE = [ ... ]  # the 5 scale levels + guidance bullets
-salt=b"ed-mock-salt-01!"; iters=100000
-pt=json.dumps({"q":QUESTIONS,"s":SCALE,"g":GUIDE},ensure_ascii=False).encode()
-ks=hashlib.pbkdf2_hmac("sha256",CODE.encode(),salt,iters,dklen=len(pt))
-print(base64.b64encode(bytes(a^b for a,b in zip(pt,ks))).decode())
+salt = base64.b64decode("ZWQtbW9jay1zYWx0LTAxIQ=="); iters = 100000  # = ENC_SALT/ENC_ITER
+def hkdf(ikm, salt, length, info=b""):     # RFC 5869, matches WebCrypto HKDF
+    prk = hmac.new(salt, ikm, hashlib.sha256).digest()
+    okm, t, i = b"", b"", 1
+    while len(okm) < length:
+        t = hmac.new(prk, t + info + bytes([i]), hashlib.sha256).digest(); okm += t; i += 1
+    return okm[:length]
+pt = json.dumps({"q":QUESTIONS,"s":SCALE,"g":GUIDE}, ensure_ascii=False).encode()
+prk = hashlib.pbkdf2_hmac("sha256", CODE.encode(), salt, iters, dklen=32)
+ks = hkdf(prk, salt, len(pt))
+print(base64.b64encode(bytes(a ^ b for a, b in zip(pt, ks))).decode())
 ```
 
 ## One link, three audiences
