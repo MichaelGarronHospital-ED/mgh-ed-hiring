@@ -12,6 +12,8 @@ import { decryptContent } from "./data.js";
 import { LocalStore, FirestoreStore, key } from "./store.js";
 import { autoPanels } from "./panels.js";
 import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell } from "./util.js";
+import { effectiveSlots, slotLabel, slotTimeLabel, groupByDate, checkSlot, splitRange, responseCounts,
+         newSlotId, isStructured, fmtDate } from "./slots.js";
 
 let QUESTIONS = [], SCALE = [], GUIDE = [];
 let store = null, S = null;
@@ -26,13 +28,18 @@ const ADMIN_SCOPES = ["candidates", "screening", "availIv", "availCand", "scores
 const lastKey = (name) => String(name || "").trim().split(/\s+/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
 
 // Effective config: admin-set settings (DB) if present, else placeholder defaults.
+// `slots` = interview times [{id,date,start,end}] in date order; everything that
+// references a time (availability, panels) uses its stable `id`, never a position.
 function EFF() {
   const s = (S && S.settings) || {};
   const committee = s.committee && s.committee.length ? s.committee : COMMITTEE;
-  const slots = s.slots && s.slots.length ? s.slots : SLOTS;
+  const slots = effectiveSlots(s, SLOTS);
   return { committee, chair: s.chair || CHAIR, slots, oneDrive: s.oneDrive || ONEDRIVE,
-    overrides: s.panelOverrides || {}, slotIds: slots.map((_, i) => String(i)) };
+    overrides: s.panelOverrides || {}, slotIds: slots.map((t) => t.id) };
 }
+const slotName = (id) => slotLabel(EFF().slots.find((t) => t.id === String(id)));
+// only answers for times that still exist count (edited/removed times leave stale keys)
+const liveAnswers = (map) => { const ids = new Set(EFF().slotIds); return Object.keys(map || {}).filter((k) => ids.has(k)); };
 // availability for a candidate: support both committee-keyed (candId, legacy) and
 // applicant-keyed (last name) documents.
 const availForCand = (c) => (S.availCand[c.id]) || (S.availCand[lastKey(c.name)]) || {};
@@ -105,14 +112,14 @@ async function initStore(role, typed) {
     if (ui.role === "candidate") { if ($("#candview") && !$("#candview").classList.contains("hidden")) renderCandidate(); }
     else if ($("#app") && !$("#app").classList.contains("hidden")) {
       renderBanner(); render();
-      if (setupOpen()) { renderSettings(); wireSections(); }   // keep the open Setup modal live
+      refreshSetup();   // keep the open Setup modal live
     }
-    // self-heal: mirror the committee's slot list to the PII-free public doc so
-    // applicants see ALL interview dates (dates added before this mirror existed
-    // only made it into config). Runs once per admin session.
-    if (ui.role === "admin" && !ui._syncedSlots && isConfigured() && S.settings.slots && S.settings.slots.length) {
-      ui._syncedSlots = true;
-      store.syncPublicSlots(S.settings.slots);
+    // self-heal: mirror the committee's time list to the PII-free public doc so
+    // applicants always see the same times. Runs once per admin session.
+    if (ui.role === "admin" && !ui._syncedSlots && isConfigured()) {
+      const st = S.settings;
+      const pub = Array.isArray(st.times) ? { times: st.times } : (st.slots && st.slots.length ? { slots: st.slots } : null);
+      if (pub) { ui._syncedSlots = true; store.syncPublicSlots(pub).catch(() => { ui._syncedSlots = false; }); }
     }
   });
   S = store.getState();
@@ -128,7 +135,8 @@ async function loadFirestore() {
   return {
     app, auth: au.getAuth(app), authFns: au,
     db: f.getFirestore(app), collection: f.collection, doc: f.doc,
-    setDoc: f.setDoc, updateDoc: f.updateDoc, onSnapshot: f.onSnapshot,
+    setDoc: f.setDoc, updateDoc: f.updateDoc, onSnapshot: f.onSnapshot, runTransaction: f.runTransaction,
+    deleteField: f.deleteField,
   };
 }
 
@@ -343,12 +351,13 @@ function renderScreen() {
 }
 
 // ------------------------------------------------------ shared slot control
-function slotRows(map, handler) {
-  const seg = (i, v, l, cur) => `<button class="${cur === v ? "on " + v : ""}" aria-pressed="${cur === v}" onclick="${handler}(${i},'${v}')">${l}</button>`;
-  return EFF().slots.map((label, i) => {
-    const cur = map[String(i)];
-    return `<div>${escapeHtml(label)}</div><div><span class="seg" role="group" aria-label="${escapeHtml(label)}">${seg(i, "ip", "In person", cur)}${seg(i, "zoom", "Zoom", cur)}${seg(i, "either", "Either", cur)}</span></div>`;
-  }).join("");
+// one row per time, grouped under a date heading; buttons carry the time's id
+function slotRows(slots, map, handler) {
+  const seg = (id, v, l, cur) => `<button class="${cur === v ? "on " + v : ""}" aria-pressed="${cur === v}" onclick="${handler}('${id}','${v}')">${l}</button>`;
+  return groupByDate(slots).map((g) => `<div class="slotday">${escapeHtml(g.title)}</div>` + g.items.map((t) => {
+    const cur = map[t.id], label = slotTimeLabel(t);
+    return `<div class="slabel">${escapeHtml(label)}</div><div><span class="seg" role="group" aria-label="${escapeHtml(slotLabel(t))}">${seg(t.id, "ip", "In person", cur)}${seg(t.id, "zoom", "Zoom", cur)}${seg(t.id, "either", "Either", cur)}</span></div>`;
+  }).join("")).join("");
 }
 
 // ------------------------------------------------------ 2 · Availability
@@ -359,15 +368,15 @@ function renderAvailability() {
     in person, by Zoom, or either. Leave a time untouched if you're not available. Tap a highlighted option again to clear it.
     <b>Your choices save automatically</b> (watch the “✓ Saved” note at the top).</div>`;
   html += slots.length
-    ? `<div class="card"><div class="slotgrid"><div class="h">Interview time</div><div class="h">I can do…</div>${slotRows(map, "IV.avail")}</div></div>`
-    : empty("🗓️", "No interview times yet", ui.isAdmin ? "Add interview times in the Setup tab." : "Leadership hasn't published the interview times yet — check back soon.");
+    ? `<div class="card"><div class="slotgrid"><div class="h">Interview time</div><div class="h">I can do…</div>${slotRows(slots, map, "IV.avail")}</div></div>`
+    : empty("🗓️", "No interview times yet", ui.isAdmin ? "Add interview times in Setup (the gear icon)." : "Leadership hasn't published the interview times yet — check back soon.");
 
   if (ui.isAdmin) {
     const { committee } = EFF();
-    const ivSubmitted = committee.filter((m) => Object.keys(S.availIv[m.name] || {}).length);
-    const ivNot = committee.filter((m) => !Object.keys(S.availIv[m.name] || {}).length).map((m) => m.name);
-    const candWith = activeCands().filter((c) => Object.keys(availForCand(c)).length);
-    const candNot = activeCands().filter((c) => !Object.keys(availForCand(c)).length).map((c) => c.name);
+    const ivSubmitted = committee.filter((m) => liveAnswers(S.availIv[m.name]).length);
+    const ivNot = committee.filter((m) => !liveAnswers(S.availIv[m.name]).length).map((m) => m.name);
+    const candWith = activeCands().filter((c) => liveAnswers(availForCand(c)).length);
+    const candNot = activeCands().filter((c) => !liveAnswers(availForCand(c)).length).map((c) => c.name);
     const dash = `<div class="note">Who still needs to send their availability. Chase before you build panels.</div>
       <p><b>Interviewers:</b> ${ivSubmitted.length}/${committee.length} submitted.
         ${ivNot.length ? `<br><span class="muted small">Waiting on:</span> ${ivNot.map((n) => `<span class="chip">${escapeHtml(n)}</span>`).join("")}` : '<span class="ok small">✓ all in</span>'}</p>
@@ -446,9 +455,11 @@ function computePanels() {
   const byCand = {};
   res.panels.forEach((p) => { byCand[p.cand] = { ...p, valid: validatePanel(p.members, p.slot, p.modality) }; });
   let unsched = res.unschedulable.slice();
+  const lostTime = []; // manual panels whose time was removed → fall back to auto
   Object.entries(overrides).forEach(([cid, ov]) => {
     if (!activeCands().some((c) => c.id === cid)) return;
     if (!ov || !ov.members || !ov.members.length) return;
+    if (!slotIds.includes(String(ov.slot))) { lostTime.push(cid); return; }
     const avail = candidates[cid] ? candidates[cid].avail : {};
     // always include the current chair; keep only current committee members
     const names = new Set(committee.map((m) => m.name));
@@ -459,7 +470,7 @@ function computePanels() {
     unsched = unsched.filter((x) => x !== cid);
   });
   const panels = Object.values(byCand).sort((a, b) => slotIds.indexOf(a.slot) - slotIds.indexOf(b.slot));
-  return { panels, unschedulable: unsched, understaffed: res.understaffed, interviewers };
+  return { panels, unschedulable: unsched, understaffed: res.understaffed, interviewers, lostTime };
 }
 
 function renderPanels() {
@@ -482,7 +493,7 @@ function renderPanels() {
   html += res.panels.map((p) => {
     const editing = ui.editPanel === p.cand;
     const v = p.valid || validatePanel(p.members, p.slot, p.modality);
-    let card = `<div class="panelbox"><div class="row center"><div class="grow"><b>${escapeHtml(nameOf(p.cand))}</b> · ${escapeHtml(slots[+p.slot] || "?")} ${modPill(p.modality)} ${p.manual ? '<span class="pill neutral">manual</span>' : ""}</div>
+    let card = `<div class="panelbox"><div class="row center"><div class="grow"><b>${escapeHtml(nameOf(p.cand))}</b> · ${escapeHtml(slotName(p.slot))} ${modPill(p.modality)} ${p.manual ? '<span class="pill neutral">manual</span>' : ""}</div>
       <button class="btn ghost small" onclick="IV.editPanel('${p.cand}')">${editing ? "Close" : "Edit"}</button></div>
       <div class="small" style="margin-top:.4rem">${p.members.map(escapeHtml).join(" · ")}</div>
       <div class="badges"><span class="badge ${v.sizeOk ? "ok" : "bad"}">${v.sizeOk ? "✓" : "✗"} ${v.size} member${v.size === 1 ? "" : "s"}</span>
@@ -492,11 +503,13 @@ function renderPanels() {
     return card + `</div>`;
   }).join("") || `<div class="card">${empty("🧩", "No panels yet", "Panels appear once interviewers and applicants submit availability.")}</div>`;
 
-  if (res.unschedulable.length || res.understaffed.length) {
+  if (res.unschedulable.length || res.understaffed.length || res.lostTime.length) {
     html += `<div class="card"><b><span aria-hidden="true">⚠</span> Needs attention</b><ul class="small">
+      ${res.lostTime.map((id) => `<li><b>${escapeHtml(nameOf(id))}</b> — their manual panel was at a time that has since been removed or changed; showing the auto-suggestion instead.
+        <button class="linky" onclick="IV.clearOverride('${id}')">dismiss</button></li>`).join("")}
       ${res.unschedulable.map((id) => `<li><b>${escapeHtml(nameOf(id))}</b> — no available time yields a balanced panel.
         <button class="linky" onclick="IV.editPanel('${id}')">schedule manually</button></li>`).join("")}
-      ${res.understaffed.map((s) => `<li>${escapeHtml(slots[+s])} — not enough available interviewers for a balanced panel.</li>`).join("")}
+      ${res.understaffed.map((s) => `<li>${escapeHtml(slotName(s))} — not enough available interviewers for a balanced panel.</li>`).join("")}
     </ul>${res.unschedulable.map((id) => ui.editPanel === id ? `<div class="panelbox">${panelEditor({ cand: id, slot: null, members: [] })}</div>` : "").join("")}</div>`;
   }
   $("#panels").innerHTML = html;
@@ -507,11 +520,13 @@ function panelEditor(p) {
   const { committee, chair } = EFF();
   const c = cand(p.cand);
   const avail = c ? availForCand(c) : {};
-  const slotChoices = Object.keys(avail).length ? Object.keys(avail) : EFF().slotIds;
+  // their available times (in date order), else every time; always keep the current one
+  const live = liveAnswers(avail);
+  const slotChoices = EFF().slotIds.filter((id) => !live.length || live.includes(id) || id === String(p.slot));
   const members = new Set(p.members && p.members.length ? p.members : [chair]);
   members.add(chair);
   const slotSel = `<select id="ovslot-${p.cand}" aria-label="Slot">
-    ${slotChoices.map((s) => `<option value="${s}" ${String(p.slot) === String(s) ? "selected" : ""}>${escapeHtml(EFF().slots[+s] || s)}${avail[s] ? " · " + avail[s] : ""}</option>`).join("")}</select>`;
+    ${slotChoices.map((s) => `<option value="${s}" ${String(p.slot) === String(s) ? "selected" : ""}>${escapeHtml(slotName(s))}${avail[s] ? " · " + avail[s] : ""}</option>`).join("")}</select>`;
   const curMod = p.modality || (avail[p.slot] === "zoom" ? "zoom" : "ip");
   const modSel = `<span class="seg" id="ovmod-${p.cand}" role="group" aria-label="Modality">
     ${["ip", "zoom"].map((mv) => `<button type="button" class="${curMod === mv ? "on" : ""}" onclick="IV.setOvMod('${p.cand}','${mv}',this)">${mv === "ip" ? "In person" : "Zoom"}</button>`).join("")}</span>`;
@@ -562,10 +577,7 @@ function renderSettings() {
     <div style="margin-top:.5rem"><button class="btn tinted small" onclick="IV.setCommittee(this)">Save committee</button></div>`;
   const chairBody = `<div class="note">The chair is on every panel.</div>
     <select onchange="IV.setChair(this.value)" aria-label="Panel chair">${committee.map((m) => `<option value="${escapeHtml(m.name)}" ${m.name === chair ? "selected" : ""}>${escapeHtml(m.name)}</option>`).join("")}</select>`;
-  const slotsBody = `<div class="note">Add each interview time. These are also what applicants pick from.</div>
-    <div class="tablewrap"><table><tbody>${slots.map((s, i) => `<tr><td>${escapeHtml(s)}</td><td style="text-align:right"><button class="linky danger" onclick="IV.removeSlot(${i})">remove</button></td></tr>`).join("") || '<tr><td class="muted small">No times yet.</td></tr>'}</tbody></table></div>
-    <div class="row center" style="margin-top:.6rem"><input id="slotIn" type="text" placeholder="e.g. Oct 1 · 10:45" style="flex:1" aria-label="New interview time" onkeydown="if(event.key==='Enter')IV.addSlot(this)"/>
-      <button class="btn tinted small" onclick="IV.addSlot(this)">Add time</button></div>`;
+  const slotsBody = timesEditor(slots);
   const odBody = `<div class="note">Committee members open CVs from here. Stored privately (not in code).</div>
     <input id="odIn" type="text" placeholder="https://..." value="${escapeHtml(oneDrive === "#" ? "" : oneDrive)}" aria-label="OneDrive link"/>
     <div style="margin-top:.5rem"><button class="btn tinted small" onclick="IV.saveOneDrive(this)">Save link</button></div>`;
@@ -575,9 +587,116 @@ function renderSettings() {
       Screen tab) the applicant list. Nothing is hard-coded.</div>
     ${section("setChair", "Panel chair", chair, chairBody, { open: false, info: "The chair is on every interview panel. Pick from your committee list below." })}
     ${section("setCommittee", "Committee (interviewers)", `${committee.length} members`, committeeBody, { open: false, info: "Your interviewers. One per line as ‘Name, F’ or ‘Name, M’. The F/M is self-identified and used only to build balanced panels — it is never shown as a label. Saving replaces the whole list." })}
-    ${section("setSlots", "Interview times", `${slots.length} time${slots.length === 1 ? "" : "s"}`, slotsBody, { open: false, info: "The interview time slots. Interviewers and applicants both choose from these. Add or remove them any time." })}
+    ${section("setSlots", "Interview times", `${slots.length} time${slots.length === 1 ? "" : "s"}`, slotsBody, { open: false, info: "The interview times interviewers and applicants choose from. Add a single time or a block of back-to-back times; edit or remove any time. If people already answered for a time you change, you choose whether to keep their answers or ask them again." })}
     ${section("setOneDrive", "Applications folder (OneDrive)", "", odBody, { open: false, info: "Link to the access-controlled OneDrive folder holding the CVs/cover letters. Committee members open applicant files from here. Stored privately, never in the app's code." })}
     <div class="note" style="margin-top:1rem">Add or remove <b>applicants (interviewees)</b> on the <b>Screen</b> tab → “Add candidates”.</div>`;
+}
+
+// ---------------------------------------------- Setup → Interview times editor
+// Draft form values live in `ui` so a live re-render (someone else saving) never
+// wipes what the admin is typing.
+const tAdd = () => (ui.tAdd = ui.tAdd || { date: "", from: "", to: "", len: "60" });
+const pl = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const hhmmOf = (v) => String(v || "").slice(0, 5); // some browsers report "09:00:00"
+// answers per time, counting only people who matter (same basis as the dashboard)
+const answerCounts = () => responseCounts(EFF().committee.map((m) => S.availIv[m.name]), activeCands().map(availForCand));
+// Setup re-renders on every live update. Hold it while the admin is typing in a
+// times form or a save is in flight (a re-render would close pickers, drop a
+// half-typed date, or swap the busy button), then catch up shortly after.
+const setupBusy = () => ui.tBusy || !!(document.activeElement && document.activeElement.closest && document.activeElement.closest("#settings .tform"));
+function refreshSetup() {
+  if (!setupOpen()) return;
+  if (setupBusy()) { ui.setupStale = true; return; }
+  ui.setupStale = false; rerenderSettings();
+}
+function flushSetup() {
+  clearTimeout(flushSetup._t);
+  // delay so a click that moved focus (e.g. onto Save) completes on the old DOM first
+  flushSetup._t = setTimeout(() => { if (ui.setupStale) refreshSetup(); }, 250);
+}
+// after our own save, always show the result (Safari leaves focus in the form)
+// A counter, not a flag, so overlapping saves don't release each other early.
+async function timesBusy(fn) {
+  // iOS leaves focus in the input when a button is tapped; drop it so the
+  // confirmed change (which lands after the save resolves) isn't held back
+  const a = document.activeElement;
+  if (a && a.closest && a.closest("#settings .tform")) a.blur();
+  ui.tBusy = (ui.tBusy || 0) + 1;
+  try { return await fn(); }
+  finally { ui.tBusy--; if (!ui.tBusy && ui.setupStale && setupOpen()) { ui.setupStale = false; rerenderSettings(); } }
+}
+function answersText(c) {
+  if (!c || (!c.iv && !c.cand)) return "";
+  return [c.iv ? pl(c.iv, "interviewer") : "", c.cand ? pl(c.cand, "applicant") : ""].filter(Boolean).join(" and ");
+}
+// who is currently scheduled (auto or manual) at the given time ids
+function panelsAt(ids) {
+  const set = new Set(ids);
+  let res; try { res = computePanels(); } catch { return []; }
+  return res.panels.filter((p) => set.has(String(p.slot)))
+    .map((p) => ({ name: (cand(p.cand) || {}).name || p.cand, manual: !!p.manual, time: p.slot }));
+}
+function addPreview() {
+  const a = tAdd();
+  const items = a.date ? splitRange(a.date, a.from, a.to, +a.len) : [];
+  if (!a.date || !a.from || !a.to) return `<span class="muted">Pick a date, a start and an end.</span>`;
+  if (!items.length) return +a.len && a.to > a.from
+    ? `<span class="bad">That range is shorter than one ${a.len}-minute interview.</span>`
+    : `<span class="bad">The end must be after the start.</span>`;
+  return `Adds <b>${pl(items.length, "time")}</b> on ${escapeHtml(fmtDate(a.date))}: ${items.map((t) => escapeHtml(slotTimeLabel(t))).join(", ")}`;
+}
+function timesEditor(slots) {
+  const counts = answerCounts();
+  const booked = {}; panelsAt(slots.map((t) => t.id)).forEach((p) => { booked[p.time] = (booked[p.time] || 0) + 1; });
+  const ed = ui.tEdit;
+  const row = (t) => {
+    if (ed && ed.id === t.id) return `<div class="trow editing">
+      <div class="tform">
+        <label>Date<input type="date" id="tEdDate" value="${escapeHtml(ed.date)}" oninput="IV.tEditField('date',this.value)"/></label>
+        <label>Start<input type="time" id="tEdStart" value="${escapeHtml(ed.start)}" oninput="IV.tEditField('start',this.value)"/></label>
+        <label>End<input type="time" id="tEdEnd" value="${escapeHtml(ed.end)}" oninput="IV.tEditField('end',this.value)"/></label>
+      </div>
+      <div class="adminbar" style="margin-top:.5rem"><button class="btn tinted small" onclick="IV.tSave(this)">Save</button>
+        <button class="btn ghost small" onclick="IV.tEditCancel()">Cancel</button></div></div>`;
+    const c = answersText(counts[t.id]);
+    const b = booked[t.id] ? `<span class="pill neutral">panel booked</span>` : "";
+    return `<div class="trow"><div class="grow"><span class="ttime">${escapeHtml(slotTimeLabel(t))}</span>
+        <span class="muted small">${c ? escapeHtml(c) + " answered" : "no answers yet"}</span> ${b}</div>
+      <button class="linky" onclick="IV.tEdit('${t.id}')" aria-label="Edit ${escapeHtml(slotLabel(t))}">edit</button>
+      <button class="linky danger" onclick="IV.tRemove(['${t.id}'])" aria-label="Remove ${escapeHtml(slotLabel(t))}">remove</button></div>`;
+  };
+  const list = groupByDate(slots).map((g) => `<div class="tgroup">
+      <div class="tgroup-h"><b>${escapeHtml(g.title)}</b> <span class="muted small">· ${pl(g.items.length, "time")}</span>
+        <button class="linky danger small" onclick="IV.tRemoveDay('${g.date}')">remove day</button></div>
+      ${g.items.map(row).join("")}</div>`).join("")
+    || `<div class="muted small" style="padding:.4rem 0">No interview times yet — add some below. Interviewers and applicants will see “times not posted yet” until you do.</div>`;
+  const a = tAdd();
+  const lens = [["0", "One time (whole range)"], ["30", "30-min interviews"], ["45", "45-min interviews"], ["60", "1-hour interviews"], ["90", "90-min interviews"]];
+  return `<div class="note">Everyone picks their availability from these. Changes save immediately and update everyone's screen live.
+      Answers stay attached to a time even if you edit it or add others.</div>
+    ${list}
+    <div class="tadd">
+      <div class="tadd-h"><b>Add times</b></div>
+      <div class="tform">
+        <label>Date<input type="date" id="tAddDate" value="${escapeHtml(a.date)}" oninput="IV.tAddField('date',this.value)"/></label>
+        <label>From<input type="time" id="tAddFrom" value="${escapeHtml(a.from)}" oninput="IV.tAddField('from',this.value)"/></label>
+        <label>To<input type="time" id="tAddTo" value="${escapeHtml(a.to)}" oninput="IV.tAddField('to',this.value)"/></label>
+        <label>Split into<select id="tAddLen" onchange="IV.tAddField('len',this.value)">${lens.map(([v, l]) => `<option value="${v}" ${a.len === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+      </div>
+      <div id="tAddPreview" class="small" style="margin:.55rem 0">${addPreview()}</div>
+      <button class="btn tinted small" onclick="IV.tAdd(this)">Add</button>
+    </div>`;
+}
+// Re-render Setup while it's open without losing focus/typing in plain fields.
+function rerenderSettings() {
+  const act = document.activeElement, id = act && act.id;
+  const keep = {}; ["commBulk", "odIn"].forEach((k) => { const el = document.getElementById(k); if (el && el.value !== el.defaultValue) keep[k] = el.value; });
+  const sel = act && typeof act.selectionStart === "number" ? [act.selectionStart, act.selectionEnd] : null;
+  if (ui.tEdit && !EFF().slotIds.includes(ui.tEdit.id)) { ui.tEdit = null; toast("The time you were editing was just removed by someone else", "err"); }
+  renderSettings(); wireSections();
+  Object.entries(keep).forEach(([k, v]) => { const el = document.getElementById(k); if (el) el.value = v; });
+  const el = id && document.getElementById(id);
+  if (el && $("#settings").contains(el)) { el.focus(); if (sel) try { el.setSelectionRange(sel[0], sel[1]); } catch { /* date/time inputs */ } }
 }
 
 // ------------------------------------------------------------ candidate view
@@ -589,7 +708,7 @@ function proceedCandidate() {
 }
 function renderCandidate() {
   const el = $("#candview");
-  const slots = (S.settings.slots && S.settings.slots.length) ? S.settings.slots : SLOTS;
+  const slots = effectiveSlots(S.settings, SLOTS);
   if (!ui.candLast) {
     el.innerHTML = `<div class="overlay"><div class="overlay-box"><div class="logo" aria-hidden="true">ED</div>
       <h2>Interview availability</h2><p class="muted">Enter your last name to pick the times that work for you.
@@ -613,7 +732,6 @@ function renderCandidate() {
     || (ui.candLast ? ui.candLast.charAt(0).toUpperCase() + ui.candLast.slice(1) : "");
   // read by the SAME normalized key we write under (ui.candLast), not the display name
   const map = S.availCand[ui.candLast] || {};
-  const seg = (i, v, l) => `<button class="${map[String(i)] === v ? "on " + v : ""}" aria-pressed="${map[String(i)] === v}" onclick="CAND.set(${i},'${v}')">${l}</button>`;
   el.innerHTML = `<header class="page"><div class="brandrow"><div class="brandmark" aria-hidden="true">ED</div>
       <div class="grow"><h1>${escapeHtml(ORG_NAME)}</h1><p class="muted">Interview availability</p></div>
       <button class="linky" onclick="CAND.logout()">Log out</button></div></header>
@@ -624,7 +742,7 @@ function renderCandidate() {
         <div class="note tip" style="margin:.5rem 0">For each time you can make, choose <b>in person</b>, <b>Zoom</b>, or <b>either</b>.
           In-person interviews are encouraged where possible. Your choices save automatically — you can come back and update them.</div>
         <div class="slotgrid"><div class="h">Interview time</div><div class="h">I can attend…</div>
-          ${slots.map((label, i) => `<div>${escapeHtml(label)}</div><div><span class="seg" role="group" aria-label="${escapeHtml(label)}">${seg(i, "ip", "In person")}${seg(i, "zoom", "Zoom")}${seg(i, "either", "Either")}</span></div>`).join("")}</div>
+          ${slotRows(slots, map, "CAND.set")}</div>
         <div class="muted small" style="margin-top:.9rem">Saved automatically. You'll be contacted with your final interview time.</div></div>`
         : `<div class="card">${empty("🗓️", "Times not posted yet", "The interview times haven't been published yet. Please check back soon.")}</div>`}
     </main>`;
@@ -671,7 +789,7 @@ window.IV = {
     if (v) { const ok = await confirmDialog(`Remove ${c ? c.name : "this candidate"} from the interview list? You can restore them later.`, { title: "Remove candidate", yes: "Remove" }); if (!ok) return; }
     await store.setCandidateRemoved(id, v); toast(v ? "Removed" : "Restored", "ok");
   },
-  avail: (i, v) => { const cur = (S.availIv[ui.member] || {})[String(i)]; saved(store.setAvail("iv", ui.member, String(i), cur === v ? null : v)); },
+  avail: (id, v) => { const cur = (S.availIv[ui.member] || {})[id]; saved(store.setAvail("iv", ui.member, id, cur === v ? null : v)); },
   pickScore: (id) => { ui.scoreCand = id; renderScore(); wireSections(); },
   note: (qi, val) => saveNoteKeyed(ui.member, ui.scoreCand, qi, val),
   score: (n) => { const cur = (S.scores[key(ui.member, ui.scoreCand)] || {}).overall; saved(store.setScore(ui.member, ui.scoreCand, { overall: cur === n ? 0 : n })); },
@@ -708,12 +826,20 @@ window.IV = {
       const ok = await confirmDialog("This panel isn't balanced (needs at least one member who identifies as female and one as male). Save it anyway?", { title: "Unbalanced panel", yes: "Save anyway", danger: false });
       if (!ok) return;
     }
-    const ov = { ...EFF().overrides, [cid]: { slot: String(slot), members, modality } };
-    await withBusy(btn, () => store.setSettings({ panelOverrides: ov }), "Panel saved");
+    // write just this entry onto the latest saved map (never a stale copy of the rest)
+    const entry = { slot: String(slot), members, modality };
+    try {
+      await withBusy(btn, () => store.updateConfig((c) => ({ panelOverrides: { ...(c.panelOverrides || {}), [cid]: entry } })), "Panel saved");
+    } catch { return; }
     if (ui._draft) delete ui._draft[cid];
     ui.editPanel = null; renderPanels();
   },
-  clearOverride: async (cid) => { const ov = { ...EFF().overrides }; delete ov[cid]; await store.setSettings({ panelOverrides: ov }); toast("Reset to auto", "ok"); ui.editPanel = null; renderPanels(); },
+  clearOverride: async (cid) => {
+    try {
+      await store.updateConfig((c) => { const ov = { ...(c.panelOverrides || {}) }; delete ov[cid]; return { panelOverrides: ov }; });
+    } catch { toast("Couldn't save — check your connection", "err"); return; }
+    toast("Reset to auto", "ok"); ui.editPanel = null; renderPanels();
+  },
   clearOverrides: (btn) => withBusy(btn, async () => {
     const ok = await confirmDialog("Discard all manual panel edits and go back to the auto-suggested panels?", { title: "Reset manual edits", yes: "Reset" });
     if (!ok) return; await store.setSettings({ panelOverrides: {} }); renderPanels();
@@ -732,10 +858,9 @@ window.IV = {
     downloadFile("shortlist.csv", rows.map((r) => r.map(csvCell).join(",")).join("\r\n")); toast("Shortlist exported", "ok");
   },
   exportSchedule: () => {
-    const { slots } = EFF();
     const res = computePanels();
     const rows = [["Candidate", "Time", "Modality", "Panel"]];
-    res.panels.forEach((p) => rows.push([(cand(p.cand) || {}).name || p.cand, slots[+p.slot] || "", p.modality, p.members.join(" / ")]));
+    res.panels.forEach((p) => rows.push([(cand(p.cand) || {}).name || p.cand, slotName(p.slot), p.modality, p.members.join(" / ")]));
     res.unschedulable.forEach((id) => rows.push([(cand(id) || {}).name || id, "UNSCHEDULED", "", ""]));
     downloadFile("schedule.csv", rows.map((r) => r.map(csvCell).join(",")).join("\r\n")); toast("Schedule exported", "ok");
   },
@@ -761,24 +886,130 @@ window.IV = {
     if (!list.length) { toast("Add at least one member", "err"); return; }
     // drop members that no longer exist from any saved panel override
     const names = new Set(list.map((m) => m.name));
-    const ov = pruneOverrides(EFF().overrides, (mem) => mem.filter((n) => names.has(n)));
-    await store.setSettings({ committee: list, panelOverrides: ov });
+    await store.updateConfig((c) => ({ committee: list,
+      panelOverrides: pruneOverrides(c.panelOverrides, (mem) => mem.filter((n) => names.has(n))) }));
   }, "Committee saved"),
   setChair: async (v) => {
     // swap the old chair for the new one in every saved override, keep chair present
-    const old = EFF().chair;
-    const ov = pruneOverrides(EFF().overrides, (mem) => {
-      const set = new Set(mem.filter((n) => n !== old)); set.add(v); return [...set];
-    });
-    await store.setSettings({ chair: v, panelOverrides: ov });
+    try {
+      await store.updateConfig((c) => {
+        const old = c.chair || CHAIR;
+        return { chair: v, panelOverrides: pruneOverrides(c.panelOverrides, (mem) => {
+          const set = new Set(mem.filter((n) => n !== old)); set.add(v); return [...set];
+        }) };
+      });
+    } catch { toast("Couldn't save — check your connection", "err"); rerenderSettings(); } // reset the picker
   },
-  addSlot: (btn) => withBusy(btn, async () => { const v = ($("#slotIn").value || "").trim(); if (!v) return; const l = EFF().slots.slice(); l.push(v); await store.setSettings({ slots: l }); }, "Time added"),
-  removeSlot: async (i) => { const ok = await confirmDialog("Remove this interview time?", { title: "Remove time", yes: "Remove" }); if (!ok) return; const l = EFF().slots.slice(); l.splice(i, 1); await store.setSettings({ slots: l }); toast("Removed", "ok"); },
+  // ---- interview times (see timesEditor). Every write goes through
+  // store.updateTimes, which applies the change to the LATEST saved list, so a
+  // concurrent edit by another admin is merged rather than overwritten.
+  tAddField: (k, v) => { tAdd()[k] = k === "from" || k === "to" ? hhmmOf(v) : v; const el = $("#tAddPreview"); if (el) el.innerHTML = addPreview(); },
+  tAdd: async (btn) => {
+    const a = tAdd();
+    const items = a.date ? splitRange(a.date, a.from, a.to, +a.len) : [];
+    if (!items.length) { toast(!a.date || !a.from || !a.to ? "Pick a date, a start and an end" : "Check the start, end and length", "err"); return; }
+    const cur = EFF().slots, fresh = [], warns = new Set();
+    let dupes = 0;
+    for (const t of items) {
+      const r = checkSlot(t, [...cur, ...fresh]);
+      if (r.errors.some((e) => e.endsWith("already exists."))) { dupes++; continue; }
+      if (r.errors.length) { toast(r.errors[0], "err"); return; }
+      r.warnings.forEach((w) => warns.add(w));
+      fresh.push({ ...t, id: newSlotId() });
+    }
+    if (!fresh.length) { toast(dupes === 1 ? "That time already exists" : "Those times already exist", "err"); return; }
+    if (warns.size && !(await confirmDialog([...warns].join("\n\n") + "\n\nAdd anyway?", { title: "Check these times", yes: "Add anyway", danger: false }))) return;
+    let added = 0;
+    try {
+      await timesBusy(() => withBusy(btn, () => store.updateTimes(SLOTS, (times, overrides) => {
+        added = 0; // re-run safe: a transaction may retry this function
+        const out = times.slice();
+        fresh.forEach((t) => { if (!checkSlot(t, out).errors.length) { out.push(t); added++; } });
+        return { times: out, overrides };
+      })));
+    } catch { return; } // withBusy already showed the error
+    if (!added) { toast("Nothing added — someone else just added those times", "err"); return; }
+    const skipped = items.length - added;
+    toast(`Added ${pl(added, "time")}${skipped ? ` (${skipped} already existed)` : ""}`, "ok");
+  },
+  tEdit: (id) => { const t = EFF().slots.find((x) => x.id === id); if (!t) return; ui.tEdit = { id, date: t.date, start: t.start, end: t.end }; rerenderSettings(); const el = $("#tEdDate"); if (el) el.focus(); },
+  tEditField: (k, v) => { if (ui.tEdit) ui.tEdit[k] = k === "date" ? v : hhmmOf(v); },
+  tEditCancel: () => { ui.tEdit = null; rerenderSettings(); },
+  tSave: async (btn) => {
+    const d = ui.tEdit; if (!d) return;
+    const orig = EFF().slots.find((x) => x.id === d.id);
+    if (!orig) { ui.tEdit = null; rerenderSettings(); toast("That time was just removed by someone else", "err"); return; }
+    if (isStructured(orig) && orig.date === d.date && orig.start === d.start && orig.end === d.end) { ui.tEdit = null; rerenderSettings(); return; }
+    const t = { id: d.id, date: d.date, start: d.start, end: d.end };
+    const r = checkSlot(t, EFF().slots);
+    if (r.errors.length) { toast(r.errors[0], "err"); return; }
+    if (r.warnings.length && !(await confirmDialog(r.warnings.join("\n\n") + "\n\nSave anyway?", { title: "Check this time", yes: "Save anyway", danger: false }))) return;
+    // people already answered for the old time: keep (typo fix) or ask again (real move)
+    let reask = false;
+    const who = answersText(answerCounts()[d.id]);
+    const booked = panelsAt([d.id]);
+    if (who || booked.length) {
+      const was = slotLabel(orig), now = slotLabel(t);
+      const choice = await confirmDialog(
+        `${who ? `${who} already answered for ${was}.` : `A panel is booked for ${was}.`}\n\n` +
+        `• Keep answers — for small corrections; everyone's answers${booked.length ? " and the booked panel" : ""} move to ${now}.\n` +
+        `• Ask again — if the time really changed; their answers for this time are cleared${booked.length ? ", the panel is re-planned," : ""} and they'll need to re-answer (they'll show as “waiting on” again).`,
+        { title: "Change an answered time", yes: "Ask again", alt: "Keep answers", danger: true });
+      if (!choice) return;
+      reask = choice === true;
+    }
+    // timesBusy holds live re-renders until ui.tEdit is cleared below, so our own
+    // "Ask again" (which retires this id) isn't mistaken for someone else's removal
+    await timesBusy(() => withBusy(btn, () => store.updateTimes(SLOTS, (times, overrides) => {
+      const i = times.findIndex((x) => x.id === d.id);
+      if (i < 0) throw new Error("That time was just removed by someone else");
+      const next = { ...t, id: reask ? newSlotId() : d.id };
+      const others = times.filter((x) => x.id !== d.id);
+      const chk = checkSlot(next, others);
+      if (chk.errors.length) throw new Error(chk.errors[0]);
+      const out = others.concat(next);
+      if (reask) Object.keys(overrides).forEach((c) => { if (String(overrides[c].slot) === d.id) delete overrides[c]; });
+      return { times: out, overrides };
+    }), reask ? "Time changed — answers cleared" : "Time updated").then(() => { ui.tEdit = null; ui.setupStale = true; }, () => {}));
+  },
+  tRemove: async (ids) => {
+    const cur = EFF().slots.filter((t) => ids.includes(t.id));
+    if (!cur.length) return;
+    const counts = answerCounts();
+    const tot = cur.reduce((a, t) => { const c = counts[t.id] || {}; a.iv += c.iv || 0; a.cand += c.cand || 0; return a; }, { iv: 0, cand: 0 });
+    const booked = panelsAt(ids);
+    const what = cur.length === 1 ? slotLabel(cur[0])
+      : isStructured(cur[0]) ? `all ${cur.length} times on ${fmtDate(cur[0].date, true)}` : `all ${cur.length} undated times`;
+    let msg = `Remove ${what}?`;
+    const who = answersText(tot);
+    if (who) msg += `\n\n${who} already answered for ${cur.length === 1 ? "it" : "these"} — those answers will be discarded.`;
+    if (booked.length) msg += `\n\nScheduled then: ${booked.map((b) => b.name + (b.manual ? " (manual panel — will be removed)" : "")).join(", ")}. They'll be re-planned into other times if possible.`;
+    const left = EFF().slots.length - cur.length;
+    if (!left) msg += "\n\nThis leaves no interview times — people will see “times not posted yet”.";
+    if (!(await confirmDialog(msg, { title: cur.length === 1 ? "Remove time" : "Remove day", yes: "Remove" }))) return;
+    const gone = new Set(cur.map((t) => t.id));
+    try {
+      await timesBusy(async () => {
+        await store.updateTimes(SLOTS, (times, overrides) => {
+          Object.keys(overrides).forEach((c) => { if (gone.has(String(overrides[c].slot))) delete overrides[c]; });
+          return { times: times.filter((t) => !gone.has(t.id)), overrides };
+        });
+        if (ui.tEdit && gone.has(ui.tEdit.id)) ui.tEdit = null; // our own removal — no "someone else" notice
+        ui.setupStale = true;
+      });
+      toast(cur.length === 1 ? "Time removed" : `${cur.length} times removed`, "ok");
+    } catch (e) { toast((e && e.message) || "Couldn't remove — check your connection", "err"); }
+  },
+  tRemoveDay: (date) => IV.tRemove(EFF().slots.filter((t) => (isStructured(t) ? t.date : "") === date).map((t) => t.id)),
   saveOneDrive: (btn) => withBusy(btn, () => store.setSettings({ oneDrive: ($("#odIn").value || "").trim() || "#" }), "Saved"),
 };
 
 window.CAND = {
-  set: (i, v) => { const cur = (S.availCand[ui.candLast] || {})[String(i)]; store.setAvail("cand", ui.candLast, String(i), cur === v ? null : v); toast("Saved", "ok"); },
+  set: (id, v) => {
+    const cur = (S.availCand[ui.candLast] || {})[id];
+    store.setAvail("cand", ui.candLast, id, cur === v ? null : v)
+      .then(() => toast("Saved", "ok"), () => toast("Couldn't save — check your connection", "err"));
+  },
   rename: () => { sessionStorage.removeItem("ed_iv_cand"); sessionStorage.removeItem("ed_iv_cand_disp"); ui.candLast = null; ui.candDisplay = null; renderCandidate(); },
   logout: () => { ["ed_iv_cand", "ed_iv_cand_disp", "ed_iv_code"].forEach((k) => sessionStorage.removeItem(k)); location.reload(); },
 };
@@ -818,8 +1049,9 @@ $("#memberBtn").onclick = () => { ui.member = $("#memberSel").value; showApp(); 
 $("#changeMember").onclick = () => { ui.member = null; ["#appHeader", "#tabs", "#app"].forEach((s) => $(s).classList.add("hidden")); $("#banner").classList.add("hidden"); proceedToMemberPick(); };
 $("#setupBtn").onclick = () => (setupOpen() ? closeSetup() : openSetup());
 $("#setupClose").onclick = closeSetup;
+$("#settings").addEventListener("focusout", flushSetup); // catch up on held live updates
 $("#setupModal").onclick = (e) => { if (e.target === $("#setupModal")) closeSetup(); };
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && setupOpen()) closeSetup(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.defaultPrevented && setupOpen()) closeSetup(); });
 $("#logout").onclick = () => { ["ed_iv_code", "ed_iv_member", "ed_iv_cand"].forEach((k) => sessionStorage.removeItem(k)); location.reload(); };
 const savedCode = sessionStorage.getItem("ed_iv_code");
 if (savedCode) unlock(savedCode, true);

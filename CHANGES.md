@@ -20,6 +20,39 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## Interview-times editor + stable time ids (Sept 18 2026)
+- **Why:** availability and manual panels were keyed by a time's *position* in the
+  list, so removing or inserting a time silently moved people's answers onto a
+  different time. Times now have permanent ids (`js/slots.js`); legacy lists and the
+  config defaults keep their index as id, so nothing already saved moves.
+- **Setup → Interview times:** grouped by day, per-time answer counts and "panel
+  booked" markers; add a single time or a split block (preview before adding); edit
+  (with **Keep answers** / **Ask again** when people have answered) and remove a
+  time or a whole day (confirmation lists answers and panels affected).
+- **Edge cases:** duplicates blocked; overlap and past-date warnings; end-before-start
+  and too-short ranges caught in the preview; removing the last time now really
+  leaves none (it used to snap back to the config defaults); stale answers for
+  removed times don't count as "submitted"; manual panels at a removed time are
+  dropped and flagged; an admin editing a time that someone else removes is told so.
+- **Concurrency:** writes go through `store.updateTimes`, a Firestore transaction
+  that re-reads the latest list (and writes the applicant mirror in the same commit).
+- **Bug fix:** settings writes used `setDoc(…, {merge:true})`, which deep-merges maps,
+  so deleting a manual panel ("Reset to auto") never removed it in Firestore. Now
+  `mergeFields`, which replaces each written field.
+- **Bug fix (applicants):** saving availability rewrote the whole record from what
+  the page knew. Applicants can't read their saved record (write-only), so tapping one
+  time on a return visit erased everything they had picked before. Now each tap
+  changes only that time, and the applicant's own picks are remembered on their device
+  so they can see them when they come back.
+- Setup no longer loses what you're typing when someone else saves in the meantime.
+  Other people's live changes are held while you're typing and applied when you leave the field.
+- Manual panel saves, chair and committee changes also read the latest saved copy
+  first, so an admin working from an out-of-date screen can't bring back a deleted panel.
+- Verified headlessly (local mode, fictitious data) in Chromium, Firefox and WebKit at
+  1000px and 400px. The Firestore transaction path needs a live check by the operator.
+
+---
+
 ## Unified 3-code login (admin / physicians / guest)
 Replaced the single committee code + "!" convention with **three independent codes**
 shared across the ED tools:

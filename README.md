@@ -53,6 +53,21 @@ sample candidates. Data does **not** sync across devices in this mode.
    the roster placeholders there are just fallbacks until you run Setup.)
 6. Committee → `index.html`; applicants → `book.html`.
 
+## Interview times
+Setup (gear icon) → **Interview times**. Add one time, or a block that's split into
+back-to-back interviews (e.g. Oct 7, 9:00–12:00, 1-hour → three times). Each time can be
+edited or removed, or a whole day at once; changes show on everyone's screen live.
+- Every time has a permanent id (`js/slots.js`); availability and manual panels are
+  keyed by it, so adding/editing/removing one time never shifts answers onto another.
+- Editing a time people already answered asks: **Keep answers** (typo fix — answers
+  and any booked panel move with it) or **Ask again** (real change — old answers are
+  discarded and those people show as "waiting on" again). Removing a time discards its
+  answers and any manual panel there; affected candidates are re-planned.
+- Duplicates are blocked; overlaps and past dates ask for confirmation. Edits run in a
+  Firestore transaction, so two admins editing at once don't overwrite each other.
+- The `SLOTS` in `js/config.js` are only the starting defaults, used until the first
+  edit in Setup. After that the saved list is authoritative, even if it's empty.
+
 ## Re-keying (change the staff / admin codes or the questions)
 The questions are encrypted once with a random content key `K`; `K` is then wrapped
 (`K XOR PBKDF2(code)`) separately under the **staff** and **admin** codes. Changing a
@@ -122,9 +137,9 @@ do these console steps (they can't be done from the repo):
 
 3. **Firestore → Rules →** paste [`firestore.rules`](firestore.rules) → **Publish**.
 4. In [`js/config.js`](js/config.js) set `AUTH.mode = "roles"` and redeploy.
-5. Sign in as **admin**, open **Setup**, and **Save the interview times** once — this
-   publishes the PII-free slot list to `/interviews_public/slots` so applicants can
-   read *only* that.
+5. Sign in as **admin** once — the app publishes the PII-free list of interview times
+   to `/interviews_public/slots` (and again on every edit in Setup → Interview times),
+   so applicants can read *only* that.
 
 What this enforces (server-side, not just UI):
 - Applicants can read **only** the interview slots and write **only** their own

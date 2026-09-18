@@ -26,7 +26,7 @@ body {
   background:var(--bg); -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
   font-size:16px; letter-spacing:-0.011em;
 }
-.hidden { display:none !important; }
+.hidden, [hidden] { display:none !important; }
 .small { font-size:.82rem; }
 .muted { color:var(--mut); font-size:.88rem; }
 .faint { color:var(--faint); }
@@ -301,7 +301,7 @@ ul.small { margin:.4rem 0 0; padding-left:1.2rem; } ul.small li { margin:.3rem 0
   nav.tabs { top:0; border-radius:0; margin-top:0; }
   .slotgrid { grid-template-columns:1fr; gap:.3rem .5rem; }
   .slotgrid .h:last-child { display:none; }
-  .slotgrid > div:nth-child(odd):not(.h) { margin-top:.5rem; font-weight:500; }
+  .slotgrid > .slabel { margin-top:.5rem; font-weight:500; }
 }
 @media print {
   nav.tabs, .primary, .btn, .flagbtn, .savebtn, .linky, #toast, .banner, .note.tip { display:none !important; }
@@ -310,3 +310,22 @@ ul.small { margin:.4rem 0 0; padding-left:1.2rem; } ul.small li { margin:.3rem 0
   details.section > .sec-body, details.section .sec-body { display:block !important; }
   a { color:var(--ink); }
 }
+
+/* ---- Setup → interview times editor ------------------------------------ */
+.slotgrid .slotday { grid-column:1 / -1; margin-top:.5rem; padding-top:.5rem; border-top:1px solid var(--line-2);
+  font-weight:600; font-size:.85rem; color:var(--ink-2); }
+.slotgrid .h + .h + .slotday { border-top:none; margin-top:0; padding-top:0; }
+.tgroup { margin:.3rem 0 .9rem; }
+.tgroup-h { display:flex; align-items:baseline; gap:.4rem; padding:.3rem 0; border-bottom:1px solid var(--line-2); }
+.tgroup-h .linky { margin-left:auto; font-size:.8rem; }
+.trow { display:flex; align-items:center; gap:.8rem; padding:.45rem 0; border-bottom:1px solid var(--line-2); flex-wrap:wrap; }
+.trow .grow { display:flex; align-items:baseline; gap:.5rem; flex-wrap:wrap; min-width:0; }
+.trow .ttime { font-variant-numeric:tabular-nums; font-weight:500; min-width:9.5em; }
+.trow.editing { display:block; background:#fbfbfd; padding:.6rem; border-radius:var(--radius-sm); }
+.tadd { margin-top:1rem; padding:.8rem; border:1px dashed var(--line); border-radius:var(--radius-sm); }
+.tform { display:grid; grid-template-columns:repeat(auto-fit, minmax(8.5rem, 1fr)); gap:.5rem .7rem; }
+.tform label { font-size:.78rem; color:var(--mut); font-weight:600; }
+.tform input, .tform select { display:block; width:100%; font:inherit; font-weight:400; color:var(--ink);
+  border:1px solid var(--line); border-radius:var(--radius-sm); padding:.45rem .55rem; margin-top:.25rem; background:#fbfbfd; min-height:2.4rem; }
+.tform input:focus, .tform select:focus { border-color:var(--accent); box-shadow:var(--ring); background:#fff; outline:none; }
+@media (max-width:640px) { .tform { grid-template-columns:1fr 1fr; } .trow .ttime { min-width:0; } }

@@ -20,8 +20,8 @@ rules_version = '2';
 //       (committee = the staff code; admin = the independent admin code; applicant
 //       = the guest code). See README → "Real access control".
 //    3. Set AUTH.mode = "roles" in js/config.js and redeploy.
-//    4. As admin, open Setup once and Save the interview times (publishes the
-//       PII-free slot list to /interviews_public/slots for applicants).
+//    4. Sign in as admin once (publishes the PII-free list of interview times to
+//       /interviews_public/slots for applicants; every edit in Setup re-publishes).
 //  If the emails in js/config.js differ, edit the three constants below to match.
 //
 //  Honest limits (documented, not hidden):

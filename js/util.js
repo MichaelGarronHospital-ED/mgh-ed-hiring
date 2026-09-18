@@ -18,35 +18,41 @@ export function toast(msg, kind) {
 }
 
 // Styled confirm dialog → Promise<boolean>. Falls back to window.confirm if the
-// dialog markup isn't present. `opts` = { title, yes, danger }.
+// dialog markup isn't present. `opts` = { title, yes, danger, alt }. With `alt`
+// (a label) a third button appears and resolves to the string "alt".
 export function confirmDialog(msg, opts = {}) {
   const wrap = document.getElementById("confirmWrap");
   if (!wrap) return Promise.resolve(window.confirm(msg));
-  const $ = (s) => wrap.querySelector(s) || document.querySelector(s);
   document.getElementById("confirmTitle").textContent = opts.title || "Are you sure?";
   document.getElementById("confirmMsg").textContent = msg;
   const yes = document.getElementById("confirmYes"), no = document.getElementById("confirmNo");
+  const alt = document.getElementById("confirmAlt");
   yes.textContent = opts.yes || "Confirm";
   yes.className = "btn " + (opts.danger === false ? "filled" : "danger");
+  if (alt) { alt.textContent = opts.alt || ""; alt.hidden = !opts.alt; }
   const prevFocus = document.activeElement;
   wrap.classList.remove("hidden");
-  yes.focus();
+  (opts.alt && alt ? alt : yes).focus();
   return new Promise((resolve) => {
     const done = (v) => {
       wrap.classList.add("hidden");
       yes.onclick = no.onclick = wrap.onclick = null;
+      if (alt) alt.onclick = null;
       document.removeEventListener("keydown", onKey, true);
       if (prevFocus && prevFocus.focus) { try { prevFocus.focus(); } catch { /* gone */ } }
       resolve(v);
     };
     const onKey = (e) => {
-      if (e.key === "Escape") { e.preventDefault(); done(false); }
-      else if (e.key === "Tab") { // trap focus between the two buttons
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(false); } // don't also close Setup
+      else if (e.key === "Tab") { // trap focus among the visible buttons
         e.preventDefault();
-        (document.activeElement === yes ? no : yes).focus();
+        const btns = [no, alt, yes].filter((b) => b && !b.hidden);
+        const i = btns.indexOf(document.activeElement);
+        btns[(i + (e.shiftKey ? btns.length - 1 : 1)) % btns.length].focus();
       }
     };
     yes.onclick = () => done(true);
+    if (alt) alt.onclick = () => done("alt");
     no.onclick = () => done(false);
     wrap.onclick = (e) => { if (e.target === wrap) done(false); };
     document.addEventListener("keydown", onKey, true);

@@ -73,20 +73,21 @@ export const COMMITTEE = [
 ];
 
 // ---- 6. Interview time slots ----------------------------------------------
-// From Amanda (Sept 2026): 7 one-hour slots on Oct 1 + 3 on Oct 7 = 10 interviews.
-// Oct 8 can be added if more are needed. Availability is keyed by list INDEX, so
-// once people have submitted, only append — don't reorder or insert.
+// Starting defaults only — once an admin edits times in Setup → Interview times,
+// the database list takes over. From Amanda (Sept 2026): 7 one-hour slots on
+// Oct 1 + 3 on Oct 7 = 10 interviews (Oct 8 available if more are needed).
+// ids "0"…"9" match how these were keyed when they were a plain list — keep them.
 export const SLOTS = [
-  "Oct 1 · 9:00–10:00 am",
-  "Oct 1 · 10:00–11:00 am",
-  "Oct 1 · 11:00 am–12:00 pm",
-  "Oct 1 · 12:00–1:00 pm",
-  "Oct 1 · 1:30–2:30 pm",
-  "Oct 1 · 2:30–3:30 pm",
-  "Oct 1 · 3:30–4:30 pm",
-  "Oct 7 · 9:00–10:00 am",
-  "Oct 7 · 10:00–11:00 am",
-  "Oct 7 · 11:00 am–12:00 pm",
+  { id: "0", date: "2026-10-01", start: "09:00", end: "10:00" },
+  { id: "1", date: "2026-10-01", start: "10:00", end: "11:00" },
+  { id: "2", date: "2026-10-01", start: "11:00", end: "12:00" },
+  { id: "3", date: "2026-10-01", start: "12:00", end: "13:00" },
+  { id: "4", date: "2026-10-01", start: "13:30", end: "14:30" },
+  { id: "5", date: "2026-10-01", start: "14:30", end: "15:30" },
+  { id: "6", date: "2026-10-01", start: "15:30", end: "16:30" },
+  { id: "7", date: "2026-10-07", start: "09:00", end: "10:00" },
+  { id: "8", date: "2026-10-07", start: "10:00", end: "11:00" },
+  { id: "9", date: "2026-10-07", start: "11:00", end: "12:00" },
 ];
 
 // ---- 7. OneDrive applications folder --------------------------------------
