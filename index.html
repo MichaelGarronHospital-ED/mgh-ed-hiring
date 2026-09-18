@@ -64,8 +64,20 @@
   <section id="score" class="hidden" role="tabpanel"></section>
   <section id="panels" class="hidden" role="tabpanel"></section>
   <section id="ranking" class="hidden" role="tabpanel"></section>
-  <section id="settings" class="hidden" role="tabpanel"></section>
 </main>
+
+<!-- Setup opens as a modal over the current page (admin only) -->
+<div id="setupModal" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2 id="setupTitle">Setup</h2>
+      <button id="setupClose" class="iconbtn" aria-label="Close setup">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div id="settings" class="modal-body"></div>
+  </div>
+</div>
 
 <!-- lightweight confirm dialog -->
 <div id="confirmWrap" class="overlay hidden" style="background:rgba(0,0,0,.28); backdrop-filter:blur(3px)"

@@ -34,6 +34,7 @@ class BaseStore {
   getState() { return this.state; }
   subscribe(cb) { this._subs.add(cb); cb(this.state); return () => this._subs.delete(cb); }
   _emit() { for (const cb of this._subs) cb(this.state); }
+  async syncPublicSlots() { /* no-op except on Firestore */ }
 }
 
 // ---------------------------------------------------------------- local
@@ -216,5 +217,11 @@ export class FirestoreStore extends BaseStore {
       await setDoc(this._doc("interviews_public", "slots"),
         { slots: patch.slots || this.state.settings.slots || [] }, { merge: true });
     }
+  }
+  // push the current slot list to the PII-free public doc (self-heal for dates
+  // that were only ever written to the committee config)
+  async syncPublicSlots(slots) {
+    const { setDoc } = this._fb;
+    await setDoc(this._doc("interviews_public", "slots"), { slots: slots || [] }, { merge: true });
   }
 }

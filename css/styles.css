@@ -64,6 +64,19 @@ a:hover { text-decoration:underline; }
   padding:.62rem 1.2rem; transition:background .15s, transform .06s, box-shadow .15s, opacity .15s;
   display:inline-flex; align-items:center; justify-content:center; gap:.45rem; }
 .primary { width:100%; margin-top:.8rem; background:var(--accent); color:#fff; padding:.72rem; font-size:1rem; }
+
+/* Setup modal (popup over the current page) */
+#setupModal { background:rgba(0,0,0,.34); -webkit-backdrop-filter:blur(4px); backdrop-filter:blur(4px);
+  align-items:flex-start; padding:4vh 1rem; }
+.modal-box { background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow-lg);
+  width:100%; max-width:640px; max-height:92vh; display:flex; flex-direction:column; overflow:hidden;
+  animation:pop .28s cubic-bezier(.2,.8,.2,1); text-align:left; }
+.modal-head { display:flex; align-items:center; justify-content:space-between; gap:.6rem;
+  padding:.9rem 1.1rem; border-bottom:1px solid var(--line-2); flex:none; }
+.modal-head h2 { margin:0; font-size:1.2rem; }
+.modal-body { padding:.2rem 1.1rem 1.2rem; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+.modal-body .note.tip:first-child { margin-top:.7rem; }
+@media (max-width:640px) { #setupModal { padding:0; } .modal-box { max-height:100vh; border-radius:0; } }
 .primary:hover, .btn.filled:hover { background:var(--accent-press); }
 .primary:active, .btn:active { transform:scale(.98); }
 .primary:disabled, .btn:disabled { opacity:.55; cursor:default; transform:none; }
@@ -90,7 +103,12 @@ a:hover { text-decoration:underline; }
 .info { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%;
   background:var(--line-2); color:var(--mut); font-size:.68rem; font-weight:700; font-style:normal;
   cursor:help; vertical-align:middle; user-select:none; line-height:1; }
-.info:hover { background:var(--accent-tint); color:var(--accent-press); }
+.info:hover, .info:focus-visible { background:var(--accent-tint); color:var(--accent-press); }
+/* instant custom tooltip (appended to body so it's never clipped) */
+.tip { position:absolute; z-index:400; max-width:270px; background:#1d1d1f; color:#fff; padding:.5rem .72rem;
+  border-radius:10px; font-size:.8rem; line-height:1.42; box-shadow:var(--shadow-lg); pointer-events:none;
+  opacity:0; transition:opacity .09s ease; }
+.tip.show { opacity:1; }
 .err { color:var(--red); font-size:.85rem; min-height:1.2em; margin-top:.6rem; }
 
 /* ---- spinner ------------------------------------------------------------- */

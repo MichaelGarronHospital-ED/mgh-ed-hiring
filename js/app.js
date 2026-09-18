@@ -103,7 +103,17 @@ async function initStore(role, typed) {
   store.subscribe((s) => {
     S = s;
     if (ui.role === "candidate") { if ($("#candview") && !$("#candview").classList.contains("hidden")) renderCandidate(); }
-    else if ($("#app") && !$("#app").classList.contains("hidden")) { renderBanner(); render(); }
+    else if ($("#app") && !$("#app").classList.contains("hidden")) {
+      renderBanner(); render();
+      if (setupOpen()) { renderSettings(); wireSections(); }   // keep the open Setup modal live
+    }
+    // self-heal: mirror the committee's slot list to the PII-free public doc so
+    // applicants see ALL interview dates (dates added before this mirror existed
+    // only made it into config). Runs once per admin session.
+    if (ui.role === "admin" && !ui._syncedSlots && isConfigured() && S.settings.slots && S.settings.slots.length) {
+      ui._syncedSlots = true;
+      store.syncPublicSlots(S.settings.slots);
+    }
   });
   S = store.getState();
 }
@@ -202,8 +212,9 @@ const activeCands = () => S.candidates.filter(isIn);
 
 // small hoverable "i" info badge (native tooltip on desktop hover; tap on mobile)
 function infoIcon(text) {
-  // onclick guard so tapping the badge inside a <summary> doesn't toggle the section
-  return text ? ` <span class="info" tabindex="0" role="img" title="${escapeHtml(text)}" aria-label="Info: ${escapeHtml(text)}" onclick="event.preventDefault();event.stopPropagation();">i</span>` : "";
+  // data-tip drives an instant custom tooltip (native title lags ~1s). onclick
+  // guard so tapping the badge inside a <summary> doesn't toggle the section.
+  return text ? ` <span class="info" tabindex="0" role="img" data-tip="${escapeHtml(text)}" aria-label="Info: ${escapeHtml(text)}" onclick="event.preventDefault();event.stopPropagation();">i</span>` : "";
 }
 // collapsible section that remembers its open/closed state across renders
 function section(id, title, sub, bodyHtml, opts = {}) {
@@ -237,12 +248,27 @@ function renderBanner() {
 }
 
 function render() {
-  ["screen", "availability", "score", "panels", "ranking", "settings"].forEach((t) =>
+  ["screen", "availability", "score", "panels", "ranking"].forEach((t) =>
     $("#" + t).classList.toggle("hidden", t !== ui.tab));
   ({ screen: renderScreen, availability: renderAvailability, score: renderScore,
-     panels: renderPanels, ranking: renderRanking, settings: renderSettings }[ui.tab] || (() => {}))();
+     panels: renderPanels, ranking: renderRanking }[ui.tab] || (() => {}))();
   wireSections();
 }
+
+// Setup lives in a modal over the current page (so it's clear you're editing
+// settings, not navigating away).
+function openSetup() {
+  renderSettings(); wireSections();
+  $("#setupModal").classList.remove("hidden");
+  $("#setupBtn").classList.add("active");
+  $("#setupClose").focus();
+}
+function closeSetup() {
+  $("#setupModal").classList.add("hidden");
+  $("#setupBtn").classList.remove("active");
+  $("#setupBtn").focus();
+}
+const setupOpen = () => !$("#setupModal").classList.contains("hidden");
 
 // ------------------------------------------------------------ 1 · Screen
 function renderScreen() {
@@ -755,6 +781,29 @@ window.CAND = {
   logout: () => { ["ed_iv_cand", "ed_iv_cand_disp", "ed_iv_code"].forEach((k) => sessionStorage.removeItem(k)); location.reload(); },
 };
 
+// ------------------------------------------------- instant info tooltips
+let tipEl = null;
+function showTip(target) {
+  const text = target.getAttribute("data-tip"); if (!text) return;
+  hideTip();
+  tipEl = document.createElement("div");
+  tipEl.className = "tip"; tipEl.textContent = text;
+  document.body.appendChild(tipEl);
+  const r = target.getBoundingClientRect(), tr = tipEl.getBoundingClientRect();
+  let left = r.left + r.width / 2 - tr.width / 2 + window.scrollX;
+  left = Math.max(8, Math.min(left, window.innerWidth - tr.width - 8));
+  let top = r.bottom + 8 + window.scrollY;
+  if (r.bottom + 8 + tr.height > window.innerHeight) top = r.top - tr.height - 8 + window.scrollY;
+  tipEl.style.left = left + "px"; tipEl.style.top = top + "px";
+  requestAnimationFrame(() => tipEl && tipEl.classList.add("show"));
+}
+function hideTip() { if (tipEl) { tipEl.remove(); tipEl = null; } }
+document.addEventListener("mouseover", (e) => { const t = e.target.closest && e.target.closest(".info"); if (t) showTip(t); });
+document.addEventListener("mouseout", (e) => { const t = e.target.closest && e.target.closest(".info"); if (t) hideTip(); });
+document.addEventListener("focusin", (e) => { const t = e.target.closest && e.target.closest(".info"); if (t) showTip(t); });
+document.addEventListener("focusout", hideTip);
+document.addEventListener("scroll", hideTip, true);
+
 // ------------------------------------------------------------------- boot
 $("#gateForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -765,13 +814,10 @@ $("#gateForm").addEventListener("submit", async (e) => {
 });
 $("#memberBtn").onclick = () => { ui.member = $("#memberSel").value; showApp(); };
 $("#changeMember").onclick = () => { ui.member = null; ["#appHeader", "#tabs", "#app"].forEach((s) => $(s).classList.add("hidden")); $("#banner").classList.add("hidden"); proceedToMemberPick(); };
-$("#setupBtn").onclick = () => {
-  ui.tab = "settings";
-  $("#tabs").querySelectorAll("button").forEach((x) => { x.classList.remove("on"); x.setAttribute("aria-selected", "false"); x.tabIndex = -1; });
-  $("#setupBtn").classList.add("active");
-  render();
-  window.scrollTo({ top: 0, behavior: "smooth" });
-};
+$("#setupBtn").onclick = () => (setupOpen() ? closeSetup() : openSetup());
+$("#setupClose").onclick = closeSetup;
+$("#setupModal").onclick = (e) => { if (e.target === $("#setupModal")) closeSetup(); };
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && setupOpen()) closeSetup(); });
 $("#logout").onclick = () => { ["ed_iv_code", "ed_iv_member", "ed_iv_cand"].forEach((k) => sessionStorage.removeItem(k)); location.reload(); };
 const savedCode = sessionStorage.getItem("ed_iv_code");
 if (savedCode) unlock(savedCode, true);
