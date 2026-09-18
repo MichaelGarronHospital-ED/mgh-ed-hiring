@@ -3,10 +3,18 @@
 // ============================================================================
 
 // ---- 1. Firebase ----------------------------------------------------------
-// Leave EMPTY ({}) to run in local mode (localStorage, single machine — good
-// for demo/testing). Paste your Firebase project config here to go multi-device
-// and real-time. Use a SEPARATE project from Motion Voting (applicant data).
-export const firebaseConfig = {};
+// Leave EMPTY ({}) to run in local mode (localStorage, single machine). With a
+// project config set, the tool is multi-device + real-time via Firestore.
+// Project: mgh-ed-hiring (separate from Motion Voting). This web config is public
+// by design — security is the Firestore rules + Anonymous auth.
+export const firebaseConfig = {
+  apiKey: "AIzaSyB_Jju69NtcHGeUobul2GuwfMlZiqY6wKs",
+  authDomain: "mgh-ed-hiring.firebaseapp.com",
+  projectId: "mgh-ed-hiring",
+  storageBucket: "mgh-ed-hiring.firebasestorage.app",
+  messagingSenderId: "819333808764",
+  appId: "1:819333808764:web:c0c1d6cee501d988c9bff9",
+};
 
 // ---- 2. Access ------------------------------------------------------------
 // There is NO code stored here on purpose. The committee code (shared with the
