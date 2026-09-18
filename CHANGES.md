@@ -4,12 +4,19 @@ Running log of what changed and why, newest first. Companion to DESIGN.md
 (decisions) and README.md (how to run). Written during the autonomous polish
 pass so the morning review has a paper trail.
 
-Verification note: there is no browser/Node in the build environment, so live
-Firestore and rules could not be exercised here. UI/UX was verified by driving
-the app headlessly in **forced local mode** (Chromium/Firefox/WebKit via
-Playwright, at mobile + desktop widths) with fictitious seed data — never real
-applicant PII, never the live Firestore. Runtime Firestore/rules testing is left
-to the morning review; anything not runtime-tested is called out below.
+Verification note: the build environment has no live Firebase, so Firestore
+**rules** and the **roles** auth path could not be exercised here. Everything else
+was verified by driving the app headlessly with Playwright in **forced local mode**
+(config's firebaseConfig blanked via request interception) with fictitious seed
+data — **never** real applicant PII, **never** the live Firestore. Verified across
+**Chromium, Firefox, and WebKit** at mobile (400/430px) and desktop (1000px):
+all three roles (committee/admin/applicant), every tab, the gate (old code
+rejected / new accepted / applicant code), question decryption, candidate slot
+selection, the panel editor + validation, and tab keyboard navigation — no console
+errors. The paneling algorithm was re-ported to Python and checked against 300
+randomized trials (optimal matching + every panel invariant). What still needs
+the operator's live testing: Firestore reads/writes under the hardened rules and
+the three role-account sign-ins (see the console steps in README).
 
 ---
 
