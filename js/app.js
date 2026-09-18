@@ -129,7 +129,12 @@ async function signInFor(fb, role, typed) {
       : role === "admin" ? AUTH.adminEmail : AUTH.committeeEmail;
     await authFns.signInWithEmailAndPassword(auth, email, typed);
   } else {
-    try { await authFns.signInAnonymously(auth); } catch { /* open rules / already signed in */ }
+    // let a real failure (e.g. Anonymous auth disabled) surface at the gate
+    // rather than proceed unauthenticated into a blank app
+    if (!auth.currentUser) await authFns.signInAnonymously(auth);
+    console.warn("[ED Hiring] AUTH.mode is 'anon': access control is UI-only and " +
+      "any signed-in client can read all data via the Firestore API. Before real " +
+      "applicant data, activate the 'roles' model (README → Real access control).");
   }
 }
 
@@ -158,15 +163,26 @@ function buildTabs() {
   const tabs = [["screen", "Screen"], ["availability", "Availability"], ["score", "Score"]];
   if (ui.isAdmin) tabs.push(["panels", "Panels"], ["ranking", "Ranking"], ["settings", "Setup"]);
   $("#tabs").innerHTML = tabs.map(([t, label], i) =>
-    `<button data-tab="${t}" role="tab" aria-selected="${t === ui.tab}" class="${t === ui.tab ? "on" : ""}">${i + 1} · ${label}</button>`).join("");
-  $("#tabs").querySelectorAll("button").forEach((b) => {
-    b.onclick = () => {
-      ui.tab = b.dataset.tab;
-      $("#tabs").querySelectorAll("button").forEach((x) => {
-        const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-selected", on);
-      });
-      render();
-      window.scrollTo({ top: 0, behavior: "smooth" });
+    `<button id="tab-${t}" data-tab="${t}" role="tab" aria-controls="${t}" aria-selected="${t === ui.tab}"
+       tabindex="${t === ui.tab ? "0" : "-1"}" class="${t === ui.tab ? "on" : ""}">${i + 1} · ${label}</button>`).join("");
+  tabs.forEach(([t]) => { const s = $("#" + t); if (s) s.setAttribute("aria-labelledby", "tab-" + t); });
+  const btns = [...$("#tabs").querySelectorAll("button")];
+  const select = (b, focus) => {
+    ui.tab = b.dataset.tab;
+    btns.forEach((x) => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-selected", on); x.tabIndex = on ? 0 : -1; });
+    if (focus) b.focus();
+    render();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  btns.forEach((b, i) => {
+    b.onclick = () => select(b);
+    b.onkeydown = (e) => {
+      let j = null;
+      if (e.key === "ArrowRight") j = (i + 1) % btns.length;
+      else if (e.key === "ArrowLeft") j = (i - 1 + btns.length) % btns.length;
+      else if (e.key === "Home") j = 0;
+      else if (e.key === "End") j = btns.length - 1;
+      if (j != null) { e.preventDefault(); select(btns[j], true); }
     };
   });
 }
@@ -234,16 +250,22 @@ function renderScreen() {
         .map((s) => escapeHtml(s.reason)).join("; ") || "—";
       const ratings = committee.map((m) => (S.screening[key(m.name, c.id)] || {}).rating).filter((n) => n);
       const ar = ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : "—";
+      // distinguish admin-removed from flag-excluded, so "restore" isn't a confusing no-op
+      const statusPill = c.removed ? '<span class="pill out">removed</span>'
+        : fc >= 2 ? '<span class="pill out">excluded · flags</span>'
+        : '<span class="pill in">interview</span>';
+      const action = c.removed
+        ? `<button class="linky" onclick="IV.removeCand('${c.id}',false)">restore</button>`
+        : `<button class="linky danger" onclick="IV.removeCand('${c.id}',true)">remove</button>`;
       return `<tr><td class="name">${escapeHtml(c.name)}</td><td>${fc >= 2 ? `<b class="bad">${fc}</b>` : fc}</td>
         <td class="muted small">${reasons}</td><td>${ar}</td>
-        <td>${out ? '<span class="pill out">removed</span>' : '<span class="pill in">interview</span>'}</td>
-        <td><button class="linky ${c.removed ? "" : "danger"}" onclick="IV.removeCand('${c.id}',${!c.removed})">${c.removed ? "restore" : "remove"}</button></td></tr>`;
+        <td>${statusPill}</td><td>${action}</td></tr>`;
     }).join("");
     const collation = `<div class="note">A candidate drops off the interview list at <b>≥2 flags</b> (last year's rule).
         Flag reasons are visible to leadership only.</div>
       <div class="tablewrap"><table><thead><tr><th>Candidate</th><th>Flags</th><th>Reasons</th><th>Avg rating</th><th>Status</th><th></th></tr></thead>
         <tbody>${rows || '<tr><td colspan="6">' + empty("📝", "No candidates yet", "Add applicants below to start screening.") + "</td></tr>"}</tbody></table></div>
-      <div class="adminbar"><button class="btn tinted small" onclick="IV.exportShortlist()">⬇︎ Export shortlist (CSV)</button></div>`;
+      <div class="adminbar"><button class="btn tinted small" onclick="IV.exportShortlist()"><span aria-hidden="true">⬇︎</span> Export shortlist (CSV)</button></div>`;
 
     const dash = `<div class="note">Chase anyone who hasn't submitted before the deadline.</div>
       <p><b>${submitted.size}/${committee.length}</b> members have submitted screening.</p>
@@ -266,8 +288,8 @@ function renderScreen() {
     const flagged = !!sc.flag;
     return `<div class="card">
       <div class="row center"><div class="grow"><div class="name">${escapeHtml(c.name)}</div>
-        <a class="doc" href="${escapeHtml(oneDrive)}" ${oneDrive === "#" ? 'onclick="return false" aria-disabled="true"' : 'target="_blank" rel="noopener"'}>📄 View CV &amp; cover letter</a></div>
-        <button class="flagbtn ${flagged ? "on" : ""}" aria-pressed="${flagged}" onclick="IV.toggleFlag('${c.id}')">${flagged ? "⚑ Flagged" : "Flag concern"}</button></div>
+        <a class="doc" href="${escapeHtml(oneDrive)}" ${oneDrive === "#" ? 'onclick="return false" aria-disabled="true"' : 'target="_blank" rel="noopener"'}><span aria-hidden="true">📄</span> View CV &amp; cover letter</a></div>
+        <button class="flagbtn ${flagged ? "on" : ""}" aria-pressed="${flagged}" onclick="IV.toggleFlag('${c.id}')">${flagged ? '<span aria-hidden="true">⚑</span> Flagged' : "Flag concern"}</button></div>
       <div class="row center" style="margin-top:.6rem"><div class="muted small" style="width:110px">Optional priority</div>
         <div class="rate" role="group" aria-label="Priority rating">${[1, 2, 3, 4, 5].map((n) => `<button class="${sc.rating === n ? "on" : ""}" aria-pressed="${sc.rating === n}" onclick="IV.rate('${c.id}',${n})">${n}</button>`).join("")}</div></div>
       ${flagged ? `<textarea id="rsn-${c.id}" placeholder="Reason (optional)" aria-label="Reason">${escapeHtml(sc.reason || "")}</textarea>
@@ -329,10 +351,42 @@ function renderScore() {
     <div class="card"><b>Overall rating</b>
       <div class="rate" role="group" aria-label="Overall rating" style="margin:.6rem 0">${[1, 2, 3, 4, 5].map((n) => `<button class="${rec.overall === n ? "on" : ""}" aria-pressed="${rec.overall === n}" onclick="IV.score(${n})">${n}</button>`).join("")}</div>
       <div class="legend">${SCALE.map((s, i) => `<div style="margin:.35rem 0"><b>${i + 1}</b> — ${escapeHtml(s)}</div>`).join("")}</div></div>
-    ${GUIDE.length ? `<details class="section" data-sec="guide"><summary><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg><span class="sec-title">Guidance for panelists</span></summary><div class="sec-body"><ul class="small">${GUIDE.map((g) => `<li>${escapeHtml(g)}</li>`).join("")}</ul></div></details>` : ""}`;
+    ${GUIDE.length ? section("guide", "Guidance for panelists", "", `<ul class="small">${GUIDE.map((g) => `<li>${escapeHtml(g)}</li>`).join("")}</ul>`) : ""}`;
 }
 
 // ------------------------------------------------------ 4 · Panels (admin)
+// validate a panel's members against the current committee (size, chair present,
+// balanced = ≥1 who identifies female + ≥1 male). Returns flags + warnings.
+function validatePanel(members, slot, modality) {
+  const { committee, chair } = EFF();
+  const gmap = {}; committee.forEach((m) => { gmap[m.name] = m.gender; });
+  const present = members.filter((m) => gmap[m]);            // still on the committee
+  const size = present.length, sizeOk = size >= 3 && size <= 5;
+  const chairOk = present.includes(chair);
+  const balanced = present.some((m) => gmap[m] === "F") && present.some((m) => gmap[m] === "M");
+  const warns = [];
+  if (!chairOk) warns.push("chair not on panel");
+  if (!balanced) warns.push("not a balanced panel");
+  if (!sizeOk) warns.push(size < 3 ? "fewer than 3 members" : "more than 5 members");
+  if (members.length !== present.length) warns.push("has members no longer on the committee");
+  // availability sanity for the chosen slot/modality
+  if (slot != null) present.forEach((m) => {
+    const av = (S.availIv[m] || {})[String(slot)];
+    if (av !== undefined && modality && !(av === "either" || av === modality)) warns.push(`${m} can't do ${modality} that time`);
+  });
+  return { ok: sizeOk && chairOk && balanced && members.length === present.length && !warns.length, sizeOk, chairOk, balanced, size, warns };
+}
+
+// remap saved overrides' member lists (e.g. after chair/committee change)
+function pruneOverrides(overrides, mapMembers) {
+  const out = {};
+  Object.entries(overrides || {}).forEach(([cid, ov]) => {
+    if (!ov || !ov.members) return;
+    out[cid] = { ...ov, members: mapMembers(ov.members) };
+  });
+  return out;
+}
+
 // merge the auto-proposal with any manual overrides the admin has saved
 function computePanels() {
   const { committee, chair, slotIds, overrides } = EFF();
@@ -341,17 +395,22 @@ function computePanels() {
   const candidates = {};
   activeCands().forEach((c) => { candidates[c.id] = { avail: availForCand(c) }; });
   const res = autoPanels(candidates, interviewers, slotIds, chair);
-  // apply overrides: {candId:{slot,members}}. An override may schedule an
-  // otherwise-unschedulable candidate, or replace an auto panel.
+  // apply overrides: {candId:{slot,members,modality}}. An override may schedule an
+  // otherwise-unschedulable candidate, or replace an auto panel. Overrides are
+  // re-validated (never trusted blindly) and stale members are dropped.
   const byCand = {};
-  res.panels.forEach((p) => { byCand[p.cand] = p; });
+  res.panels.forEach((p) => { byCand[p.cand] = { ...p, valid: validatePanel(p.members, p.slot, p.modality) }; });
   let unsched = res.unschedulable.slice();
   Object.entries(overrides).forEach(([cid, ov]) => {
     if (!activeCands().some((c) => c.id === cid)) return;
     if (!ov || !ov.members || !ov.members.length) return;
     const avail = candidates[cid] ? candidates[cid].avail : {};
-    const modality = avail[ov.slot] === "zoom" ? "zoom" : "ip";
-    byCand[cid] = { cand: cid, slot: ov.slot, members: ov.members, modality, manual: true };
+    // always include the current chair; keep only current committee members
+    const names = new Set(committee.map((m) => m.name));
+    let members = ov.members.filter((m) => names.has(m));
+    if (names.has(chair) && !members.includes(chair)) members = [chair, ...members];
+    const modality = ov.modality || (avail[ov.slot] === "zoom" ? "zoom" : avail[ov.slot] === "ip" ? "ip" : "ip");
+    byCand[cid] = { cand: cid, slot: ov.slot, members, modality, manual: true, valid: validatePanel(members, ov.slot, modality) };
     unsched = unsched.filter((x) => x !== cid);
   });
   const panels = Object.values(byCand).sort((a, b) => slotIds.indexOf(a.slot) - slotIds.indexOf(b.slot));
@@ -370,25 +429,26 @@ function renderPanels() {
   if (!EFF().slots.length) { $("#panels").innerHTML = html + empty("🗓️", "No interview times yet", "Add interview times in Setup, then collect availability."); return; }
 
   html += `<div class="adminbar">
-    <button class="btn tinted small" onclick="IV.exportSchedule()">⬇︎ Export schedule (CSV)</button>
-    <button class="btn ghost small" onclick="IV.printSchedule()">🖨 Print</button>
-    ${Object.keys(overrides).length ? `<button class="btn ghost small" onclick="IV.clearOverrides(this)">↺ Reset manual edits</button>` : ""}
+    <button class="btn tinted small" onclick="IV.exportSchedule()"><span aria-hidden="true">⬇︎</span> Export schedule (CSV)</button>
+    <button class="btn ghost small" onclick="IV.printSchedule()"><span aria-hidden="true">🖨</span> Print</button>
+    ${Object.keys(overrides).length ? `<button class="btn ghost small" onclick="IV.clearOverrides(this)"><span aria-hidden="true">↺</span> Reset manual edits</button>` : ""}
   </div>`;
 
   html += res.panels.map((p) => {
-    const size = p.members.length, ok = size >= 3 && size <= 5;
     const editing = ui.editPanel === p.cand;
+    const v = p.valid || validatePanel(p.members, p.slot, p.modality);
     let card = `<div class="panelbox"><div class="row center"><div class="grow"><b>${escapeHtml(nameOf(p.cand))}</b> · ${escapeHtml(slots[+p.slot] || "?")} ${modPill(p.modality)} ${p.manual ? '<span class="pill neutral">manual</span>' : ""}</div>
       <button class="btn ghost small" onclick="IV.editPanel('${p.cand}')">${editing ? "Close" : "Edit"}</button></div>
       <div class="small" style="margin-top:.4rem">${p.members.map(escapeHtml).join(" · ")}</div>
-      <div class="badges"><span class="badge ${ok ? "ok" : "bad"}">${ok ? "✓" : "✗"} ${size} member${size === 1 ? "" : "s"}</span>
-        <span class="badge ok">✓ balanced panel</span></div>`;
+      <div class="badges"><span class="badge ${v.sizeOk ? "ok" : "bad"}">${v.sizeOk ? "✓" : "✗"} ${v.size} member${v.size === 1 ? "" : "s"}</span>
+        <span class="badge ${v.balanced ? "ok" : "bad"}">${v.balanced ? "✓ balanced panel" : "✗ not balanced"}</span>
+        ${v.warns.filter((w) => w !== "not a balanced panel" && !w.startsWith("fewer") && !w.startsWith("more")).map((w) => `<span class="badge bad">⚠ ${escapeHtml(w)}</span>`).join("")}</div>`;
     if (editing) card += panelEditor(p);
     return card + `</div>`;
   }).join("") || `<div class="card">${empty("🧩", "No panels yet", "Panels appear once interviewers and applicants submit availability.")}</div>`;
 
   if (res.unschedulable.length || res.understaffed.length) {
-    html += `<div class="card"><b>⚠ Needs attention</b><ul class="small">
+    html += `<div class="card"><b><span aria-hidden="true">⚠</span> Needs attention</b><ul class="small">
       ${res.unschedulable.map((id) => `<li><b>${escapeHtml(nameOf(id))}</b> — no available time yields a balanced panel.
         <button class="linky" onclick="IV.editPanel('${id}')">schedule manually</button></li>`).join("")}
       ${res.understaffed.map((s) => `<li>${escapeHtml(slots[+s])} — not enough available interviewers for a balanced panel.</li>`).join("")}
@@ -407,6 +467,9 @@ function panelEditor(p) {
   members.add(chair);
   const slotSel = `<select id="ovslot-${p.cand}" aria-label="Slot">
     ${slotChoices.map((s) => `<option value="${s}" ${String(p.slot) === String(s) ? "selected" : ""}>${escapeHtml(EFF().slots[+s] || s)}${avail[s] ? " · " + avail[s] : ""}</option>`).join("")}</select>`;
+  const curMod = p.modality || (avail[p.slot] === "zoom" ? "zoom" : "ip");
+  const modSel = `<span class="seg" id="ovmod-${p.cand}" role="group" aria-label="Modality">
+    ${["ip", "zoom"].map((mv) => `<button type="button" class="${curMod === mv ? "on" : ""}" onclick="IV.setOvMod('${p.cand}','${mv}',this)">${mv === "ip" ? "In person" : "Zoom"}</button>`).join("")}</span>`;
   // pass the committee INDEX (not the name) so names with quotes/apostrophes
   // (e.g. O'Brien) can't break the inline handler.
   const memToggles = committee.map((m, idx) => {
@@ -415,7 +478,7 @@ function panelEditor(p) {
       onchange="IV.toggleMember('${p.cand}',${idx},this.checked)" style="margin-right:.35rem"/>${escapeHtml(m.name)}${isChair ? " (chair)" : ""}</label>`;
   }).join("");
   return `<div style="margin-top:.7rem; border-top:1px solid var(--line-2); padding-top:.7rem">
-    <div class="row center" style="gap:.5rem; flex-wrap:wrap"><span class="muted small">Time</span>${slotSel}</div>
+    <div class="row center" style="gap:.5rem; flex-wrap:wrap"><span class="muted small">Time</span>${slotSel}<span class="muted small">Modality</span>${modSel}</div>
     <div class="muted small" style="margin:.6rem 0 .3rem">Members (chair always included)</div>
     <div>${memToggles}</div>
     <div class="adminbar"><button class="btn tinted small" onclick="IV.savePanel('${p.cand}',this)">Save panel</button>
@@ -438,7 +501,7 @@ function renderRanking() {
   }).filter((r) => r.avg != null).sort((a, b) => b.avg - a.avg);
   $("#ranking").innerHTML = `<div class="note tip"><b>Admin only.</b> Candidates ordered by average interview score — decision support
     for the committee's discussion, not an automatic decision.</div>
-    <div class="adminbar"><button class="btn tinted small" onclick="IV.exportScores()">⬇︎ Export scores (CSV)</button>
+    <div class="adminbar"><button class="btn tinted small" onclick="IV.exportScores()"><span aria-hidden="true">⬇︎</span> Export scores (CSV)</button>
       <button class="btn ghost small" onclick="IV.setComplete(false,this)">Re-hide ranking</button></div>
     <div class="card flush"><div class="tablewrap"><table><thead><tr><th>#</th><th>Candidate</th><th>Avg score</th><th># scored</th></tr></thead>
       <tbody>${ranked.map((r, i) => `<tr><td class="rankn">${i + 1}</td><td class="name">${escapeHtml(r.name)}</td><td><b>${r.avg.toFixed(1)}</b></td><td>${r.n}</td></tr>`).join("")
@@ -501,7 +564,8 @@ function renderCandidate() {
   }
   const who = ui.candDisplay || sessionStorage.getItem("ed_iv_cand_disp")
     || (ui.candLast ? ui.candLast.charAt(0).toUpperCase() + ui.candLast.slice(1) : "");
-  const map = S.availCand[who] || {};
+  // read by the SAME normalized key we write under (ui.candLast), not the display name
+  const map = S.availCand[ui.candLast] || {};
   const seg = (i, v, l) => `<button class="${map[String(i)] === v ? "on " + v : ""}" aria-pressed="${map[String(i)] === v}" onclick="CAND.set(${i},'${v}')">${l}</button>`;
   el.innerHTML = `<header class="page"><div class="brandrow"><div class="brandmark" aria-hidden="true">ED</div>
       <div class="grow"><h1>${escapeHtml(ORG_NAME)}</h1><p class="muted">Interview availability</p></div>
@@ -561,15 +625,26 @@ window.IV = {
     const set = new Set(base); if (on) set.add(name); else set.delete(name); set.add(EFF().chair);
     ui._draft[cid] = { ...(ui._draft[cid] || {}), members: [...set] };
   },
+  setOvMod: (cid, mv, btn) => {
+    ui._draft = ui._draft || {}; ui._draft[cid] = { ...(ui._draft[cid] || {}), modality: mv };
+    const seg = document.getElementById("ovmod-" + cid);
+    if (seg) seg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === btn));
+  },
   savePanel: async (cid, btn) => {
     const slotSel = $("#ovslot-" + cid);
     const p = computePanels().panels.find((x) => x.cand === cid);
     const draft = (ui._draft && ui._draft[cid]) || {};
     const members = draft.members || (EFF().overrides[cid] && EFF().overrides[cid].members) || (p && p.members) || [EFF().chair];
     const slot = slotSel ? slotSel.value : (p ? p.slot : EFF().slotIds[0]);
+    const modality = draft.modality || (p && p.modality) || (EFF().overrides[cid] && EFF().overrides[cid].modality) || "ip";
     if (!slot) { toast("Pick a time first", "err"); return; }
-    if (members.length < 3 || members.length > 5) { toast("A panel needs 3–5 members", "err"); return; }
-    const ov = { ...EFF().overrides, [cid]: { slot: String(slot), members } };
+    const v = validatePanel(members, slot, modality);
+    if (!v.sizeOk) { toast("A panel needs 3–5 members", "err"); return; }
+    if (!v.balanced) {
+      const ok = await confirmDialog("This panel isn't balanced (needs at least one member who identifies as female and one as male). Save it anyway?", { title: "Unbalanced panel", yes: "Save anyway", danger: false });
+      if (!ok) return;
+    }
+    const ov = { ...EFF().overrides, [cid]: { slot: String(slot), members, modality } };
     await withBusy(btn, () => store.setSettings({ panelOverrides: ov }), "Panel saved");
     if (ui._draft) delete ui._draft[cid];
     ui.editPanel = null; renderPanels();
@@ -620,9 +695,19 @@ window.IV = {
       if (name) list.push({ name, gender });
     }
     if (!list.length) { toast("Add at least one member", "err"); return; }
-    await store.setSettings({ committee: list });
+    // drop members that no longer exist from any saved panel override
+    const names = new Set(list.map((m) => m.name));
+    const ov = pruneOverrides(EFF().overrides, (mem) => mem.filter((n) => names.has(n)));
+    await store.setSettings({ committee: list, panelOverrides: ov });
   }, "Committee saved"),
-  setChair: (v) => store.setSettings({ chair: v }),
+  setChair: async (v) => {
+    // swap the old chair for the new one in every saved override, keep chair present
+    const old = EFF().chair;
+    const ov = pruneOverrides(EFF().overrides, (mem) => {
+      const set = new Set(mem.filter((n) => n !== old)); set.add(v); return [...set];
+    });
+    await store.setSettings({ chair: v, panelOverrides: ov });
+  },
   addSlot: (btn) => withBusy(btn, async () => { const v = ($("#slotIn").value || "").trim(); if (!v) return; const l = EFF().slots.slice(); l.push(v); await store.setSettings({ slots: l }); }, "Time added"),
   removeSlot: async (i) => { const ok = await confirmDialog("Remove this interview time?", { title: "Remove time", yes: "Remove" }); if (!ok) return; const l = EFF().slots.slice(); l.splice(i, 1); await store.setSettings({ slots: l }); toast("Removed", "ok"); },
   saveOneDrive: (btn) => withBusy(btn, () => store.setSettings({ oneDrive: ($("#odIn").value || "").trim() || "#" }), "Saved"),

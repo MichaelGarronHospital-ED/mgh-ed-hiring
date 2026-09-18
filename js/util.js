@@ -28,20 +28,28 @@ export function confirmDialog(msg, opts = {}) {
   const yes = document.getElementById("confirmYes"), no = document.getElementById("confirmNo");
   yes.textContent = opts.yes || "Confirm";
   yes.className = "btn " + (opts.danger === false ? "filled" : "danger");
+  const prevFocus = document.activeElement;
   wrap.classList.remove("hidden");
   yes.focus();
   return new Promise((resolve) => {
     const done = (v) => {
       wrap.classList.add("hidden");
       yes.onclick = no.onclick = wrap.onclick = null;
-      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("keydown", onKey, true);
+      if (prevFocus && prevFocus.focus) { try { prevFocus.focus(); } catch { /* gone */ } }
       resolve(v);
     };
-    const onKey = (e) => { if (e.key === "Escape") done(false); };
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); done(false); }
+      else if (e.key === "Tab") { // trap focus between the two buttons
+        e.preventDefault();
+        (document.activeElement === yes ? no : yes).focus();
+      }
+    };
     yes.onclick = () => done(true);
     no.onclick = () => done(false);
     wrap.onclick = (e) => { if (e.target === wrap) done(false); };
-    document.addEventListener("keydown", onKey);
+    document.addEventListener("keydown", onKey, true);
   });
 }
 

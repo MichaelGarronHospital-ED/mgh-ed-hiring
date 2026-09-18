@@ -212,7 +212,7 @@ export class FirestoreStore extends BaseStore {
     const { setDoc } = this._fb;
     await setDoc(this._doc("interviews_meta", "config"), patch, { merge: true });
     // Mirror the PII-free slot list to the public doc so applicants can read it.
-    if ("slots" in patch || "orgName" in patch) {
+    if ("slots" in patch) {
       await setDoc(this._doc("interviews_public", "slots"),
         { slots: patch.slots || this.state.settings.slots || [] }, { merge: true });
     }

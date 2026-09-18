@@ -13,6 +13,36 @@ to the morning review; anything not runtime-tested is called out below.
 
 ---
 
+## Audit round 1 — fixes from a 6-dimension adversarial review
+Ran a multi-agent audit (security, persistence, logic, edge cases, paneling,
+a11y/CSS) with per-finding verification. Fixes applied, worst first:
+
+- **CRITICAL (functional):** candidate availability was *read* by display name but
+  *written* by normalized last-name key, so tapped times never highlighted and a
+  second tap silently cleared them. Now reads by the same `ui.candLast` key. Verified.
+- **CRITICAL (cross-browser):** Firefox rejects large PBKDF2 `deriveBits`, so the
+  questions wouldn't decrypt in Firefox → switched to PBKDF2→HKDF keystream
+  (previous commit). Verified in Chromium/Firefox/WebKit.
+- **Panel overrides no longer trusted blindly:** `computePanels` re-validates every
+  override (force chair, drop members no longer on the committee, check size +
+  balance + per-slot modality availability); the editor now has an explicit
+  modality control; unbalanced saves ask for confirmation; the "balanced panel"
+  badge is now conditional (✓/✗) with warnings; and changing the chair/committee
+  migrates or prunes saved overrides.
+- **Paneling:** replaced the greedy most-constrained-first assignment with maximum
+  bipartite matching (Kuhn's) — never falsely marks a candidate unschedulable when
+  a full assignment exists. Re-validated in Python (300 random trials optimal).
+- **A11y:** tabs now have `aria-controls`/`aria-labelledby`, roving tabindex, and
+  arrow/Home/End keyboard nav; confirm/gate dialogs are `role="dialog"` with focus
+  restore + Tab trap; decorative emoji wrapped in `aria-hidden`; WCAG-AA contrast
+  fixes (faint text, amber, tinted-button label); backdrop-filter opaque fallback.
+- **Robustness:** anon sign-in errors now surface at the gate (no silent blank app)
+  + a console warning when running `anon` with a real project; Score "Guidance"
+  section keeps its open/closed state; Screen status pill distinguishes
+  "removed" (admin) from "excluded · flags"; panel-editor member handler passes a
+  committee index so names with apostrophes can't break it; dropped a dead
+  settings-mirror guard. Documented the admin-vs-reviewer shared-code limit honestly.
+
 ## v2 — Apple redesign, unified candidate login, real security model
 Large cohesive pass. Everything verified headlessly in local mode (committee,
 admin, applicant flows; mobile + desktop; no console errors).

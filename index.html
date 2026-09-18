@@ -9,7 +9,7 @@
 </head>
 <body>
 <!-- login gate: committee code (decrypts the questions) OR a candidate password -->
-<div id="gate" class="overlay">
+<div id="gate" class="overlay" role="dialog" aria-modal="true" aria-labelledby="gateTitle">
   <div class="overlay-box">
     <div class="logo" aria-hidden="true">ED</div>
     <h2 id="gateTitle">ED Physician Hiring</h2>
@@ -66,7 +66,8 @@
 </main>
 
 <!-- lightweight confirm dialog -->
-<div id="confirmWrap" class="overlay hidden" style="background:rgba(0,0,0,.28); backdrop-filter:blur(3px)">
+<div id="confirmWrap" class="overlay hidden" style="background:rgba(0,0,0,.28); backdrop-filter:blur(3px)"
+     role="dialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMsg">
   <div class="overlay-box" style="text-align:left; max-width:420px">
     <h2 id="confirmTitle" style="font-size:1.15rem">Are you sure?</h2>
     <p id="confirmMsg" class="muted" style="text-align:left"></p>

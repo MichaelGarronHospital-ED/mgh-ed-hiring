@@ -56,14 +56,24 @@ export function autoPanels(candidates, interviewers, slots, chair = CHAIR) {
       .filter(([s, m]) => slots.includes(s) && buildPanel(s, m, interviewers, chair))
       .map(([s]) => s);
   }
-  // most-constrained candidate first; one candidate per slot
+  // Maximum bipartite matching (Kuhn's augmenting paths): candidates ↔ slots,
+  // one candidate per slot. This schedules the most candidates possible — unlike
+  // a single greedy pass, it won't falsely mark a candidate unschedulable when a
+  // different pairing would fit everyone. Most-constrained-first for efficiency.
   const order = Object.keys(candidates).sort((a, b) => feas[a].length - feas[b].length);
-  const used = new Set();
+  const slotOwner = {}; // slot -> candidate currently matched
   const assign = {};
-  for (const c of order) {
-    const s = feas[c].find((x) => !used.has(x));
-    if (s) { used.add(s); assign[c] = s; }
-  }
+  const tryAssign = (c, seen) => {
+    for (const s of feas[c]) {
+      if (seen.has(s)) continue;
+      seen.add(s);
+      if (!(s in slotOwner) || tryAssign(slotOwner[s], seen)) {
+        slotOwner[s] = c; assign[c] = s; return true;
+      }
+    }
+    return false;
+  };
+  for (const c of order) tryAssign(c, new Set());
   const panels = [];
   const unschedulable = [];
   for (const c of Object.keys(candidates)) {

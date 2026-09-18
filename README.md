@@ -96,6 +96,14 @@ do these console steps (they can't be done from the repo):
    | `admin@ed-hiring.app` | the committee code **+ `!`** | leadership |
    | `applicant@ed-hiring.app` | a separate **applicant code** | candidates |
 
+   > **Honest limit — admin vs reviewer:** because the committee code both decrypts
+   > the questions *and* is every reviewer's password, admins authenticate with that
+   > same code + `!`. A reviewer who knows the code could therefore sign in as admin
+   > and see the ranking early. For an internal committee this is usually acceptable;
+   > if you need a hard reviewer/admin wall, give leadership their own **per-person
+   > admin accounts** (and don't share the code + `!` convention). Enforcing that in
+   > the shared-code UI would require admins to enter a second, separate secret.
+
 3. **Firestore → Rules →** paste [`firestore.rules`](firestore.rules) → **Publish**.
 4. In [`js/config.js`](js/config.js) set `AUTH.mode = "roles"` and redeploy.
 5. Sign in as **admin**, open **Setup**, and **Save the interview times** once — this

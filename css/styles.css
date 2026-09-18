@@ -6,11 +6,11 @@
    ============================================================================ */
 
 :root {
-  --ink:#1d1d1f; --ink-2:#424245; --mut:#6e6e73; --faint:#86868b;
+  --ink:#1d1d1f; --ink-2:#424245; --mut:#6e6e73; --faint:#6b6b70;
   --line:#d2d2d7; --line-2:#e8e8ed; --bg:#f5f5f7; --surface:#ffffff;
   --accent:#0071e3; --accent-press:#0060c0; --accent-tint:#e8f1fd;
   --green:#1a7f37; --green-tint:#e7f6ec; --red:#d70015; --red-tint:#fdecec;
-  --amber:#9a6700; --amber-tint:#fdf3e2; --purple:#5e5ce6;
+  --amber:#8a5c00; --amber-tint:#fdf3e2; --purple:#5e5ce6;
   --radius:18px; --radius-sm:12px; --radius-xs:9px;
   --shadow:0 1px 2px rgba(0,0,0,.05), 0 6px 20px rgba(0,0,0,.045);
   --shadow-lg:0 4px 12px rgba(0,0,0,.08), 0 20px 48px rgba(0,0,0,.10);
@@ -68,7 +68,7 @@ a:hover { text-decoration:underline; }
 .primary:active, .btn:active { transform:scale(.98); }
 .primary:disabled, .btn:disabled { opacity:.55; cursor:default; transform:none; }
 .btn.filled { background:var(--accent); color:#fff; }
-.btn.tinted { background:var(--accent-tint); color:var(--accent); }
+.btn.tinted { background:var(--accent-tint); color:var(--accent-press); }
 .btn.tinted:hover { background:#dbeafe; }
 .btn.ghost { background:transparent; border-color:var(--line); color:var(--ink); }
 .btn.ghost:hover { background:#f0f0f3; }
@@ -111,8 +111,12 @@ header.page .muted { margin:.15rem 0 0; }
 
 /* ---- tabs (segmented, scrollable on mobile) ----------------------------- */
 nav.tabs { display:flex; gap:.2rem; padding:.4rem; margin:.4rem auto .2rem; max-width:var(--maxw);
-  position:sticky; top:.5rem; z-index:5; background:rgba(245,245,247,.8); backdrop-filter:saturate(180%) blur(20px);
+  position:sticky; top:.5rem; z-index:5; background:rgba(245,245,247,.96); backdrop-filter:saturate(180%) blur(20px);
   -webkit-backdrop-filter:saturate(180%) blur(20px); border-radius:14px; overflow-x:auto; scrollbar-width:none; }
+/* opaque fallback where translucent blur isn't supported */
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) {
+  nav.tabs { background:#f0f0f4; }
+}
 nav.tabs::-webkit-scrollbar { display:none; }
 nav.tabs button { font:inherit; border:none; background:none; padding:.5rem .85rem; border-radius:10px;
   color:var(--mut); cursor:pointer; white-space:nowrap; font-size:.9rem; font-weight:500;
