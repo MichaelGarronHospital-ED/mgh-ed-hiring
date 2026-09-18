@@ -3,28 +3,20 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Interview booking</title>
+<title>Interview booking — ED Physician Hiring</title>
 <link rel="stylesheet" href="css/styles.css" />
+<!-- Booking is now unified into the single link. Applicants enter their
+     applicant code on index.html and are taken straight to their own
+     scheduling. This page just forwards there (old links keep working). -->
+<meta http-equiv="refresh" content="0; url=index.html" />
+<script>location.replace("index.html" + location.search + location.hash);</script>
 </head>
 <body>
-<header>
-  <h1 id="orgName">ED Physician Hiring</h1>
-  <p class="muted">Interview availability</p>
-</header>
-<main id="app" style="max-width:560px">
-  <section id="signin">
-    <div class="note">Enter your name to pick the interview times that work for you. You won't see other
-      applicants.</div>
-    <div class="card">
-      <b>Your name</b>
-      <input id="nameIn" type="text" placeholder="First and last name" autocomplete="name" />
-      <div style="margin-top:.5rem"><button class="primary" id="nameBtn" style="width:auto; padding:.5rem 1rem">Continue</button></div>
-      <div id="nameErr" class="err"></div>
-    </div>
-  </section>
-  <section id="booking" class="hidden"></section>
-</main>
-<div id="toast" class="toast hide"></div>
-<script type="module" src="js/book.js"></script>
+<div class="overlay"><div class="overlay-box">
+  <div class="logo" aria-hidden="true">ED</div>
+  <h2>Interview booking</h2>
+  <p class="muted">Redirecting you to the sign-in page…</p>
+  <p class="small"><a href="index.html">Continue if you are not redirected automatically.</a></p>
+</div></div>
 </body>
 </html>

@@ -17,14 +17,43 @@ export const firebaseConfig = {
 };
 
 // ---- 2. Access ------------------------------------------------------------
-// There is NO code stored here on purpose. The committee code (shared with the
-// team out-of-band) is what people type to enter, and it doubles as the key that
-// decrypts the (otherwise unreadable) interview questions. Admins use the same
-// code + "!" and additionally see the Ranking tab. To change the code you must
-// re-encrypt the questions — see README.md → "Changing the committee code".
+// There is NO committee code stored here on purpose. The committee code (shared
+// with the team out-of-band) is what people type to enter, and it doubles as the
+// key that decrypts the (otherwise unreadable) interview questions. Admins use
+// the same code + "!" and additionally see the Ranking tab. To change the code
+// you must re-encrypt the questions — see README.md → "Changing the committee code".
+//
+// APPLICANTS use a DIFFERENT code on the same link and are taken straight to
+// their own scheduling (they never see the roster, questions, scores, or other
+// applicants). See AUTH below for how this is enforced for real with Firestore.
+
+// Fallback applicant code, used ONLY in local mode (no Firebase) for demo/testing.
+// In the real (roles) security model the applicant gate is the Firebase account
+// password (set in the console, never in this file) — see AUTH.mode.
+export const CANDIDATE_CODE_LOCAL = "apply2026";
+
+// ---- 2b. Auth / security model -------------------------------------------
+// mode "anon"  → every client signs in anonymously (baseline; matches the
+//                original open rules). Keeps working with no console setup.
+// mode "roles" → Firebase Auth email/password "role accounts". Rules branch on
+//                request.auth.token.email so applicants CANNOT read committee
+//                data and reviewers CANNOT read scores/ranking. Activate this
+//                only AFTER creating the three accounts + publishing the hardened
+//                firestore.rules (exact steps in README → "Real access control").
+// The role EMAILS are public identifiers (safe here). The account PASSWORDS are
+// the shared secrets and live only in the Firebase console — never in this file.
+export const AUTH = {
+  mode: "anon",
+  adminEmail: "admin@ed-hiring.app",
+  committeeEmail: "committee@ed-hiring.app",
+  candidateEmail: "applicant@ed-hiring.app",
+};
 
 // ---- 3. Branding ----------------------------------------------------------
 export const ORG_NAME = "MGH ED — Physician Hiring";
+
+// Screening deadline — shown as a countdown banner. Set to "" to hide.
+export const SCREENING_DEADLINE = "2026-09-23";
 
 // ---- 4. Panel chair -------------------------------------------------------
 // Must match a COMMITTEE name below. Required on every panel; never shown to

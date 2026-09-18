@@ -2,54 +2,82 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="light" />
 <title>ED Physician Hiring</title>
 <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
-<!-- login gate: committee code (also decrypts the confidential questions) -->
+<!-- login gate: committee code (decrypts the questions) OR a candidate password -->
 <div id="gate" class="overlay">
   <div class="overlay-box">
+    <div class="logo" aria-hidden="true">ED</div>
     <h2 id="gateTitle">ED Physician Hiring</h2>
-    <p class="muted">Committee access — enter your code.</p>
-    <input id="gpw" type="password" placeholder="Code" autocomplete="off" autofocus />
-    <button id="gbtn" class="primary">Enter</button>
-    <div id="gerr" class="err"></div>
+    <p class="muted">Enter your access code to continue.</p>
+    <form id="gateForm" autocomplete="off">
+      <input id="gpw" type="password" placeholder="Access code" autocomplete="off"
+             aria-label="Access code" autofocus />
+      <button id="gbtn" class="primary" type="submit">Enter</button>
+    </form>
+    <div id="gerr" class="err" role="alert" aria-live="assertive"></div>
+    <p class="small faint" style="margin-top:.9rem">Committee members use the committee code.
+      Applicants use the applicant code you were sent.</p>
   </div>
 </div>
 
 <!-- pick your name (committee identity) -->
 <div id="memberpick" class="overlay hidden">
   <div class="overlay-box">
+    <div class="logo" aria-hidden="true">ED</div>
     <h2>Who are you?</h2>
     <p class="muted">Pick your name so your input is saved to you.</p>
-    <select id="memberSel"></select>
+    <select id="memberSel" aria-label="Your name"></select>
     <button id="memberBtn" class="primary">Continue</button>
   </div>
 </div>
 
+<!-- candidate self-scheduling (same link, applicant code) -->
+<div id="candview" class="hidden"></div>
+
 <header id="appHeader" class="hidden">
-  <h1 id="orgName">ED Physician Hiring</h1>
+  <div class="brandrow">
+    <div class="brandmark" aria-hidden="true">ED</div>
+    <div class="grow"><h1 id="orgName">ED Physician Hiring</h1></div>
+    <button id="logout" class="linky">Log out</button>
+  </div>
   <div class="who">
-    <span id="whoLine" class="muted"></span>
+    <span>Signed in as <b id="whoLine"></b></span>
     <button id="changeMember" class="linky">change</button>
     <span id="adminTag" class="tag hidden">admin</span>
-    <button id="logout" class="linky" style="margin-left:auto">log out</button>
   </div>
 </header>
 
-<nav id="tabs" class="tabs hidden"></nav>
+<div id="banner" class="banner hidden" aria-live="polite"></div>
+
+<nav id="tabs" class="tabs hidden" role="tablist" aria-label="Hiring stages"></nav>
 
 <main id="app" class="hidden">
-  <section id="screen"></section>
-  <section id="availability" class="hidden"></section>
-  <section id="score" class="hidden"></section>
-  <section id="panels" class="hidden"></section>
-  <section id="ranking" class="hidden"></section>
-  <section id="settings" class="hidden"></section>
+  <section id="screen" role="tabpanel"></section>
+  <section id="availability" class="hidden" role="tabpanel"></section>
+  <section id="score" class="hidden" role="tabpanel"></section>
+  <section id="panels" class="hidden" role="tabpanel"></section>
+  <section id="ranking" class="hidden" role="tabpanel"></section>
+  <section id="settings" class="hidden" role="tabpanel"></section>
 </main>
 
-<div id="toast" class="toast hide"></div>
+<!-- lightweight confirm dialog -->
+<div id="confirmWrap" class="overlay hidden" style="background:rgba(0,0,0,.28); backdrop-filter:blur(3px)">
+  <div class="overlay-box" style="text-align:left; max-width:420px">
+    <h2 id="confirmTitle" style="font-size:1.15rem">Are you sure?</h2>
+    <p id="confirmMsg" class="muted" style="text-align:left"></p>
+    <div class="row" style="justify-content:flex-end; gap:.5rem; margin-top:1rem">
+      <button id="confirmNo" class="btn ghost">Cancel</button>
+      <button id="confirmYes" class="btn danger">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hide" role="status" aria-live="polite"></div>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>

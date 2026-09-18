@@ -22,8 +22,10 @@ const EMPTY = () => ({
   candidates: [], screening: {}, availIv: {}, availCand: {}, scores: {},
   meta: { interviewsComplete: false },
   // admin-managed setup, stored in the DB (not in the repo): real committee
-  // roster (+self-identified gender), chair, interview slots, OneDrive link.
-  settings: { committee: [], chair: "", slots: [], oneDrive: "" },
+  // roster (+self-identified gender), chair, interview slots, OneDrive link,
+  // and any manual panel overrides { candId: { slot, members:[...] } }.
+  settings: { committee: [], chair: "", slots: [], oneDrive: "", panelOverrides: {} },
+  publicInfo: { orgName: "", note: "" },
 });
 
 // ---------------------------------------------------------------- base class
@@ -92,39 +94,72 @@ export class LocalStore extends BaseStore {
 
 // ---------------------------------------------------------------- firestore
 // Faithful mirror of the local API using the Firebase modular SDK, following
-// the same patterns as tools/motion-voting/js/db.js. Enabled only when a real
-// project is configured. (Local mode is the one exercised without a backend.)
+// the same patterns as tools/motion-voting/js/db.js.
+//
+// Role-aware (for the hardened "roles" security model): `opts.scopes` limits
+// which collections we subscribe to, because the rules deny reads a role isn't
+// allowed to see (e.g. a reviewer cannot read scores/screening → the ranking).
+// For those write-only-for-me collections we keep a per-device "echo" mirror in
+// localStorage so a reviewer still sees their OWN input without a server read.
+//   scopes: subset of ["candidates","screening","availIv","availCand","scores","meta","public"]
+//   echo:   true → seed/merge this member's own screening+scores from localStorage
+const ALL_SCOPES = ["candidates", "screening", "availIv", "availCand", "scores", "meta"];
+const ECHO_KEY = "ed_iv_echo_v1";
+
 export class FirestoreStore extends BaseStore {
-  constructor(fb) {
+  constructor(fb, opts = {}) {
     super();
     this._fb = fb; // { db, ...firestore fns }
-    const { db, collection, onSnapshot } = fb;
-    const watch = (name, apply) =>
-      onSnapshot(collection(db, name), (snap) => {
-        apply(snap.docs);
-        this._emit();
-      });
-    watch("interviews_candidates", (docs) => {
-      this.state.candidates = docs.map((d) => ({ id: d.id, ...d.data() }));
+    this._echo = !!opts.echo;
+    const scopes = opts.scopes || ALL_SCOPES;
+    if (this._echo) this._loadEcho();
+    const { db, collection, doc, onSnapshot } = fb;
+    const on = (name) => scopes.includes(name);
+    const watch = (name, ref, apply) =>
+      onSnapshot(ref, (snap) => { apply(snap); this._emit(); },
+                 (err) => { console.warn("snapshot denied:", name, err && err.code); });
+
+    if (on("candidates")) watch("candidates", collection(db, "interviews_candidates"), (snap) => {
+      this.state.candidates = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     });
-    watch("interviews_screening", (docs) => {
-      this.state.screening = Object.fromEntries(docs.map((d) => [d.id, d.data()]));
+    if (on("screening")) watch("screening", collection(db, "interviews_screening"), (snap) => {
+      this.state.screening = { ...(this._echoScreening || {}), ...Object.fromEntries(snap.docs.map((d) => [d.id, d.data()])) };
     });
-    watch("interviews_availIv", (docs) => {
-      this.state.availIv = Object.fromEntries(docs.map((d) => [d.id, d.data().slots || {}]));
+    if (on("availIv")) watch("availIv", collection(db, "interviews_availIv"), (snap) => {
+      this.state.availIv = Object.fromEntries(snap.docs.map((d) => [d.id, d.data().slots || {}]));
     });
-    watch("interviews_availCand", (docs) => {
-      this.state.availCand = Object.fromEntries(docs.map((d) => [d.id, d.data().slots || {}]));
+    if (on("availCand")) watch("availCand", collection(db, "interviews_availCand"), (snap) => {
+      this.state.availCand = Object.fromEntries(snap.docs.map((d) => [d.id, d.data().slots || {}]));
     });
-    watch("interviews_scores", (docs) => {
-      this.state.scores = Object.fromEntries(docs.map((d) => [d.id, d.data()]));
+    if (on("scores")) watch("scores", collection(db, "interviews_scores"), (snap) => {
+      this.state.scores = { ...(this._echoScores || {}), ...Object.fromEntries(snap.docs.map((d) => [d.id, d.data()])) };
     });
-    watch("interviews_meta", (docs) => {
-      const m = docs.find((d) => d.id === "state");
+    if (on("meta")) watch("meta", collection(db, "interviews_meta"), (snap) => {
+      const m = snap.docs.find((d) => d.id === "state");
       this.state.meta = { interviewsComplete: false, ...(m ? m.data() : {}) };
-      const c = docs.find((d) => d.id === "config");
+      const c = snap.docs.find((d) => d.id === "config");
       this.state.settings = { committee: [], chair: "", slots: [], oneDrive: "", ...(c ? c.data() : {}) };
     });
+    // Candidates read the slots from the public, PII-free mirror doc.
+    if (on("public")) watch("public", doc(db, "interviews_public", "slots"), (snap) => {
+      const d = snap.data() || {};
+      this.state.settings = { ...this.state.settings, slots: d.slots || [] };
+      this.state.publicInfo = { orgName: d.orgName || "", note: d.note || "" };
+    });
+  }
+  // -- echo mirror (reviewer's own screening/scores, per device) ------------
+  _loadEcho() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(ECHO_KEY) || "{}");
+      this._echoScreening = raw.screening || {};
+      this._echoScores = raw.scores || {};
+      this.state.screening = { ...this._echoScreening };
+      this.state.scores = { ...this._echoScores };
+    } catch { this._echoScreening = {}; this._echoScores = {}; }
+  }
+  _saveEcho() {
+    if (!this._echo) return;
+    try { localStorage.setItem(ECHO_KEY, JSON.stringify({ screening: this._echoScreening, scores: this._echoScores })); } catch { /* ignore */ }
   }
   _doc(name, id) { const { db, doc } = this._fb; return doc(db, name, id); }
   async addCandidate(name) {
@@ -138,19 +173,36 @@ export class FirestoreStore extends BaseStore {
   }
   async setScreening(member, candId, patch) {
     const { setDoc } = this._fb;
-    await setDoc(this._doc("interviews_screening", key(member, candId)), { member, candId, ...patch }, { merge: true });
+    const k = key(member, candId);
+    if (this._echo) { // optimistic local echo so a reviewer sees their own input
+      this._echoScreening[k] = { ...(this._echoScreening[k] || {}), member, candId, ...patch };
+      this.state.screening = { ...this.state.screening, [k]: this._echoScreening[k] };
+      this._saveEcho(); this._emit();
+    }
+    await setDoc(this._doc("interviews_screening", k), { member, candId, ...patch }, { merge: true });
   }
   async setAvail(kind, who, slot, mod) {
     const { setDoc } = this._fb;
     const name = kind === "cand" ? "interviews_availCand" : "interviews_availIv";
-    const cur = { ...((kind === "cand" ? this.state.availCand : this.state.availIv)[who] || {}) };
+    const field = kind === "cand" ? "availCand" : "availIv";
+    const cur = { ...(this.state[field][who] || {}) };
     if (mod == null) delete cur[slot]; else cur[slot] = mod;
+    // optimistic: reflect immediately (candidates don't subscribe to availCand)
+    this.state[field] = { ...this.state[field], [who]: cur };
+    this._emit();
     // full overwrite (not merge): merge can't delete a cleared slot from the map
-    await setDoc(this._doc(name, who), { slots: cur });
+    await setDoc(this._doc(name, who), { slots: cur }, { merge: false });
   }
   async setScore(member, candId, patch) {
     const { setDoc } = this._fb;
-    await setDoc(this._doc("interviews_scores", key(member, candId)), { member, candId, ...patch }, { merge: true });
+    const k = key(member, candId);
+    if (this._echo) {
+      const prev = this._echoScores[k] || { notes: {} };
+      this._echoScores[k] = { ...prev, ...patch, member, candId, notes: { ...(prev.notes || {}), ...(patch.notes || {}) } };
+      this.state.scores = { ...this.state.scores, [k]: this._echoScores[k] };
+      this._saveEcho(); this._emit();
+    }
+    await setDoc(this._doc("interviews_scores", k), { member, candId, ...patch }, { merge: true });
   }
   async setMeta(patch) {
     const { setDoc } = this._fb;
@@ -159,5 +211,10 @@ export class FirestoreStore extends BaseStore {
   async setSettings(patch) {
     const { setDoc } = this._fb;
     await setDoc(this._doc("interviews_meta", "config"), patch, { merge: true });
+    // Mirror the PII-free slot list to the public doc so applicants can read it.
+    if ("slots" in patch || "orgName" in patch) {
+      await setDoc(this._doc("interviews_public", "slots"),
+        { slots: patch.slots || this.state.settings.slots || [] }, { merge: true });
+    }
   }
 }

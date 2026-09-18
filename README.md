@@ -59,13 +59,51 @@ ks=hashlib.pbkdf2_hmac("sha256",CODE.encode(),salt,iters,dklen=len(pt))
 print(base64.b64encode(bytes(a^b for a,b in zip(pt,ks))).decode())
 ```
 
-## Security (read before using real applicant data)
+## One link, three audiences
+The same `index.html` serves everyone; what you can do depends on the code you type:
+- **Committee reviewer** — the committee code → Screen · Availability · Score.
+- **Admin** — committee code **+ `!`** → the above plus Panels · Ranking · Setup.
+- **Applicant** — a **different applicant code** → taken straight to their own
+  scheduling (enter last name, pick times). They never see the roster, questions,
+  scores, or other applicants. (`book.html` now just forwards here.)
+
+## Real access control (the "roles" security model)
+By default `AUTH.mode` in [`js/config.js`](js/config.js) is `"anon"` — every client
+signs in anonymously (matches the original open rules; no console setup, but the
+data is only protected client-side). To get a **hard, server-enforced** boundary,
+switch to the roles model. The app code is already written for it; you only need to
+do these console steps (they can't be done from the repo):
+
+1. **Firebase console → Authentication → Sign-in method →** enable **Email/Password**.
+2. **Authentication → Users → Add user** three times (emails must match
+   `AUTH` in `js/config.js`; the **passwords are the shared secrets** you hand out):
+
+   | Email | Password | Who |
+   |---|---|---|
+   | `committee@ed-hiring.app` | the **committee code** | reviewers |
+   | `admin@ed-hiring.app` | the committee code **+ `!`** | leadership |
+   | `applicant@ed-hiring.app` | a separate **applicant code** | candidates |
+
+3. **Firestore → Rules →** paste [`firestore.rules`](firestore.rules) → **Publish**.
+4. In [`js/config.js`](js/config.js) set `AUTH.mode = "roles"` and redeploy.
+5. Sign in as **admin**, open **Setup**, and **Save the interview times** once — this
+   publishes the PII-free slot list to `/interviews_public/slots` so applicants can
+   read *only* that.
+
+What this enforces (server-side, not just UI):
+- Applicants can read **only** the interview slots and write **only** their own
+  availability. They **cannot** read the roster, questions, screening, or scores.
+- Reviewers can submit screening/scores/availability and read the roster +
+  availability, but **cannot read anyone's scores/screening** — so the **ranking is
+  admin-only for real**, not just hidden in the UI.
+
+Honest limits (see the header of `firestore.rules`): reviewers share one committee
+account, so per-**member** write-isolation isn't rule-enforceable (needs per-member
+accounts or custom claims). And an applicant could overwrite another's availability
+by typing their last name. Both are low-impact and documented.
+
+## Security notes
 - The **questions/scale/guidance** are encrypted and only decrypt with the correct
-  code — they are not readable in the page source.
-- The **baseline Firestore rules** require sign-in but don't, by themselves,
-  separate committee from applicant access (both sign in anonymously). The
-  committee code gates the app client-side. For a hard boundary before storing real
-  CVs/decisions, add Firebase Auth accounts (or custom claims) and tighten
-  `firestore.rules` per collection. **Never** put CVs in the repo — link to
-  access-controlled OneDrive.
-- Applicant **names** live only in Firestore/local, never in the repo.
+  committee code — not readable in the page source.
+- Applicant **names/CVs** never live in the repo — names in Firestore/local, CVs in
+  access-controlled OneDrive (the app only links out).

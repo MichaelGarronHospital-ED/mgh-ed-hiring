@@ -1,19 +1,92 @@
 rules_version = '2';
-// Baseline rules for the interviews tool. Every client (committee members and
-// applicants) signs in ANONYMOUSLY, so this requires sign-in but does NOT, on its
-// own, separate committee access from applicant access. That separation is done
-// in the app (committee code) — see README.md → "Security" before putting real
-// applicant data in. For a hard boundary, add Firebase Auth accounts / custom
-// claims and tighten the per-collection rules below.
+// ============================================================================
+//  Hardened rules for the interviews tool — the "roles" security model.
+//
+//  Three Firebase Auth email/password "role accounts" (created in the console;
+//  their PASSWORDS are the shared secrets typed into the app and never live in
+//  the repo). Rules branch on request.auth.token.email:
+//
+//    admin@ed-hiring.app      — leadership: full read/write, incl. scores/ranking
+//    committee@ed-hiring.app  — reviewers: submit screening/scores/availability,
+//                               read the roster + availability, but CANNOT read
+//                               scores/screening (so they can't see the ranking)
+//    applicant@ed-hiring.app  — candidates: read ONLY the public interview slots
+//                               and submit their OWN availability; CANNOT read the
+//                               roster, questions, screening, scores, or panels.
+//
+//  IMPORTANT — before publishing this file:
+//    1. Authentication → Sign-in method → enable Email/Password.
+//    2. Authentication → Users → add the three accounts above; set each password
+//       (committee = the committee code; admin = committee code + "!"; applicant
+//       = the applicant code). See README → "Real access control".
+//    3. Set AUTH.mode = "roles" in js/config.js and redeploy.
+//    4. As admin, open Setup once and Save the interview times (publishes the
+//       PII-free slot list to /interviews_public/slots for applicants).
+//  If the emails in js/config.js differ, edit the three constants below to match.
+//
+//  Honest limits (documented, not hidden):
+//   • Reviewers share one committee account, so rules can't tell reviewer A from
+//     reviewer B — per-member WRITE isolation isn't rule-enforceable here (it
+//     would need per-member accounts or custom claims via Cloud Functions). What
+//     IS enforced: reviewers cannot READ anyone's scores/screening (ranking stays
+//     private) and applicants cannot read committee data at all.
+//   • An applicant could overwrite another applicant's availability doc by typing
+//     their last name (write-without-read). Low impact, admin-auditable; the
+//     alternative (per-candidate tokens) breaks the "one link + last name" flow.
+// ============================================================================
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
+    function em() { return request.auth != null ? request.auth.token.email : ''; }
+    function isAdmin()     { return em() == 'admin@ed-hiring.app'; }
+    function isCommittee() { return em() == 'committee@ed-hiring.app' || isAdmin(); }
+    function isApplicant() { return em() == 'applicant@ed-hiring.app'; }
 
-    match /interviews_candidates/{doc} { allow read, write: if signedIn(); }
-    match /interviews_availCand/{doc}  { allow read, write: if signedIn(); }
-    match /interviews_availIv/{doc}    { allow read, write: if signedIn(); }
-    match /interviews_screening/{doc}  { allow read, write: if signedIn(); }
-    match /interviews_scores/{doc}     { allow read, write: if signedIn(); }
-    match /interviews_meta/{doc}       { allow read, write: if signedIn(); }
+    // Public, PII-free interview slots — applicants (and committee) may READ; only admin writes.
+    match /interviews_public/{doc} {
+      allow read:  if isApplicant() || isCommittee();
+      allow write: if isAdmin();
+    }
+
+    // Roster (applicant names) — committee only. Never applicants.
+    match /interviews_candidates/{doc} {
+      allow read, write: if isCommittee();
+    }
+
+    // Applicant availability — applicants submit (create/update) but CANNOT read
+    // (write-without-read); committee reads to build panels.
+    match /interviews_availCand/{doc} {
+      allow read:           if isCommittee();
+      allow create, update: if isApplicant() || isCommittee();
+      allow delete:         if isCommittee();
+    }
+
+    // Interviewer availability — committee read/write.
+    match /interviews_availIv/{doc} {
+      allow read, write: if isCommittee();
+    }
+
+    // Screening flags/ratings — reviewers submit (write) but only admin reads
+    // (keeps per-member input + collation private).
+    match /interviews_screening/{doc} {
+      allow read:  if isAdmin();
+      allow write: if isCommittee();
+    }
+
+    // Interview scores — reviewers submit (write) but only admin reads
+    // (this is what keeps the RANKING admin-only for real).
+    match /interviews_scores/{doc} {
+      allow read:  if isAdmin();
+      allow write: if isCommittee();
+    }
+
+    // Meta: config (committee/chair/oneDrive/overrides) + state (interviewsComplete).
+    // Committee may read; only admin writes.
+    match /interviews_meta/{doc} {
+      allow read:  if isCommittee();
+      allow write: if isAdmin();
+    }
+
+    // Anything else: deny.
+    match /{document=**} { allow read, write: if false; }
   }
 }
