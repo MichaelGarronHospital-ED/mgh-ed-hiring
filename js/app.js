@@ -44,13 +44,13 @@ async function unlock(typed, silent) {
     if (gerr) gerr.textContent = "Open the secure https link (not a local file).";
     return;
   }
-  const base = typed.endsWith("!") ? typed.slice(0, -1) : typed;
-  // 1) committee / admin — the code decrypts the confidential questions
+  // 1) admin OR committee — the code independently decrypts the questions and
+  //    tells us which role it is (admin vs staff wrap). No trailing-"!" needed.
   let decrypted = null;
-  try { decrypted = await decryptContent(base); } catch { /* not the committee code */ }
+  try { decrypted = await decryptContent(typed); } catch { /* not a staff/admin code */ }
   if (decrypted) {
     QUESTIONS = decrypted.q; SCALE = decrypted.s; GUIDE = decrypted.g || [];
-    ui.isAdmin = typed.endsWith("!");
+    ui.isAdmin = decrypted.isAdmin;
     ui.role = ui.isAdmin ? "admin" : "committee";
     try { await initStore(ui.role, typed); }
     catch (e) { if (gerr) gerr.textContent = signInError(e); return; }

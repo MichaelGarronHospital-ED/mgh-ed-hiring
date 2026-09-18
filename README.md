@@ -11,16 +11,25 @@ Firebase project to go multi-device and real-time.
 Design + decisions live in [`DESIGN.md`](DESIGN.md); the paneling algorithm is in
 [`js/panels.js`](js/panels.js) (validated in a Python prototype before porting).
 
-## Access codes
-There is **no code in the source**. The committee code (shared with the team
-out-of-band, not written down in this repo) is what people type to enter; it also
-decrypts the interview questions. Admins type the same code **+ `!`** and additionally
-see the Ranking tab. Regular members never see the Ranking — it's admin-only and hidden
-until all interviews are marked complete.
+## Access codes — three independent codes
+There are **three codes**, none written in the source (they're shared out-of-band):
 
-> **Security:** the code decrypts the confidential questions, so treat it like the
-> questions themselves. Before real use, set your real questions + a **strong private
-> code** and re-encrypt (below) — never a code that appears anywhere public.
+- **Staff code** (ED physicians / committee) — decrypts the interview questions and
+  opens Screen · Availability · Score.
+- **Admin code** (leadership) — a **separate, independent** code that also decrypts the
+  questions and additionally opens Panels · Ranking · Setup. Because it's independent,
+  a reviewer who knows the staff code **cannot** become admin.
+- **Guest code** (applicants) — a different code that goes straight to the applicant's
+  own scheduling; it decrypts nothing and sees no committee data.
+
+The staff and admin codes each independently "unwrap" the question key (a random content
+key wrapped under each — see "Re-keying" below), so both decrypt without either revealing
+the other. Regular members never see the Ranking — it's admin-only and hidden until all
+interviews are marked complete.
+
+> **Security:** the staff/admin codes decrypt the confidential questions, so treat them
+> like the questions themselves. Prefer codes that aren't trivially guessable (a short
+> dictionary word can be brute-forced) — never a code that appears anywhere public.
 
 ## Run it now (local mode)
 Open `index.html` over **https** (or `http://localhost`, not a `file://` path — the
@@ -36,7 +45,7 @@ sample candidates. Data does **not** sync across devices in this mode.
 3. Authentication → **Get started** → enable **Anonymous**.
 4. Project settings → Your apps → Web → copy the config → paste into
    `firebaseConfig` in [`js/config.js`](js/config.js).
-5. Deploy, then open `index.html` as **admin** (code + `!`) → the **Setup** tab, and
+5. Deploy, then open `index.html` as **admin** (the admin code) → the **Setup** tab, and
    set the real **committee** (names + each member's self-identified gender, used only
    to build balanced panels), **chair**, **interview times**, and the **OneDrive**
    applications-folder link. These save to your Firestore — they never go in the repo.
@@ -44,18 +53,16 @@ sample candidates. Data does **not** sync across devices in this mode.
    the roster placeholders there are just fallbacks until you run Setup.)
 6. Committee → `index.html`; applicants → `book.html`.
 
-## Changing the committee code
-The questions are encrypted with the code, so changing it means re-encrypting them.
-Run this (Python 3), then paste the new `ENC_CIPHER` into [`js/data.js`](js/data.js):
-
-The keystream is `HKDF-Expand(SHA-256)` of a PBKDF2-derived PRK (this two-step is
-what lets the same cipher decrypt in Firefox as well as Chrome/Safari). Run this
-(Python 3), then paste the new `ENC_CIPHER` into [`js/data.js`](js/data.js) **and**
-`mock.html`:
+## Re-keying (change the staff / admin codes or the questions)
+The questions are encrypted once with a random content key `K`; `K` is then wrapped
+(`K XOR PBKDF2(code)`) separately under the **staff** and **admin** codes. Changing a
+code = re-wrapping `K`; changing the questions = re-encrypting + re-wrapping. Run this
+(Python 3), then paste the printed `ENC_CIPHER`, `ENC_WRAP_STAFF`, `ENC_WRAP_ADMIN` into
+[`js/data.js`](js/data.js) **and** `mock.html`:
 
 ```python
-import hashlib, hmac, json, base64
-CODE = "your-new-code"            # committee code (no trailing "!")
+import hashlib, hmac, json, base64, os
+STAFF = "your-staff-code"; ADMIN = "your-admin-code"   # independent; never commit these
 QUESTIONS = [ ... ]               # the 10 questions
 SCALE = [ ... ]; GUIDE = [ ... ]  # the 5 scale levels + guidance bullets
 salt = base64.b64decode("ZWQtbW9jay1zYWx0LTAxIQ=="); iters = 100000  # = ENC_SALT/ENC_ITER
@@ -65,16 +72,20 @@ def hkdf(ikm, salt, length, info=b""):     # RFC 5869, matches WebCrypto HKDF
     while len(okm) < length:
         t = hmac.new(prk, t + info + bytes([i]), hashlib.sha256).digest(); okm += t; i += 1
     return okm[:length]
+kdf = lambda c: hashlib.pbkdf2_hmac("sha256", c.encode(), salt, iters, dklen=32)
+K = os.urandom(32)
 pt = json.dumps({"q":QUESTIONS,"s":SCALE,"g":GUIDE}, ensure_ascii=False).encode()
-prk = hashlib.pbkdf2_hmac("sha256", CODE.encode(), salt, iters, dklen=32)
-ks = hkdf(prk, salt, len(pt))
-print(base64.b64encode(bytes(a ^ b for a, b in zip(pt, ks))).decode())
+enc  = bytes(a ^ b for a, b in zip(pt, hkdf(K, salt, len(pt))))
+wS   = bytes(a ^ b for a, b in zip(K, kdf(STAFF)))
+wA   = bytes(a ^ b for a, b in zip(K, kdf(ADMIN)))
+b64 = lambda b: base64.b64encode(b).decode()
+print("ENC_CIPHER    =", b64(enc)); print("ENC_WRAP_STAFF =", b64(wS)); print("ENC_WRAP_ADMIN =", b64(wA))
 ```
 
 ## One link, three audiences
 The same `index.html` serves everyone; what you can do depends on the code you type:
-- **Committee reviewer** — the committee code → Screen · Availability · Score.
-- **Admin** — committee code **+ `!`** → the above plus Panels · Ranking · Setup.
+- **ED physician / committee** — the staff code → Screen · Availability · Score.
+- **Admin** — the (independent) admin code → the above plus Panels · Ranking · Setup.
 - **Applicant** — a **different applicant code** → taken straight to their own
   scheduling (enter last name, pick times). They never see the roster, questions,
   scores, or other applicants. (`book.html` now just forwards here.)
@@ -92,17 +103,15 @@ do these console steps (they can't be done from the repo):
 
    | Email | Password | Who |
    |---|---|---|
-   | `committee@ed-hiring.app` | the **committee code** | reviewers |
-   | `admin@ed-hiring.app` | the committee code **+ `!`** | leadership |
-   | `applicant@ed-hiring.app` | a separate **applicant code** | candidates |
+   | `committee@ed-hiring.app` | the **staff code** | ED physicians / reviewers |
+   | `admin@ed-hiring.app` | the **admin code** (independent of the staff code) | leadership |
+   | `applicant@ed-hiring.app` | the **guest code** | candidates |
 
-   > **Honest limit — admin vs reviewer:** because the committee code both decrypts
-   > the questions *and* is every reviewer's password, admins authenticate with that
-   > same code + `!`. A reviewer who knows the code could therefore sign in as admin
-   > and see the ranking early. For an internal committee this is usually acceptable;
-   > if you need a hard reviewer/admin wall, give leadership their own **per-person
-   > admin accounts** (and don't share the code + `!` convention). Enforcing that in
-   > the shared-code UI would require admins to enter a second, separate secret.
+   > The admin code is independent of the staff code, so a reviewer who knows the
+   > staff code **cannot** sign in as admin — the reviewer/admin (ranking) wall holds.
+   > Remaining tradeoff: the staff code both decrypts the questions and is the
+   > committee Firebase password, so keep it off any public channel and prefer a
+   > code that isn't trivially guessable.
 
 3. **Firestore → Rules →** paste [`firestore.rules`](firestore.rules) → **Publish**.
 4. In [`js/config.js`](js/config.js) set `AUTH.mode = "roles"` and redeploy.

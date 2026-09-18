@@ -27,10 +27,10 @@ export const firebaseConfig = {
 // their own scheduling (they never see the roster, questions, scores, or other
 // applicants). See AUTH below for how this is enforced for real with Firestore.
 
-// Fallback applicant code, used ONLY in local mode (no Firebase) for demo/testing.
-// In the real (roles) security model the applicant gate is the Firebase account
-// password (set in the console, never in this file) — see AUTH.mode.
-export const CANDIDATE_CODE_LOCAL = "apply2026";
+// Applicant/guest code for local mode (no Firebase). Low-value tier (guests only
+// pick their own interview times and see nothing else). In the real (roles) model
+// this same word is the applicant Firebase account password (set in the console).
+export const CANDIDATE_CODE_LOCAL = "guest";
 
 // ---- 2b. Auth / security model -------------------------------------------
 // mode "anon"  → every client signs in anonymously (baseline; matches the

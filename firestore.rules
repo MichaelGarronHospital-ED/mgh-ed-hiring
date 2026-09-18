@@ -17,8 +17,8 @@ rules_version = '2';
 //  IMPORTANT — before publishing this file:
 //    1. Authentication → Sign-in method → enable Email/Password.
 //    2. Authentication → Users → add the three accounts above; set each password
-//       (committee = the committee code; admin = committee code + "!"; applicant
-//       = the applicant code). See README → "Real access control".
+//       (committee = the staff code; admin = the independent admin code; applicant
+//       = the guest code). See README → "Real access control".
 //    3. Set AUTH.mode = "roles" in js/config.js and redeploy.
 //    4. As admin, open Setup once and Save the interview times (publishes the
 //       PII-free slot list to /interviews_public/slots for applicants).
@@ -29,7 +29,8 @@ rules_version = '2';
 //     reviewer B — per-member WRITE isolation isn't rule-enforceable here (it
 //     would need per-member accounts or custom claims via Cloud Functions). What
 //     IS enforced: reviewers cannot READ anyone's scores/screening (ranking stays
-//     private) and applicants cannot read committee data at all.
+//     private), applicants cannot read committee data at all, and the admin code is
+//     independent of the staff code so a reviewer cannot self-elevate to admin.
 //   • An applicant could overwrite another applicant's availability doc by typing
 //     their last name (write-without-read). Low impact, admin-auditable; the
 //     alternative (per-candidate tokens) breaks the "one link + last name" flow.

@@ -2,14 +2,17 @@
 //  Confidential content — interview questions, the revised overall rating scale,
 //  and panelist guidance. Stored ENCRYPTED (PBKDF2→HKDF-SHA256 keystream, XOR) so
 //  the questions are NOT readable in the public source. Decrypted client-side only
-//  after the correct committee code is entered (the code is the key). Same blob
-//  and scheme as the reviewed mock.
+//  after the correct staff OR admin code is entered (each independently unwraps the
+//  content key). The codes themselves live nowhere in the repo.
 // ============================================================================
 
 const ENC_SALT = "ZWQtbW9jay1zYWx0LTAxIQ==";
 const ENC_ITER = 100000;
 const ENC_CIPHER =
-  "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";
+  "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";
+
+const ENC_WRAP_STAFF = "nrw2MRHQIElDDerr8p2Blo4Z1Gj9ZQGH0AOB+9o/8oY=";
+const ENC_WRAP_ADMIN = "VHMhwqusAveXfIXK305uOvN2glj50rSqBoBudu1hBIQ=";
 
 function b64bytes(b) {
   const s = atob(b), u = new Uint8Array(s.length);
@@ -17,25 +20,48 @@ function b64bytes(b) {
   return u;
 }
 
-// Returns { q:[...questions], s:[...scale], g:[...guidance] } or throws if the
-// code is wrong (garbage decrypt fails UTF-8 / JSON). `code` is the committee
-// code WITHOUT any trailing "!" (the admin marker is stripped by the caller).
-// Keystream = HKDF-Expand(SHA-256) of a PBKDF2-derived PRK. PBKDF2 does the
-// password stretching (small 256-bit output); HKDF produces the full-length
-// keystream. This two-step avoids Firefox's PBKDF2 deriveBits length cap
-// (Firefox rejects large single PBKDF2 derives; HKDF handles them) — so the
-// same cipher decrypts in Chrome, Safari/WebKit and Firefox alike.
+// The questions are encrypted once with a random 32-byte content key K; K is
+// then "wrapped" (K XOR PBKDF2(code)) separately under the STAFF code and the
+// ADMIN code, so two INDEPENDENT codes both decrypt the questions without either
+// revealing the other. The wraps + cipher live here; the codes themselves live
+// NOWHERE in the repo (a wrong code just yields garbage → UTF-8/JSON throw).
+//
+// Keystream from K = HKDF-Expand(SHA-256). PBKDF2 (small 256-bit output) does the
+// password stretching to unwrap K; HKDF produces the full-length keystream. This
+// two-step avoids Firefox's PBKDF2 deriveBits length cap — the same cipher
+// decrypts in Chrome, Safari/WebKit and Firefox alike.
+
+// derive a 32-byte key from a code (PBKDF2, Firefox-safe small output)
+async function kdf32(code, salt) {
+  const km = await crypto.subtle.importKey("raw", new TextEncoder().encode(code), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations: ENC_ITER, hash: "SHA-256" }, km, 256);
+  return new Uint8Array(bits);
+}
+// try one wrap: unwrap K, expand to keystream, decrypt + validate. null on mismatch.
+async function tryWrap(code, wrapB64, salt, ct) {
+  try {
+    const kd = await kdf32(code, salt), wrap = b64bytes(wrapB64);
+    const K = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) K[i] = wrap[i] ^ kd[i];
+    const hk = await crypto.subtle.importKey("raw", K, "HKDF", false, ["deriveBits"]);
+    const ksBits = await crypto.subtle.deriveBits({ name: "HKDF", hash: "SHA-256", salt, info: new Uint8Array() }, hk, ct.length * 8);
+    const ks = new Uint8Array(ksBits), pt = new Uint8Array(ct.length);
+    for (let i = 0; i < ct.length; i++) pt[i] = ct[i] ^ ks[i];
+    const obj = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(pt));
+    if (!Array.isArray(obj.q) || !Array.isArray(obj.s)) return null;
+    return obj;
+  } catch { return null; }
+}
+
+// Returns { q, s, g, isAdmin } for the admin OR staff code, or throws for anything
+// else (wrong code, or the applicant/guest code, which decrypts nothing).
 export async function decryptContent(code) {
   if (!(window.crypto && window.crypto.subtle))
     throw new Error("secure-context-required");
   const salt = b64bytes(ENC_SALT), ct = b64bytes(ENC_CIPHER);
-  const km = await crypto.subtle.importKey("raw", new TextEncoder().encode(code), "PBKDF2", false, ["deriveBits"]);
-  const prkBits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations: ENC_ITER, hash: "SHA-256" }, km, 256);
-  const hk = await crypto.subtle.importKey("raw", new Uint8Array(prkBits), "HKDF", false, ["deriveBits"]);
-  const ksBits = await crypto.subtle.deriveBits({ name: "HKDF", hash: "SHA-256", salt, info: new Uint8Array() }, hk, ct.length * 8);
-  const ks = new Uint8Array(ksBits), pt = new Uint8Array(ct.length);
-  for (let i = 0; i < ct.length; i++) pt[i] = ct[i] ^ ks[i];
-  const obj = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(pt));
-  if (!Array.isArray(obj.q) || !Array.isArray(obj.s)) throw new Error("bad");
-  return obj;
+  const asAdmin = await tryWrap(code, ENC_WRAP_ADMIN, salt, ct);
+  if (asAdmin) return { ...asAdmin, isAdmin: true };
+  const asStaff = await tryWrap(code, ENC_WRAP_STAFF, salt, ct);
+  if (asStaff) return { ...asStaff, isAdmin: false };
+  throw new Error("bad");
 }

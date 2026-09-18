@@ -20,6 +20,23 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## Unified 3-code login (admin / physicians / guest)
+Replaced the single committee code + "!" convention with **three independent codes**
+shared across the ED tools:
+- **Admin** (leadership), **ED physicians** (staff/committee/voters), **guest**
+  (applicants) — chosen by the user; kept out of the repo (only the low-value guest
+  local-fallback appears, in `config.js`).
+- **Crypto:** the questions are now encrypted with a random content key `K` that is
+  wrapped separately under the staff and admin codes (`data.js`/`mock.html`), so the
+  two codes are **fully independent** yet both decrypt — which also **closes the
+  self-elevation gap** the audit flagged (a reviewer can no longer become admin).
+  `decryptContent` returns `{q,s,g,isAdmin}`; `unlock` no longer strips a trailing "!".
+- **Motion Voting:** `ADMIN_PASSCODE` updated to the shared admin code (if the locked
+  Firebase backend is used, update the `LEADER_EMAIL` Auth user's password to match).
+- Updated README (three-code scheme + re-keying recipe), `firestore.rules` header,
+  and the roles table. Verified in Chromium/Firefox/WebKit: staff→committee,
+  admin→admin (+admin tabs), guest→applicant, wrong/old codes rejected.
+
 ## Audit round 1 — fixes from a 6-dimension adversarial review
 Ran a multi-agent audit (security, persistence, logic, edge cases, paneling,
 a11y/CSS) with per-finding verification. Fixes applied, worst first:
