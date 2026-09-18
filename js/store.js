@@ -21,6 +21,9 @@ export const key = (member, candId) => `${member}~${candId}`;
 const EMPTY = () => ({
   candidates: [], screening: {}, availIv: {}, availCand: {}, scores: {},
   meta: { interviewsComplete: false },
+  // admin-managed setup, stored in the DB (not in the repo): real committee
+  // roster (+self-identified gender), chair, interview slots, OneDrive link.
+  settings: { committee: [], chair: "", slots: [], oneDrive: "" },
 });
 
 // ---------------------------------------------------------------- base class
@@ -84,6 +87,7 @@ export class LocalStore extends BaseStore {
     this._save();
   }
   async setMeta(patch) { this.state.meta = { ...this.state.meta, ...patch }; this._save(); }
+  async setSettings(patch) { this.state.settings = { ...this.state.settings, ...patch }; this._save(); }
 }
 
 // ---------------------------------------------------------------- firestore
@@ -118,6 +122,8 @@ export class FirestoreStore extends BaseStore {
     watch("interviews_meta", (docs) => {
       const m = docs.find((d) => d.id === "state");
       this.state.meta = { interviewsComplete: false, ...(m ? m.data() : {}) };
+      const c = docs.find((d) => d.id === "config");
+      this.state.settings = { committee: [], chair: "", slots: [], oneDrive: "", ...(c ? c.data() : {}) };
     });
   }
   _doc(name, id) { const { db, doc } = this._fb; return doc(db, name, id); }
@@ -149,5 +155,9 @@ export class FirestoreStore extends BaseStore {
   async setMeta(patch) {
     const { setDoc } = this._fb;
     await setDoc(this._doc("interviews_meta", "state"), patch, { merge: true });
+  }
+  async setSettings(patch) {
+    const { setDoc } = this._fb;
+    await setDoc(this._doc("interviews_meta", "config"), patch, { merge: true });
   }
 }

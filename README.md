@@ -36,11 +36,13 @@ sample candidates. Data does **not** sync across devices in this mode.
 3. Authentication → **Get started** → enable **Anonymous**.
 4. Project settings → Your apps → Web → copy the config → paste into
    `firebaseConfig` in [`js/config.js`](js/config.js).
-5. In [`js/config.js`](js/config.js) also set: `COMMITTEE` (real names + each
-   member's **self-identified** gender, used only to build balanced panels),
-   `CHAIR`, `SLOTS`, `ORG_NAME`, and `ONEDRIVE` (the applications-folder link —
-   keep it out of a public repo).
-6. Deploy. Committee → `index.html`; applicants → `book.html`.
+5. Deploy, then open `index.html` as **admin** (code + `!`) → the **Setup** tab, and
+   set the real **committee** (names + each member's self-identified gender, used only
+   to build balanced panels), **chair**, **interview times**, and the **OneDrive**
+   applications-folder link. These save to your Firestore — they never go in the repo.
+   (`ORG_NAME` branding is the only thing still set in [`js/config.js`](js/config.js);
+   the roster placeholders there are just fallbacks until you run Setup.)
+6. Committee → `index.html`; applicants → `book.html`.
 
 ## Changing the committee code
 The questions are encrypted with the code, so changing it means re-encrypting them.

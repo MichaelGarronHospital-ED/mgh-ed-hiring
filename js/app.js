@@ -12,8 +12,18 @@ let QUESTIONS = [], SCALE = [], GUIDE = [];
 let store = null, S = null;
 const ui = { isAdmin: false, member: null, tab: "screen", scoreCand: null };
 const $ = (s) => document.querySelector(s);
-const slotIds = SLOTS.map((_, i) => String(i));
 const isConfigured = () => firebaseConfig && Object.keys(firebaseConfig).length > 0 && firebaseConfig.apiKey;
+
+// Effective config: admin-set settings (stored in the DB) if present, else the
+// placeholder defaults from config.js. Real committee/chair/slots/OneDrive are set
+// in-app (Setup tab) so they never live in the public source.
+function EFF() {
+  const s = (S && S.settings) || {};
+  const committee = s.committee && s.committee.length ? s.committee : COMMITTEE;
+  const slots = s.slots && s.slots.length ? s.slots : SLOTS;
+  return { committee, chair: s.chair || CHAIR, slots, oneDrive: s.oneDrive || ONEDRIVE,
+    slotIds: slots.map((_, i) => String(i)) };
+}
 
 // ------------------------------------------------------------------ gate
 async function unlock(typed, silent) {
@@ -62,10 +72,11 @@ async function loadFirestore() {
 
 // ------------------------------------------------------------ member pick
 function proceedToMemberPick() {
+  const committee = EFF().committee;
   const saved = sessionStorage.getItem("ed_iv_member");
-  if (saved && COMMITTEE.some((c) => c.name === saved)) { ui.member = saved; showApp(); return; }
+  if (saved && committee.some((c) => c.name === saved)) { ui.member = saved; showApp(); return; }
   const sel = $("#memberSel");
-  sel.innerHTML = COMMITTEE.map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("");
+  sel.innerHTML = committee.map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("");
   $("#memberpick").classList.remove("hidden");
 }
 
@@ -81,7 +92,7 @@ function showApp() {
 
 function buildTabs() {
   const tabs = [["screen", "1 · Screen"], ["availability", "2 · Availability"], ["score", "3 · Score"]];
-  if (ui.isAdmin) tabs.push(["panels", "4 · Panels"], ["ranking", "5 · Ranking"]);
+  if (ui.isAdmin) tabs.push(["panels", "4 · Panels"], ["ranking", "5 · Ranking"], ["settings", "6 · Setup"]);
   $("#tabs").innerHTML = tabs.map(([t, label]) =>
     `<button data-tab="${t}" class="${t === ui.tab ? "on" : ""}">${label}</button>`).join("");
   $("#tabs").querySelectorAll("button").forEach((b) => {
@@ -95,20 +106,21 @@ function buildTabs() {
 
 // --------------------------------------------------------------- helpers
 const cand = (id) => S.candidates.find((c) => c.id === id);
-const flagsCount = (id) => COMMITTEE.filter((c) => (S.screening[key(c.name, id)] || {}).flag).length;
+const flagsCount = (id) => EFF().committee.filter((c) => (S.screening[key(c.name, id)] || {}).flag).length;
 const isIn = (c) => !c.removed && flagsCount(c.id) < 2;
 const activeCands = () => S.candidates.filter(isIn);
 
 function render() {
-  ["screen", "availability", "score", "panels", "ranking"].forEach((t) =>
+  ["screen", "availability", "score", "panels", "ranking", "settings"].forEach((t) =>
     $("#" + t).classList.toggle("hidden", t !== ui.tab));
   ({ screen: renderScreen, availability: renderAvailability, score: renderScore,
-     panels: renderPanels, ranking: renderRanking }[ui.tab] || (() => {}))();
+     panels: renderPanels, ranking: renderRanking, settings: renderSettings }[ui.tab] || (() => {}))();
 }
 
 // ------------------------------------------------------------ 1 · Screen
 function renderScreen() {
   const me = ui.member;
+  const { committee, oneDrive } = EFF();
   let html = `<div class="note">Review each applicant's CV &amp; cover letter, then <b>flag</b> anyone you
     feel is unqualified (optional reason) and optionally give a <b>1–5 priority rating</b>. Only you and
     leadership see your input.</div>`;
@@ -118,9 +130,9 @@ function renderScreen() {
     Object.keys(S.screening).forEach((k) => { const v = S.screening[k]; if (v.flag || v.rating) submitted.add(k.split("~")[0]); });
     const rows = S.candidates.map((c) => {
       const fc = flagsCount(c.id), out = fc >= 2 || c.removed;
-      const reasons = COMMITTEE.map((m) => S.screening[key(m.name, c.id)]).filter((s) => s && s.flag && s.reason)
+      const reasons = committee.map((m) => S.screening[key(m.name, c.id)]).filter((s) => s && s.flag && s.reason)
         .map((s) => escapeHtml(s.reason)).join("; ") || "—";
-      const ratings = COMMITTEE.map((m) => (S.screening[key(m.name, c.id)] || {}).rating).filter((n) => n);
+      const ratings = committee.map((m) => (S.screening[key(m.name, c.id)] || {}).rating).filter((n) => n);
       const ar = ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : "—";
       return `<tr><td>${escapeHtml(c.name)}</td><td>${fc >= 2 ? `<b class="bad">${fc}</b>` : fc}</td>
         <td class="muted small">${reasons}</td><td>${ar}</td>
@@ -128,7 +140,7 @@ function renderScreen() {
         <td><button class="linky" onclick="IV.removeCand('${c.id}',${!c.removed})">${c.removed ? "restore" : "remove"}</button></td></tr>`;
     }).join("");
     html += `<div class="note"><b>Admin · collation.</b> A candidate drops off at <b>≥2 flags</b>. Reasons are admin-only.</div>
-      <div class="adminbar"><span class="muted">${submitted.size}/${COMMITTEE.length} members have submitted</span></div>
+      <div class="adminbar"><span class="muted">${submitted.size}/${committee.length} members have submitted</span></div>
       <div class="card"><b>Add candidates</b>
         <div class="muted small">Paste applicant names, one per line, then Add all. (Stored in this tool, not in code.)</div>
         <textarea id="bulkAdd" rows="4" placeholder="Dr Jane Doe&#10;Dr John Smith"></textarea>
@@ -142,7 +154,7 @@ function renderScreen() {
     const flagged = !!sc.flag;
     return `<div class="card">
       <div class="row"><div class="grow"><div class="name">${escapeHtml(c.name)}</div>
-        <a class="doc" href="${escapeHtml(ONEDRIVE)}" ${ONEDRIVE === "#" ? 'onclick="return false"' : 'target="_blank" rel="noopener"'}>📄 View CV &amp; cover letter</a></div>
+        <a class="doc" href="${escapeHtml(oneDrive)}" ${oneDrive === "#" ? 'onclick="return false"' : 'target="_blank" rel="noopener"'}>📄 View CV &amp; cover letter</a></div>
         <button class="flagbtn ${flagged ? "on" : ""}" onclick="IV.toggleFlag('${c.id}')">${flagged ? "⚑ Flagged" : "Flag concern"}</button></div>
       <div class="row" style="margin-top:.5rem"><div class="muted small" style="width:110px">Optional priority</div>
         <div class="rate">${[1, 2, 3, 4, 5].map((n) => `<button class="${sc.rating === n ? "on" : ""}" onclick="IV.rate('${c.id}',${n})">${n}</button>`).join("")}</div></div>
@@ -155,7 +167,7 @@ function renderScreen() {
 
 // ------------------------------------------------------ shared slot control
 function slotRows(map, handler) {
-  return SLOTS.map((label, i) => {
+  return EFF().slots.map((label, i) => {
     const cur = map[String(i)];
     const seg = (v, l) => `<button class="${cur === v ? "on" : ""}" onclick="${handler}(${i},'${v}')">${l}</button>`;
     return `<div>${escapeHtml(label)}</div><div><span class="seg">${seg("ip", "In person")}${seg("zoom", "Zoom")}${seg("either", "Either")}</span></div>`;
@@ -196,11 +208,12 @@ function renderScore() {
 
 // ------------------------------------------------------ 4 · Panels (admin)
 function renderPanels() {
+  const { committee, chair, slots, slotIds } = EFF();
   const interviewers = {};
-  COMMITTEE.forEach((c) => { interviewers[c.name] = { g: c.gender, avail: S.availIv[c.name] || {} }; });
+  committee.forEach((c) => { interviewers[c.name] = { g: c.gender, avail: S.availIv[c.name] || {} }; });
   const candidates = {};
   activeCands().forEach((c) => { candidates[c.id] = { avail: S.availCand[c.id] || {} }; });
-  const res = autoPanels(candidates, interviewers, slotIds, CHAIR);
+  const res = autoPanels(candidates, interviewers, slotIds, chair);
   const nameOf = (id) => (cand(id) || {}).name || id;
   const modPill = (m) => `<span class="pill ${m === "ip" ? "ip" : "zoom"}">${m === "ip" ? "In-person" : "Zoom"}</span>`;
 
@@ -208,7 +221,7 @@ function renderPanels() {
     balanced panels of the right size. Slots needing a manual fix are flagged.</div>`;
   html += res.panels.map((p) => {
     const size = p.members.length, ok = size >= 3 && size <= 5;
-    return `<div class="panelbox"><div class="row"><div class="grow"><b>${escapeHtml(nameOf(p.cand))}</b> · ${escapeHtml(SLOTS[+p.slot])} ${modPill(p.modality)}</div></div>
+    return `<div class="panelbox"><div class="row"><div class="grow"><b>${escapeHtml(nameOf(p.cand))}</b> · ${escapeHtml(slots[+p.slot])} ${modPill(p.modality)}</div></div>
       <div class="small" style="margin-top:.3rem">${p.members.map(escapeHtml).join(" · ")}</div>
       <div class="badges"><span class="badge ${ok ? "ok" : "bad"}">${ok ? "✓" : "✗"} ${size} members</span>
         <span class="badge ok">✓ balanced panel</span></div></div>`;
@@ -217,7 +230,7 @@ function renderPanels() {
   if (res.unschedulable.length || res.understaffed.length) {
     html += `<div class="card"><b>⚠ Needs attention</b><ul class="small">
       ${res.unschedulable.map((id) => `<li>${escapeHtml(nameOf(id))} — no available slot yields a valid panel; schedule manually.</li>`).join("")}
-      ${res.understaffed.map((s) => `<li>${escapeHtml(SLOTS[+s])} — not enough available interviewers for a balanced panel.</li>`).join("")}
+      ${res.understaffed.map((s) => `<li>${escapeHtml(slots[+s])} — not enough available interviewers for a balanced panel.</li>`).join("")}
     </ul></div>`;
   }
   $("#panels").innerHTML = html;
@@ -231,8 +244,9 @@ function renderRanking() {
       <button class="primary" onclick="IV.setComplete(true)">Mark interviews complete &amp; reveal ranking</button>`;
     return;
   }
+  const committee = EFF().committee;
   const ranked = activeCands().map((c) => {
-    const scores = COMMITTEE.map((m) => (S.scores[key(m.name, c.id)] || {}).overall).filter((n) => n);
+    const scores = committee.map((m) => (S.scores[key(m.name, c.id)] || {}).overall).filter((n) => n);
     return { name: c.name, avg: avg(scores), n: scores.length };
   }).filter((r) => r.avg != null).sort((a, b) => b.avg - a.avg);
   $("#ranking").innerHTML = `<div class="note"><b>Ranking — admin only.</b> Candidates ordered by average interview score.
@@ -240,6 +254,36 @@ function renderRanking() {
     <table><thead><tr><th>#</th><th>Candidate</th><th>Avg score</th><th># scored</th></tr></thead>
       <tbody>${ranked.map((r, i) => `<tr><td class="rankn">${i + 1}</td><td>${escapeHtml(r.name)}</td><td><b>${r.avg.toFixed(1)}</b></td><td>${r.n}</td></tr>`).join("")
         || '<tr><td colspan="4" class="muted small">No scores yet.</td></tr>'}</tbody></table>`;
+}
+
+// ------------------------------------------------------------ 6 · Setup (admin)
+function renderSettings() {
+  const { committee, chair, slots, oneDrive } = EFF();
+  $("#settings").innerHTML = `
+    <div class="note"><b>Admin · setup.</b> Stored privately in your database, not in the app's code.
+      Set the real committee, chair, interview times, and the applications-folder link here.</div>
+
+    <div class="card"><b>Committee</b>
+      <div class="muted small">One per line as <b>Name, F</b> or <b>Name, M</b> (self-identified gender, used
+        only to build balanced panels). "Set committee" replaces the whole list.</div>
+      <textarea id="commBulk" rows="6" placeholder="Vojdani, M&#10;Marrocco, F">${committee.map((m) => escapeHtml(m.name + ", " + m.gender)).join("\n")}</textarea>
+      <div style="margin-top:.4rem"><button class="savebtn" onclick="IV.setCommittee()">Set committee</button></div></div>
+
+    <div class="card"><b>Panel chair</b> <span class="muted small">(on every panel)</span>
+      <div style="margin-top:.4rem"><select onchange="IV.setChair(this.value)">
+        ${committee.map((m) => `<option value="${escapeHtml(m.name)}" ${m.name === chair ? "selected" : ""}>${escapeHtml(m.name)}</option>`).join("")}
+      </select></div></div>
+
+    <div class="card"><b>Interview times</b>
+      <table><tbody>${slots.map((s, i) => `<tr><td>${escapeHtml(s)}</td><td><button class="linky" onclick="IV.removeSlot(${i})">remove</button></td></tr>`).join("") || '<tr><td class="muted small">none yet</td></tr>'}</tbody></table>
+      <div class="row" style="margin-top:.5rem; align-items:center">
+        <input id="slotIn" type="text" placeholder="e.g. Oct 1 · 10:45" style="flex:1" />
+        <button class="savebtn" onclick="IV.addSlot()">Add time</button></div></div>
+
+    <div class="card"><b>Applications folder link (OneDrive)</b>
+      <div class="muted small">Committee opens CVs from here. Stored privately (not in code).</div>
+      <input id="odIn" type="text" placeholder="https://..." value="${escapeHtml(oneDrive === "#" ? "" : oneDrive)}" />
+      <div style="margin-top:.4rem"><button class="savebtn" onclick="IV.saveOneDrive()">Save link</button></div></div>`;
 }
 
 // ---------------------------------------------------------- handlers (window)
@@ -268,6 +312,20 @@ window.IV = {
   note: (qi, val) => saveNoteKeyed(ui.member, ui.scoreCand, qi, val),
   score: (n) => { const cur = (S.scores[key(ui.member, ui.scoreCand)] || {}).overall; store.setScore(ui.member, ui.scoreCand, { overall: cur === n ? 0 : n }); },
   setComplete: (v) => store.setMeta({ interviewsComplete: v }),
+  setCommittee: async () => {
+    const lines = ($("#commBulk").value || "").split("\n").map((l) => l.trim()).filter(Boolean);
+    const list = [];
+    for (const l of lines) {
+      const parts = l.split(","); const name = parts[0].trim();
+      const gender = (parts[1] || "").trim().toUpperCase().startsWith("F") ? "F" : "M";
+      if (name) list.push({ name, gender });
+    }
+    await store.setSettings({ committee: list }); toast(`Committee set (${list.length})`);
+  },
+  setChair: (v) => store.setSettings({ chair: v }),
+  addSlot: async () => { const v = ($("#slotIn").value || "").trim(); if (!v) return; const l = EFF().slots.slice(); l.push(v); await store.setSettings({ slots: l }); },
+  removeSlot: async (i) => { const l = EFF().slots.slice(); l.splice(i, 1); await store.setSettings({ slots: l }); },
+  saveOneDrive: () => { const v = ($("#odIn").value || "").trim(); store.setSettings({ oneDrive: v || "#" }); toast("Saved"); },
 };
 
 // ------------------------------------------------------------------- boot
