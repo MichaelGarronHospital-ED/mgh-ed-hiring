@@ -140,9 +140,9 @@ async function signInFor(fb, role, typed) {
 
 // ------------------------------------------------------------ member pick
 function proceedToMemberPick() {
+  // always ask who you are on each sign-in (never auto-restore)
   const committee = EFF().committee;
-  const saved = sessionStorage.getItem("ed_iv_member");
-  if (saved && committee.some((c) => c.name === saved)) { ui.member = saved; showApp(); return; }
+  ui.member = null;
   const sel = $("#memberSel");
   sel.innerHTML = committee.map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("");
   $("#memberpick").classList.remove("hidden");
@@ -153,6 +153,8 @@ function showApp() {
   $("#orgName").textContent = ORG_NAME;
   $("#whoLine").textContent = ui.member;
   $("#adminTag").classList.toggle("hidden", !ui.isAdmin);
+  $("#setupBtn").classList.toggle("hidden", !ui.isAdmin);
+  if (!ui.isAdmin && ui.tab === "settings") ui.tab = "screen";
   ["#appHeader", "#tabs", "#app"].forEach((s) => $(s).classList.remove("hidden"));
   buildTabs();
   renderBanner();
@@ -160,8 +162,12 @@ function showApp() {
 }
 
 function buildTabs() {
-  const tabs = [["screen", "Screen"], ["availability", "Availability"], ["score", "Score"]];
-  if (ui.isAdmin) tabs.push(["panels", "Panels"], ["ranking", "Ranking"], ["settings", "Setup"]);
+  // Natural progression; Panels(3) before Score(4). Setup lives on the gear icon,
+  // not the tab row, so the tabs read as one clean sequence.
+  const tabs = [["screen", "Screen"], ["availability", "Availability"]];
+  if (ui.isAdmin) tabs.push(["panels", "Panels"]);
+  tabs.push(["score", "Score"]);
+  if (ui.isAdmin) tabs.push(["ranking", "Ranking"]);
   $("#tabs").innerHTML = tabs.map(([t, label], i) =>
     `<button id="tab-${t}" data-tab="${t}" role="tab" aria-controls="${t}" aria-selected="${t === ui.tab}"
        tabindex="${t === ui.tab ? "0" : "-1"}" class="${t === ui.tab ? "on" : ""}">${i + 1} · ${label}</button>`).join("");
@@ -169,6 +175,7 @@ function buildTabs() {
   const btns = [...$("#tabs").querySelectorAll("button")];
   const select = (b, focus) => {
     ui.tab = b.dataset.tab;
+    $("#setupBtn").classList.remove("active");
     btns.forEach((x) => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-selected", on); x.tabIndex = on ? 0 : -1; });
     if (focus) b.focus();
     render();
@@ -193,13 +200,18 @@ const flagsCount = (id) => EFF().committee.filter((c) => (S.screening[key(c.name
 const isIn = (c) => !c.removed && flagsCount(c.id) < 2;
 const activeCands = () => S.candidates.filter(isIn);
 
+// small hoverable "i" info badge (native tooltip on desktop hover; tap on mobile)
+function infoIcon(text) {
+  // onclick guard so tapping the badge inside a <summary> doesn't toggle the section
+  return text ? ` <span class="info" tabindex="0" role="img" title="${escapeHtml(text)}" aria-label="Info: ${escapeHtml(text)}" onclick="event.preventDefault();event.stopPropagation();">i</span>` : "";
+}
 // collapsible section that remembers its open/closed state across renders
 function section(id, title, sub, bodyHtml, opts = {}) {
   const open = ui.openSections[id] ?? (opts.open ?? false);
   const count = opts.count != null ? `<span class="count">${opts.count}</span>` : "";
   const chev = `<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>`;
   return `<details class="section" data-sec="${id}" ${open ? "open" : ""}>
-    <summary>${chev}<span class="sec-title">${escapeHtml(title)}${sub ? ` <span class="sec-sub">· ${escapeHtml(sub)}</span>` : ""}</span>${count}</summary>
+    <summary>${chev}<span class="sec-title">${escapeHtml(title)}${sub ? ` <span class="sec-sub">· ${escapeHtml(sub)}</span>` : ""}${infoIcon(opts.info)}</span>${count}</summary>
     <div class="sec-body">${bodyHtml}</div></details>`;
 }
 // wire <details> toggles → persist open state (called after each render)
@@ -276,9 +288,12 @@ function renderScreen() {
       <textarea id="bulkAdd" rows="4" placeholder="Dr Jane Doe&#10;Dr John Smith" aria-label="New candidate names"></textarea>
       <div style="margin-top:.5rem"><button class="btn tinted small" onclick="IV.addCands(this)">Add candidates</button></div>`;
 
-    html += section("collation", "Collation & shortlist", `${activeCands().length} of ${S.candidates.length} still in`, collation, { open: true, count: S.candidates.length })
-      + section("dash", "Coordinator dashboard", `${submitted.size}/${committee.length} submitted`, dash, { open: false })
-      + section("adder", "Add candidates", "", adder, { open: S.candidates.length === 0 })
+    html += section("collation", "Collation & shortlist", `${activeCands().length} of ${S.candidates.length} still in`, collation,
+        { open: false, count: S.candidates.length, info: "Everyone's flags and priority ratings, collated. A candidate drops off the interview list at 2 or more flags. Reasons are visible to leadership only. Export the shortlist as a CSV here." })
+      + section("dash", "Coordinator dashboard", `${submitted.size}/${committee.length} submitted`, dash,
+        { open: false, info: "Track who has and hasn't submitted their screening, so you can chase people before the deadline." })
+      + section("adder", "Add candidates", "", adder,
+        { open: false, info: "Paste applicant names to add them to the interview list. Stored securely in your database — never in the app's code. You can add or remove people any time." })
       + `<h3>Your review</h3>`;
   }
 
@@ -313,7 +328,8 @@ function renderAvailability() {
   const map = S.availIv[ui.member] || {};
   const slots = EFF().slots;
   let html = `<div class="note tip"><b>What to do here:</b> for each interview time, tap whether you <b>can</b> do it
-    in person, by Zoom, or either. Leave a time untouched if you're not available. Tap a highlighted option again to clear it.</div>`;
+    in person, by Zoom, or either. Leave a time untouched if you're not available. Tap a highlighted option again to clear it.
+    <b>Your choices save automatically</b> (watch the “✓ Saved” note at the top).</div>`;
   html += slots.length
     ? `<div class="card"><div class="slotgrid"><div class="h">Interview time</div><div class="h">I can do…</div>${slotRows(map, "IV.avail")}</div></div>`
     : empty("🗓️", "No interview times yet", ui.isAdmin ? "Add interview times in the Setup tab." : "Leadership hasn't published the interview times yet — check back soon.");
@@ -338,7 +354,8 @@ function renderAvailability() {
 function renderScore() {
   const list = activeCands();
   let head = `<div class="note tip"><b>What to do here:</b> after each interview, jot notes per question, then give
-    <b>one overall 1–5 rating</b> using the guide at the bottom. Your score is private to you and leadership.</div>`;
+    <b>one overall 1–5 rating</b> using the guide at the bottom. Your score is private to you and leadership.
+    <b>Notes and ratings save automatically</b> — you'll see “✓ Saved” appear at the top each time.</div>`;
   if (!list.length) { $("#score").innerHTML = head + empty("⭐️", "No candidates to score", "Candidates on the interview list will appear here."); return; }
   if (!ui.scoreCand || !list.some((c) => c.id === ui.scoreCand)) ui.scoreCand = list[0].id;
   const me = ui.member, cid = ui.scoreCand;
@@ -526,11 +543,13 @@ function renderSettings() {
     <div style="margin-top:.5rem"><button class="btn tinted small" onclick="IV.saveOneDrive(this)">Save link</button></div>`;
 
   $("#settings").innerHTML = `<div class="note tip"><b>Setup (admin).</b> Everything here is stored privately in your database, never in
-      the app's code. Set the real committee, chair, interview times, and applications-folder link.</div>
-    ${section("setCommittee", "Committee", `${committee.length} members`, committeeBody, { open: true })}
-    ${section("setChair", "Panel chair", chair, chairBody)}
-    ${section("setSlots", "Interview times", `${slots.length} time${slots.length === 1 ? "" : "s"}`, slotsBody, { open: true })}
-    ${section("setOneDrive", "Applications folder (OneDrive)", "", odBody)}`;
+      the app's code — so the tool is <b>fully reusable each hiring round</b>: just update the committee, chair, times, and (on the
+      Screen tab) the applicant list. Nothing is hard-coded.</div>
+    ${section("setChair", "Panel chair", chair, chairBody, { info: "The chair is on every interview panel. Pick from your committee list below." })}
+    ${section("setCommittee", "Committee (interviewers)", `${committee.length} members`, committeeBody, { open: true, info: "Your interviewers. One per line as ‘Name, F’ or ‘Name, M’. The F/M is self-identified and used only to build balanced panels — it is never shown as a label. Saving replaces the whole list." })}
+    ${section("setSlots", "Interview times", `${slots.length} time${slots.length === 1 ? "" : "s"}`, slotsBody, { open: true, info: "The interview time slots. Interviewers and applicants both choose from these. Add or remove them any time." })}
+    ${section("setOneDrive", "Applications folder (OneDrive)", "", odBody, { info: "Link to the access-controlled OneDrive folder holding the CVs/cover letters. Committee members open applicant files from here. Stored privately, never in the app's code." })}
+    <div class="note" style="margin-top:1rem">Add or remove <b>applicants (interviewees)</b> on the <b>Screen</b> tab → “Add candidates”.</div>`;
 }
 
 // ------------------------------------------------------------ candidate view
@@ -588,12 +607,29 @@ const noteTimers = {};
 function saveNoteKeyed(me, cid, qi, val) {
   const k = cid + ":" + qi;
   clearTimeout(noteTimers[k]);
-  noteTimers[k] = setTimeout(() => store.setScore(me, cid, { notes: { [qi]: val } }), 500);
+  markSaving();
+  noteTimers[k] = setTimeout(async () => { await store.setScore(me, cid, { notes: { [qi]: val } }); markSaved(); }, 500);
 }
+// header auto-save indicator so people can SEE their input is saved
+function markSaving() {
+  const el = $("#saveStatus"); if (!el) return;
+  clearTimeout(markSaved._t);
+  el.className = "saveflag saving";
+  el.innerHTML = `<span class="spinner dark" style="width:11px;height:11px"></span> Saving…`;
+}
+function markSaved() {
+  const el = $("#saveStatus"); if (!el) return;
+  el.className = "saveflag saved";
+  el.textContent = "✓ Saved";
+  clearTimeout(markSaved._t);
+  markSaved._t = setTimeout(() => el.classList.add("hidden"), 2200);
+}
+// wrap a store write so it always shows Saving… → ✓ Saved
+async function saved(promise) { markSaving(); try { await promise; markSaved(); } catch (e) { toast("Couldn't save — check your connection", "err"); } }
 window.IV = {
-  toggleFlag: (id) => { const cur = (S.screening[key(ui.member, id)] || {}).flag; store.setScreening(ui.member, id, { flag: !cur, reason: cur ? "" : (S.screening[key(ui.member, id)] || {}).reason || "" }); },
+  toggleFlag: (id) => { const cur = (S.screening[key(ui.member, id)] || {}).flag; saved(store.setScreening(ui.member, id, { flag: !cur, reason: cur ? "" : (S.screening[key(ui.member, id)] || {}).reason || "" })); },
   saveReason: (id, btn) => withBusy(btn, () => store.setScreening(ui.member, id, { reason: $("#rsn-" + id).value }), "Saved"),
-  rate: (id, n) => { const cur = (S.screening[key(ui.member, id)] || {}).rating; store.setScreening(ui.member, id, { rating: cur === n ? 0 : n }); },
+  rate: (id, n) => { const cur = (S.screening[key(ui.member, id)] || {}).rating; saved(store.setScreening(ui.member, id, { rating: cur === n ? 0 : n })); },
   addCands: (btn) => withBusy(btn, async () => {
     const t = $("#bulkAdd"); if (!t) return;
     const existing = new Set(S.candidates.map((c) => c.name.trim().toLowerCase()));
@@ -607,10 +643,10 @@ window.IV = {
     if (v) { const ok = await confirmDialog(`Remove ${c ? c.name : "this candidate"} from the interview list? You can restore them later.`, { title: "Remove candidate", yes: "Remove" }); if (!ok) return; }
     await store.setCandidateRemoved(id, v); toast(v ? "Removed" : "Restored", "ok");
   },
-  avail: (i, v) => { const cur = (S.availIv[ui.member] || {})[String(i)]; store.setAvail("iv", ui.member, String(i), cur === v ? null : v); },
+  avail: (i, v) => { const cur = (S.availIv[ui.member] || {})[String(i)]; saved(store.setAvail("iv", ui.member, String(i), cur === v ? null : v)); },
   pickScore: (id) => { ui.scoreCand = id; renderScore(); wireSections(); },
   note: (qi, val) => saveNoteKeyed(ui.member, ui.scoreCand, qi, val),
-  score: (n) => { const cur = (S.scores[key(ui.member, ui.scoreCand)] || {}).overall; store.setScore(ui.member, ui.scoreCand, { overall: cur === n ? 0 : n }); },
+  score: (n) => { const cur = (S.scores[key(ui.member, ui.scoreCand)] || {}).overall; saved(store.setScore(ui.member, ui.scoreCand, { overall: cur === n ? 0 : n })); },
   setComplete: async (v, btn) => {
     if (v) { const ok = await confirmDialog("Mark all interviews complete and reveal the ranking to admins?", { title: "Reveal ranking", yes: "Reveal", danger: false }); if (!ok) return; }
     return withBusy(btn, () => store.setMeta({ interviewsComplete: v }));
@@ -727,8 +763,15 @@ $("#gateForm").addEventListener("submit", async (e) => {
   $("#gerr").textContent = "";
   await withBusy(btn, () => unlock(val, false)).catch(() => {});
 });
-$("#memberBtn").onclick = () => { ui.member = $("#memberSel").value; sessionStorage.setItem("ed_iv_member", ui.member); showApp(); };
-$("#changeMember").onclick = () => { sessionStorage.removeItem("ed_iv_member"); ui.member = null; ["#appHeader", "#tabs", "#app"].forEach((s) => $(s).classList.add("hidden")); $("#banner").classList.add("hidden"); proceedToMemberPick(); };
+$("#memberBtn").onclick = () => { ui.member = $("#memberSel").value; showApp(); };
+$("#changeMember").onclick = () => { ui.member = null; ["#appHeader", "#tabs", "#app"].forEach((s) => $(s).classList.add("hidden")); $("#banner").classList.add("hidden"); proceedToMemberPick(); };
+$("#setupBtn").onclick = () => {
+  ui.tab = "settings";
+  $("#tabs").querySelectorAll("button").forEach((x) => { x.classList.remove("on"); x.setAttribute("aria-selected", "false"); x.tabIndex = -1; });
+  $("#setupBtn").classList.add("active");
+  render();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+};
 $("#logout").onclick = () => { ["ed_iv_code", "ed_iv_member", "ed_iv_cand"].forEach((k) => sessionStorage.removeItem(k)); location.reload(); };
 const savedCode = sessionStorage.getItem("ed_iv_code");
 if (savedCode) unlock(savedCode, true);

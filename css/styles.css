@@ -78,6 +78,19 @@ a:hover { text-decoration:underline; }
 .linky { background:none; border:none; color:var(--accent); cursor:pointer; font:inherit; padding:0; }
 .linky:hover { text-decoration:underline; }
 .linky.danger { color:var(--red); }
+
+/* header icon button (Setup gear) */
+.iconbtn { background:transparent; border:1px solid var(--line-2); color:var(--ink-2); cursor:pointer;
+  width:36px; height:36px; border-radius:10px; display:inline-flex; align-items:center; justify-content:center;
+  transition:background .15s, color .15s, border-color .15s; flex:none; }
+.iconbtn:hover { background:#f0f0f3; color:var(--ink); }
+.iconbtn.active { background:var(--accent-tint); border-color:#bcdcfb; color:var(--accent-press); }
+
+/* small hoverable "i" info badge */
+.info { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%;
+  background:var(--line-2); color:var(--mut); font-size:.68rem; font-weight:700; font-style:normal;
+  cursor:help; vertical-align:middle; user-select:none; line-height:1; }
+.info:hover { background:var(--accent-tint); color:var(--accent-press); }
 .err { color:var(--red); font-size:.85rem; min-height:1.2em; margin-top:.6rem; }
 
 /* ---- spinner ------------------------------------------------------------- */
