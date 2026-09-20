@@ -101,6 +101,17 @@ behind the committee gate (Firestore). Source of truth: `Interview Guide_ER PHYS
 Rosenstein (M), Yang (M), Jha (M), Marrocco (F), Balachandran (M), Mohindra (F),
 Klaiman (F), Porfiris (M), Hayre (M), Reynolds (F), Bahar (M), Losier (M).
 
+**Chair: Kyle Vojdani (M)** — a **13th** person, *not* one of the 12 above, so the
+full roster is **13 (9 M / 4 F)**. `CHAIR` in `js/config.js` is the surname
+`"Vojdani"` and **must** match a `COMMITTEE` entry exactly: `buildPanel` requires
+the chair in the available pool, so a mismatch makes every candidate unschedulable.
+
+> **Panel-forming constraint:** with only 4 women on 13, the "≥1 F" balance rule is
+> what binds, not committee size. Simulating the real roster over the 10 slots:
+> at 50% availability ~9.4/10 slots fill; at 30% only ~7.5/10 — and essentially
+> *every* unfilled slot is one where no woman was available. Marrocco, Mohindra,
+> Klaiman and Reynolds should be asked for generous availability first.
+
 **Candidates:** 17 confirmed (editable in the tool). Applicant names are **not stored
 in this repo** — they live in the OneDrive folder / the tool's Firestore data, to keep
 applicant PII out of a repo that feeds a public Pages site.

@@ -7,7 +7,10 @@
 //  users only as a "balanced panel" — never as an M/F rule.
 // ============================================================================
 
-const CHAIR = "Vojdani"; // Kyle — required on every panel (config could override)
+// `chair` is always passed in by the caller (app.js EFF().chair, which reads the
+// admin's Setup value and falls back to config.CHAIR). Deliberately NO default
+// here: a stale default would silently build panels around the wrong person if a
+// caller ever forgot the argument.
 
 const modalityOk = (personMod, panelMod) => personMod === "either" || personMod === panelMod;
 const resolvePanelModality = (candMod) => (candMod === "either" ? "ip" : candMod);
@@ -21,7 +24,7 @@ function eligible(interviewers, slot, panelMod) {
 
 // Build a valid panel for (candidate, slot) or return null. `interviewers` is
 // { name: { g:"F"|"M", avail:{ slot: "ip"|"zoom"|"either" } } }.
-export function buildPanel(slot, candMod, interviewers, chair = CHAIR) {
+export function buildPanel(slot, candMod, interviewers, chair) {
   const wanted = candMod === "either" ? ["ip", "zoom"] : [resolvePanelModality(candMod)];
   for (const pm of wanted) {
     const pool = eligible(interviewers, slot, pm);
@@ -49,7 +52,7 @@ export function buildPanel(slot, candMod, interviewers, chair = CHAIR) {
 
 // candidates: { name: { avail: { slot: modality } } }
 // interviewers: as above. slots: ordered array of slot ids.
-export function autoPanels(candidates, interviewers, slots, chair = CHAIR) {
+export function autoPanels(candidates, interviewers, slots, chair) {
   const feas = {}; // feasible slots per candidate (available AND a panel can form)
   for (const c of Object.keys(candidates)) {
     feas[c] = Object.entries(candidates[c].avail)
@@ -94,5 +97,3 @@ export function autoPanels(candidates, interviewers, slots, chair = CHAIR) {
   });
   return { panels, unschedulable, understaffed };
 }
-
-export { CHAIR };

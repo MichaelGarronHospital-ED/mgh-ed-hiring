@@ -53,23 +53,36 @@ export const ORG_NAME = "MGH ED — Physician Hiring";
 export const SCREENING_DEADLINE = "2026-09-23";
 
 // ---- 4. Panel chair -------------------------------------------------------
-// Must match a COMMITTEE name below. Required on every panel; never shown to
-// users as a rule in itself.
+// Kyle Vojdani. MUST exactly match a name in COMMITTEE below — if it doesn't,
+// no panel can ever form (buildPanel requires the chair in the available pool),
+// so every candidate comes out "unschedulable". Required on every panel; never
+// shown to users as a rule in itself.
 export const CHAIR = "Vojdani";
 
 // ---- 5. Committee roster --------------------------------------------------
-// Set your real names + each member's self-identified gender ("F"/"M"), used
-// only to build balanced panels (never displayed as an M/F rule). The values
-// below are PLACEHOLDERS for the public demo — replace them at setup.
+// Names + each member's self-identified gender ("F"/"M"), used ONLY to build
+// balanced panels — never displayed as an M/F label anywhere in the UI.
+//
+// This is the STARTING DEFAULT. Once an admin saves a roster in Setup →
+// Committee, the database list takes over (see EFF() in app.js), so the tool
+// stays reusable each hiring round without a code change.
+//
+// 13 members: the 12 confirmed interviewers + Kyle Vojdani as chair (9 M / 4 F).
+// Source: DESIGN.md → Reference data.
 export const COMMITTEE = [
-  { name: "Vojdani",   gender: "M" }, // chair
-  { name: "Rivera",    gender: "F" },
-  { name: "Okonkwo",   gender: "M" },
-  { name: "Lindqvist", gender: "F" },
-  { name: "Barese",    gender: "M" },
-  { name: "Nassar",    gender: "F" },
-  { name: "Whitfield", gender: "M" },
-  { name: "Petrova",   gender: "F" },
+  { name: "Vojdani",      gender: "M" }, // Kyle — chair, on every panel
+  { name: "Rosenstein",   gender: "M" },
+  { name: "Yang",         gender: "M" },
+  { name: "Jha",          gender: "M" },
+  { name: "Marrocco",     gender: "F" },
+  { name: "Balachandran", gender: "M" },
+  { name: "Mohindra",     gender: "F" },
+  { name: "Klaiman",      gender: "F" },
+  { name: "Porfiris",     gender: "M" },
+  { name: "Hayre",        gender: "M" },
+  { name: "Reynolds",     gender: "F" },
+  { name: "Bahar",        gender: "M" },
+  { name: "Losier",       gender: "M" },
 ];
 
 // ---- 6. Interview time slots ----------------------------------------------

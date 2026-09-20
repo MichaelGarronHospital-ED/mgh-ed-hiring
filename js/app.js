@@ -162,7 +162,11 @@ function proceedToMemberPick() {
   const committee = EFF().committee;
   ui.member = null;
   const sel = $("#memberSel");
-  sel.innerHTML = committee.map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("");
+  // Placeholder first, so nobody can click straight through and silently file
+  // their flags/ratings/scores under whoever happens to be alphabetically or
+  // positionally first (the chair). Picking your name must be deliberate.
+  sel.innerHTML = `<option value="" disabled selected>— Select your name —</option>`
+    + committee.map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("");
   $("#memberpick").classList.remove("hidden");
 }
 
@@ -1045,7 +1049,11 @@ $("#gateForm").addEventListener("submit", async (e) => {
   $("#gerr").textContent = "";
   await withBusy(btn, () => unlock(val, false)).catch(() => {});
 });
-$("#memberBtn").onclick = () => { ui.member = $("#memberSel").value; showApp(); };
+$("#memberBtn").onclick = () => {
+  const v = $("#memberSel").value;
+  if (!v) { toast("Pick your name from the list first", "err"); return; }
+  ui.member = v; showApp();
+};
 $("#changeMember").onclick = () => { ui.member = null; ["#appHeader", "#tabs", "#app"].forEach((s) => $(s).classList.add("hidden")); $("#banner").classList.add("hidden"); proceedToMemberPick(); };
 $("#setupBtn").onclick = () => (setupOpen() ? closeSetup() : openSetup());
 $("#setupClose").onclick = closeSetup;

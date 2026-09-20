@@ -14,6 +14,13 @@ Full design and reference data (committee, candidates, questions, rules) live in
 - **All asset paths relative** so GitHub Pages serves it at `…/tools/interviews/`.
 - **Panel rules** (Phase 2): 3–5 members, Kyle present if available, ≥1 male +
   ≥1 female. Genders are in DESIGN.md; treat hard-vs-soft as pending Kyle's confirm.
+- **`CHAIR` must exactly match a `COMMITTEE` name** (`js/config.js`). `buildPanel`
+  requires the chair in the available pool, so a typo or a roster edit that drops
+  the chair makes *every* candidate "unschedulable" with no obvious cause. Chair is
+  **Kyle Vojdani**, the 13th member (the 12 in DESIGN.md are the others).
+- **`panels.js` takes `chair` as a required argument** — no default. It previously
+  had its own hardcoded `"Vojdani"`, a second source of truth that would silently
+  outvote config. Don't reintroduce one.
 - **Interview times are keyed by stable id, never list position** (`js/slots.js`).
   Availability maps and `panelOverrides[].slot` hold time ids. Never re-key or
   renumber; config defaults keep ids `"0"`…`"9"` for data saved before ids existed.
