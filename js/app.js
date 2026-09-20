@@ -114,6 +114,13 @@ async function initStore(role, typed) {
       renderBanner(); render();
       refreshSetup();   // keep the open Setup modal live
     }
+    // The "Who are you?" list is built before the first Firestore snapshot can
+    // arrive, so it always paints from the config defaults. Repaint it on every
+    // snapshot while it's open — that covers both the first one (swapping in the
+    // admin's saved roster) and a later roster change made from another device.
+    else if ($("#memberpick") && !$("#memberpick").classList.contains("hidden")) {
+      refreshMemberPick();
+    }
     // self-heal: mirror the committee's time list to the PII-free public doc so
     // applicants always see the same times. Runs once per admin session.
     if (ui.role === "admin" && !ui._syncedSlots && isConfigured()) {
@@ -159,15 +166,28 @@ async function signInFor(fb, role, typed) {
 // ------------------------------------------------------------ member pick
 function proceedToMemberPick() {
   // always ask who you are on each sign-in (never auto-restore)
-  const committee = EFF().committee;
   ui.member = null;
-  const sel = $("#memberSel");
+  fillMemberSel();
+  $("#memberpick").classList.remove("hidden");
+}
+
+// Build the name list from the CURRENT effective roster (admin's Setup value if
+// it has loaded, else the config defaults).
+function fillMemberSel() {
+  const sel = $("#memberSel"); if (!sel) return;
   // Placeholder first, so nobody can click straight through and silently file
   // their flags/ratings/scores under whoever happens to be alphabetically or
   // positionally first (the chair). Picking your name must be deliberate.
   sel.innerHTML = `<option value="" disabled selected>— Select your name —</option>`
-    + committee.map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("");
-  $("#memberpick").classList.remove("hidden");
+    + EFF().committee.map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("");
+}
+
+// Repaint the list in place without losing a selection the user already made.
+function refreshMemberPick() {
+  const sel = $("#memberSel"); if (!sel) return;
+  const prev = sel.value;
+  fillMemberSel();
+  if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
 }
 
 function showApp() {
