@@ -60,15 +60,40 @@ wrong thing (the committee roster bug in Sept 2026 was exactly that: a pure
 client-side fallback, invisible to any rules test). The manual click-through
 still matters for anything a person sees.
 
+## Why `firebase.json` has no rules path
+
+`"firestore": {}` is deliberate. `firebase-tools` rejects any path that points
+outside the config file's own directory — `"rules": "../firestore.rules"` fails
+with *"../firestore.rules is outside of project directory"*.
+
+It isn't needed. [`firestore.rules.test.mjs`](firestore.rules.test.mjs) reads
+`../firestore.rules` itself and passes it to `initializeTestEnvironment`, which
+loads it into the running emulator, replacing whatever it started with. So the
+real rules file is still exactly what's under test — `firebase.json` only has to
+get a Firestore emulator listening.
+
+**The emulator will warn that it found no rules file and defaulted to allowing
+everything.** That's expected, and it is not what the tests run against. If you
+want proof rather than reassurance, break something in `../firestore.rules` —
+change `isAdmin()` to `true` — and watch the suite fail.
+
+## Expected noise
+
+- **"You are not currently authenticated"** — ignore it. These tests never touch
+  a real project, so `firebase login` is not needed.
+- **`npm audit` vulnerabilities** — they come from the `firebase-tools`
+  dependency tree. This package never ships, never runs in a browser, and never
+  handles untrusted input; `npm audit fix --force` is more likely to break the
+  emulator than to help. Leave it.
+
 ## If the emulator won't start
 
 - **"Cannot start the Firestore emulator without firestore config"** — you're not
   in this directory. `cd tools/interviews/tests` first.
-- **Rules path rejected** — some `firebase-tools` versions dislike the `../` in
-  `firebase.json`. Copy `firestore.rules` into this folder and change the path
-  to `"firestore.rules"`, or run the emulator from `tools/interviews/`.
 - **Port 8080 in use** — change it in both `firebase.json` and the `port` in
   `firestore.rules.test.mjs`; they must match.
+- **Java missing** — the Firestore emulator needs it. `java -version` to check,
+  `brew install --cask temurin` to install.
 - **Install fails on a pinned version** — the versions in `package.json` are a
   starting point, not a requirement. `npm install @firebase/rules-unit-testing@latest
   firebase@latest firebase-tools@latest --save-dev` is fine.
