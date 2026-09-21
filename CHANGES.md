@@ -35,10 +35,12 @@ the three role-account sign-ins (see the console steps in README).
 - **The CV & cover-letter link appears once, above the first candidate.** Every
   applicant's files live in the same OneDrive folder, so the identical link was
   repeating on all ~20 candidate cards. Now a single bar above the list.
-- While unconfigured (`ONEDRIVE = "#"`, which is what the public repo ships) the
-  bar says the folder isn't set up yet, instead of the old per-card dead link
-  that looked clickable and explained nothing. **Set the real folder in
-  Setup → Applications folder for the link to appear.**
+- If **no** folder has been saved, the bar now says so instead of showing the
+  old per-card dead link that looked clickable and explained nothing. Note the
+  precedence: `EFF()` is `s.oneDrive || ONEDRIVE`, so the link saved in
+  Setup → Applications folder wins and `ONEDRIVE = "#"` in `js/config.js` is only
+  the fallback for a fresh deployment. A configured tool is unaffected — the
+  consolidated link uses the saved folder exactly as the per-card links did.
 - Verified headlessly (Chromium, local mode, fictitious candidates) as both
   reviewer and admin, at 1000px and 400px: list sorted, exactly one link, zero
   per-card links, link sits above the first card, candidate names unaffected,
