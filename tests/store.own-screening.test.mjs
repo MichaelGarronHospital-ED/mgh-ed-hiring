@@ -68,6 +68,25 @@ test("the subscription follows the roster and the signed-in member", () => {
   assert.deepEqual(paths(live, "interviews_screening/"), []);
 });
 
+test("a reviewer's client never asks for the screening or scores collections", () => {
+  // The rules let the shared committee account GET a screening document, so the
+  // only thing standing between a reviewer and a colleague's rating is that the
+  // app never requests one. This pins that: a committee-scoped store subscribes
+  // to no collection that carries anyone's ratings, which is also why there is
+  // nothing in a reviewer's state for the UI to render by accident.
+  const { fb, live } = stubFb();
+  const s = new FirestoreStore(fb, { scopes: ["candidates", "availIv", "availCand", "meta"], echo: true });
+  live.get("interviews_candidates").cb(candSnap(["c-1", "c-2"]));
+  s.setMember("Yang");
+
+  assert.ok(!live.has("interviews_screening"), "no collection-wide screening subscription");
+  assert.ok(!live.has("interviews_scores"), "no scores subscription at all");
+  assert.deepEqual(Object.keys(s.getState().scores), [], "a reviewer's state holds nobody's scores");
+  for (const p of live.keys()) {
+    if (p.startsWith("interviews_screening/")) assert.ok(p.startsWith("interviews_screening/Yang~"), p);
+  }
+});
+
 test("an admin already lists the collection, so takes no per-document path", () => {
   const { fb, live } = stubFb();
   const s = new FirestoreStore(fb, { scopes: ["candidates", "screening", "availIv", "availCand", "scores", "meta"] });

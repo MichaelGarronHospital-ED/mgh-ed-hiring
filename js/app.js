@@ -101,8 +101,14 @@ async function initStore(role, typed) {
       : (AUTH.mode === "roles" && role === "committee")
         ? ["candidates", "availIv", "availCand", "meta"]   // reviewers can't read scores/screening
         : ADMIN_SCOPES;                                    // admin or anon
-    const echo = AUTH.mode === "roles" && role === "committee";
-    ui.echoOnly = echo; // their own screening/scores can only come from this device
+    // Mirror your own input locally for EVERY committee role, admin included.
+    // It used to be committee-only, which meant rating something as admin and
+    // coming back with the staff code showed a blank review on the same
+    // machine — the likeliest cause of the "my ratings vanished" report.
+    // Screening now also comes back from the server; scores never do, so for
+    // those this mirror is still the only replay a reviewer gets.
+    const echo = AUTH.mode === "roles" && role !== "candidate";
+    ui.echoOnly = AUTH.mode === "roles" && role === "committee";
     store = new FirestoreStore(fb, { scopes, echo });
   } else {
     store = new LocalStore();

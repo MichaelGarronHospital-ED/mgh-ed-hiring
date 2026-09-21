@@ -6,8 +6,8 @@ pass so the morning review has a paper trail.
 
 Verification note (updated Sept 21 2026): the Firestore **rules** have since been
 exercised for real — the emulator suite in [`tests/`](tests/) runs green here,
-**38/38**, and was confirmed load-bearing by breaking `isAdmin()` and watching 20
-of the 38 fail (see the Sept 21 entries below). What remains untested is only the
+**39/39**, and was confirmed load-bearing by breaking `isAdmin()` and watching 20
+of the 39 fail (see the Sept 21 entries below). What remains untested is only the
 **roles auth path**: creating the three Firebase Auth accounts and flipping
 `AUTH.mode`, which needs the live project. Everything else
 was verified by driving the app headlessly with Playwright in **forced local mode**
@@ -109,6 +109,27 @@ turned up a shipped CSS bug that had been hiding every instruction in the app.
   someone commit to a config-default spelling, with a live guard that returns
   them to the picker if the roster stops containing their name mid-session.
 
+  **Ratings are shown in admin view only** — confirmed as an explicit
+  requirement after the above landed. The front end may be *able* to fetch; what
+  matters is that nothing renders a rating outside admin view. Every path that
+  carries someone else's figure (the collation card, both CSV exports, the
+  Ranking table) is behind `ui.isAdmin`, and Panels/Ranking aren't in a
+  reviewer's tab row. Belt and braces: a committee-scoped store subscribes to no
+  collection holding ratings, so a reviewer's state has nothing to leak even if
+  a gate were missed. Checked end to end by signing in as an ordinary reviewer
+  against seed data where *other* people had flagged, rated and scored, then
+  forcing every `<details>` open and scanning the full DOM — not just the
+  visible text — for their reasons, ratings, the collation, the exports and the
+  Adj column. None present; the reviewer's own controls still work and show
+  unset.
+
+  **The local mirror is now written for admins too.** It used to be
+  committee-only, so rating something while signed in as *admin* and returning
+  with the staff code showed a blank review **on the same machine** — the
+  likeliest cause of the original report, and unaffected by any rules change.
+  Scores still never come back from the server, so for those this mirror
+  remains the only replay a reviewer gets.
+
   **⚠ Deploy step:** none of the read-back works until the updated
   `firestore.rules` is pasted into **Firebase console → Firestore → Rules →
   Publish**. Until then the app behaves exactly as before — the per-document
@@ -125,7 +146,7 @@ turned up a shipped CSS bug that had been hiding every instruction in the app.
 Verified by driving the real app headlessly (Chromium, forced local mode, the
 `data.js` content module stubbed, fictitious names only) at 400px and 1000px
 across all five tabs plus the applicant view — no console errors. The rules
-suite is **38/38** against the emulator, up from 33: the new screening
+suite is **39/39** against the emulator, up from 33: the new screening
 `get`/`list` split is covered both ways, and `tests/store.own-screening.test.mjs`
 drives `FirestoreStore` against a stub Firestore to assert the client only ever
 subscribes to the signed-in member's own documents.

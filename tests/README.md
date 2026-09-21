@@ -27,7 +27,7 @@ npm test
 
 `npm test` starts the emulator, runs the suite against it, and shuts it down.
 
-**Last run: Sept 21 2026 — 38 tests, 38 pass.** On a bare Debian devcontainer the
+**Last run: Sept 21 2026 — 39 tests, 39 pass.** On a bare Debian devcontainer the
 toolchain is one line:
 
 ```bash
@@ -92,7 +92,7 @@ want proof rather than reassurance, break something in `../firestore.rules` —
 change `isAdmin()` to `true` — and watch the suite fail.
 
 That check has been done, and re-done on Sept 21 2026: with `isAdmin()` forced
-to `true`, **20 of the 38 fail**, including every anti-bias guarantee
+to `true`, **20 of the 39 fail**, including every anti-bias guarantee
 (reviewers reading scores or listing screening, applicants reading the roster).
 Narrower breaks are covered too — loosening `list` on `interviews_screening` to
 the committee, or tightening its `get` back to admin, each fails exactly one

@@ -57,6 +57,15 @@ Full design and reference data (committee, candidates, questions, rules) live in
   Because all reviewers share one account the `get` is not scoped to the person
   — the honest limit is written up in `firestore.rules` and README; the real fix
   is per-member accounts.
+- **Nobody but admin is ever SHOWN another person's rating.** Decided explicitly
+  (Alvin, Sept 21): the front end may be *able* to fetch, but ratings render
+  only in admin view. Every render path that carries someone else's figure —
+  the collation card, both CSV exports, the Ranking table — sits behind
+  `ui.isAdmin`, and Panels/Ranking aren't in a reviewer's tab row. Belt and
+  braces: a committee-scoped store subscribes to no collection holding ratings,
+  so a reviewer's state has nothing to leak even if a gate were missed. Both
+  halves are pinned in `tests/store.own-screening.test.mjs`. Don't add a rating,
+  average or flag count to a view that isn't admin-gated.
 - **Changing `firestore.rules` needs a console Publish to take effect.** Editing
   the file in the repo does nothing on its own, and the tool will silently keep
   the old behaviour. Run `scripts/sync-allowed.mjs --apply` first where the
