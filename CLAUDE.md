@@ -40,4 +40,31 @@ Full design and reference data (committee, candidates, questions, rules) live in
   refuse a write under a surname not on the roster (`/interviews_meta/allowed`,
   fail-closed) so nothing is silently lost — **sync that list before publishing
   rules**, or applicants are locked out. `report-data.mjs --issues` flags both.
+- **The tooltip class is `.tooltip`, never `.tip`.** `.note.tip` is the blue
+  guidance box and has been since the first build; when the instant tooltip was
+  briefly also called `.tip` it silently gave every one of those boxes
+  `position:absolute; opacity:0`, so the instructions on every tab — including
+  the applicant's only explanation of in-person/Zoom/either — rendered nothing.
+- **Screening and scores are read back differently, on purpose.** Screening
+  allows `get` to the committee and `list` to admin only: the app subscribes to
+  exactly `<member>~<candId>` for the signed-in member (`store.setMember` →
+  `_syncOwnScreening`), so a reviewer's own flags and ratings follow them to any
+  device while the collation stays leadership-only. **Scores allow neither** —
+  a reviewer who could `get` a score could rebuild the ranking mid-process — so
+  the Score tab still replays from the per-device `localStorage` echo and says
+  so on screen. Don't make scores symmetric with screening, and don't widen
+  screening to `list`; both are pinned by tests that fail on either change.
+  Because all reviewers share one account the `get` is not scoped to the person
+  — the honest limit is written up in `firestore.rules` and README; the real fix
+  is per-member accounts.
+- **Changing `firestore.rules` needs a console Publish to take effect.** Editing
+  the file in the repo does nothing on its own, and the tool will silently keep
+  the old behaviour. Run `scripts/sync-allowed.mjs --apply` first where the
+  allowed-name list is involved.
+- **No average is normalized, deliberately.** Screening and ranking means are
+  over whoever answered; a non-answer is never imputed. Always print the count
+  beside the mean. Ranking's `Adj` column is the only adjustment — rater-centred
+  (each rater's mean minus the grand mean, subtracted from their scores),
+  skipped for raters with a single score — and it is shown *alongside* the raw
+  mean, never instead of it.
 - Timeline is tight: **screening cut Sept 23 2026**, interviews start ~week of Sept 30.

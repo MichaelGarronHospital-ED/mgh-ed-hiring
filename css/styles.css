@@ -75,7 +75,7 @@ a:hover { text-decoration:underline; }
   padding:.9rem 1.1rem; border-bottom:1px solid var(--line-2); flex:none; }
 .modal-head h2 { margin:0; font-size:1.2rem; }
 .modal-body { padding:.2rem 1.1rem 1.2rem; overflow-y:auto; -webkit-overflow-scrolling:touch; }
-.modal-body .note.tip:first-child { margin-top:.7rem; }
+.modal-body .note.tip:first-child, .modal-body details.howto:first-child { margin-top:.7rem; }
 @media (max-width:640px) { #setupModal { padding:0; } .modal-box { max-height:100vh; border-radius:0; } }
 .primary:hover, .btn.filled:hover { background:var(--accent-press); }
 .primary:active, .btn:active { transform:scale(.98); }
@@ -104,11 +104,14 @@ a:hover { text-decoration:underline; }
   background:var(--line-2); color:var(--mut); font-size:.68rem; font-weight:700; font-style:normal;
   cursor:help; vertical-align:middle; user-select:none; line-height:1; }
 .info:hover, .info:focus-visible { background:var(--accent-tint); color:var(--accent-press); }
-/* instant custom tooltip (appended to body so it's never clipped) */
-.tip { position:absolute; z-index:400; max-width:270px; background:#1d1d1f; color:#fff; padding:.5rem .72rem;
+/* Instant custom tooltip (appended to body so it's never clipped).
+   NB: class is `tooltip`, not `tip`. It used to be `.tip`, which collided with
+   the `.note.tip` help boxes below — those inherited position:absolute and
+   opacity:0 from here and were invisible on every tab. Don't rename it back. */
+.tooltip { position:absolute; z-index:400; max-width:270px; background:#1d1d1f; color:#fff; padding:.5rem .72rem;
   border-radius:10px; font-size:.8rem; line-height:1.42; box-shadow:var(--shadow-lg); pointer-events:none;
   opacity:0; transition:opacity .09s ease; }
-.tip.show { opacity:1; }
+.tooltip.show { opacity:1; }
 .err { color:var(--red); font-size:.85rem; min-height:1.2em; margin-top:.6rem; }
 
 /* ---- spinner ------------------------------------------------------------- */
@@ -172,6 +175,20 @@ a.doc { font-size:.85rem; color:var(--accent); display:inline-flex; align-items:
   padding:.65rem .85rem; font-size:.86rem; color:var(--ink-2); margin:.55rem 0; }
 .note.tip { background:var(--accent-tint); border-color:#cfe4fb; color:#0a4a8f; }
 .note b { color:var(--ink); }
+
+/* "What to do here" — full guidance on first visit, collapsible to one line
+   once you know the tab. The open/closed choice is remembered per tab in
+   localStorage, so a returning reviewer isn't re-reading the same paragraph. */
+details.howto { background:var(--accent-tint); border:1px solid #cfe4fb; border-radius:var(--radius-sm);
+  color:#0a4a8f; margin:.55rem 0; font-size:.86rem; }
+details.howto > summary { list-style:none; cursor:pointer; padding:.5rem .85rem; display:flex;
+  align-items:center; gap:.45rem; font-weight:600; user-select:none; }
+details.howto > summary::-webkit-details-marker { display:none; }
+details.howto > summary .chev { width:15px; height:15px; flex:none; transition:transform .2s ease; }
+details.howto[open] > summary .chev { transform:rotate(90deg); }
+details.howto[open] > summary { padding-bottom:.15rem; }
+.howto-body { padding:0 .85rem .65rem; }
+.howto-body b { color:#083a70; }
 .adminbar { display:flex; gap:.55rem; flex-wrap:wrap; align-items:center; margin:.5rem 0 .3rem; }
 
 /* ---- collapsible section ------------------------------------------------- */
@@ -306,11 +323,18 @@ ul.small { margin:.4rem 0 0; padding-left:1.2rem; } ul.small li { margin:.3rem 0
   .seg button { padding:.42rem .7rem; }
   nav.tabs { top:0; border-radius:0; margin-top:0; }
   .slotgrid { grid-template-columns:1fr; gap:.3rem .5rem; }
-  .slotgrid .h:last-child { display:none; }
+  /* one column on a phone, so the second column heading ("I can do…") has
+     nothing to head. `.h:last-child` never matched — the grid has rows after it. */
+  .slotgrid .h + .h { display:none; }
   .slotgrid > .slabel { margin-top:.5rem; font-weight:500; }
+  /* the rotated names need a little more headroom once columns are at minimum */
+  .avgrid th.ivcol { height:5.4rem; }
+  .collhead .name { width:100%; }
+  .revcard .rate, .revcard .flagbtn { margin-left:auto; }
 }
 @media print {
-  nav.tabs, .primary, .btn, .flagbtn, .savebtn, .linky, #toast, .banner, .note.tip { display:none !important; }
+  nav.tabs, .primary, .btn, .flagbtn, .savebtn, .linky, #toast, .banner, .note.tip,
+  details.howto, .tooltip { display:none !important; }
   body { background:#fff; }
   .card, .panelbox, details.section { box-shadow:none; border:1px solid #ccc; break-inside:avoid; }
   details.section > .sec-body, details.section .sec-body { display:block !important; }
@@ -345,17 +369,28 @@ ul.small { margin:.4rem 0 0; padding-left:1.2rem; } ul.small li { margin:.3rem 0
    column across the card and push the squares to the far right. */
 .avgrid { width:auto; border-collapse:separate; border-spacing:3px; font-size:.8rem; }
 .avgrid th, .avgrid td { padding:0; font-weight:500; }
-/* Interviewer names run bottom-to-top so 13 columns fit without wrapping.
+/* Interviewer names are slanted 45° rather than set vertically: at 45° the
+   letters stay upright enough to read at a glance, which straight-up-the-page
+   text does not, and 13 columns still fit in the width of a phone.
    NB: class is `ivcol`, not `who` — the global `.who` is display:flex, which
-   would stop these <th> laying out as table cells at all. */
-.avgrid th.ivcol { vertical-align:bottom; height:6.2rem; width:1.9rem; }
-.avgrid th.ivcol span { writing-mode:vertical-rl; transform:rotate(180deg); display:inline-block;
-  white-space:nowrap; font-size:.75rem; color:var(--ink-2); font-weight:600; padding-bottom:.3rem; cursor:default;
-  text-transform:none; letter-spacing:normal; }
+   would stop these <th> laying out as table cells at all.
+   The label is absolutely positioned and rotated about its bottom-left corner,
+   so each name STARTS at its own column and rises to the right. Rotated text is
+   out of flow and cannot widen the table, so the header carries a `pad` spacer
+   column on the right to stop the last name being clipped by .gridwrap. */
+.avgrid th.ivcol { position:relative; vertical-align:bottom; height:5.1rem; width:1.9rem; min-width:1.9rem; overflow:visible; }
+.avgrid th.ivcol span { position:absolute; left:50%; bottom:.3rem; transform-origin:0 100%;
+  transform:rotate(-45deg); display:inline-block;
+  white-space:nowrap; font-size:.75rem; color:var(--ink-2); font-weight:600; cursor:default;
+  text-transform:none; letter-spacing:normal; line-height:1; }
+.avgrid th.pad, .avgrid td.pad { width:3.6rem; min-width:3.6rem; padding:0; border:none; }
 .avgrid th.tlab { text-align:right; padding-right:.55rem; white-space:nowrap; font-variant-numeric:tabular-nums;
   font-weight:500; color:var(--ink-2); position:sticky; left:0; background:var(--surface); z-index:1;
   text-transform:none; letter-spacing:normal; font-size:.78rem; }
-.avgrid td.av { width:1.9rem; height:1.9rem; text-align:center; border-radius:var(--radius-xs);
+/* min-width, not just width: a table set to shrink-to-fit inside the scrolling
+   wrapper will happily squash single-letter cells to slivers on a phone. The
+   minimum is what makes it overflow and scroll instead. */
+.avgrid td.av { width:1.9rem; min-width:1.9rem; height:1.9rem; text-align:center; border-radius:var(--radius-xs);
   font-size:.7rem; font-weight:700; color:#fff; cursor:default; line-height:1.9rem; }
 .avgrid td.av.ip     { background:var(--green); }
 .avgrid td.av.zoom   { background:var(--purple); }
@@ -374,3 +409,51 @@ ul.small { margin:.4rem 0 0; padding-left:1.2rem; } ul.small li { margin:.3rem 0
   font-style:normal; font-size:.65rem; font-weight:700; color:#fff; text-align:center; line-height:1.15rem; }
 .glegend .sw.ip { background:var(--green); } .glegend .sw.zoom { background:var(--purple); }
 .glegend .sw.either { background:var(--accent); } .glegend .sw.no { background:var(--line-2); }
+
+/* ---- collation & shortlist (admin) -------------------------------------- */
+/* A row per applicant instead of a six-column table. Flag reasons are the
+   reason this isn't a table: several people can flag one applicant, each with a
+   sentence of their own, and "; "-joining them into one cell made an unreadable
+   run-on that also hid WHO said what. Stacked and attributed, it reads. */
+.collist { margin:.2rem 0 .4rem; }
+.collrow { border-top:1px solid var(--line-2); padding:.7rem 0; }
+.collrow:first-child { border-top:none; }
+.collrow.out .collhead .name { color:var(--mut); }
+.collhead { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
+.collhead .name { font-weight:600; }
+.collhead .spacer { flex:1; min-width:0; }
+.collmeta { display:flex; align-items:center; gap:.3rem .9rem; flex-wrap:wrap; margin-top:.25rem;
+  font-size:.82rem; color:var(--mut); }
+.collmeta .metric { display:inline-flex; align-items:baseline; gap:.3rem; cursor:default; }
+.collmeta .metric b { color:var(--ink); font-variant-numeric:tabular-nums; }
+.collmeta .metric.flagged b { color:var(--red); }
+.collmeta .denom { color:var(--faint); font-size:.78rem; }
+.collmeta .thin { color:var(--amber); }
+ul.reasons { list-style:none; margin:.5rem 0 0; padding:0; display:grid; gap:.3rem; }
+ul.reasons li { display:flex; gap:.5rem; font-size:.84rem; color:var(--ink-2);
+  background:#fbfbfd; border:1px solid var(--line-2); border-left:3px solid #f2b8b6;
+  border-radius:var(--radius-xs); padding:.35rem .6rem; }
+ul.reasons li .rwho { font-weight:600; color:var(--ink); white-space:nowrap; }
+ul.reasons li.noreason { color:var(--faint); font-style:italic; border-left-color:var(--line); }
+.collrow .more { font-size:.82rem; margin-top:.3rem; }
+
+/* ---- ranking ------------------------------------------------------------- */
+.shift { font-size:.72rem; font-weight:700; margin-left:.25rem; }
+.shift.up { color:var(--green); } .shift.down { color:var(--red); }
+td.adj { font-variant-numeric:tabular-nums; color:var(--ink-2); }
+.thinscore { color:var(--amber); font-weight:600; }
+
+/* ---- score tab: candidate picker stays in reach ------------------------- */
+.scorebar { position:sticky; top:3.1rem; z-index:4; }
+@media (max-width:640px) { .scorebar { top:2.6rem; } }
+.scorebar .row { gap:.5rem; }
+.scorenav { display:inline-flex; gap:.3rem; }
+.qcard.done { border-left:3px solid var(--green); }
+
+/* One reviewer's own screening card: name, priority and flag on a single line
+   so a list of twenty applicants is a page you can scan, not one you scroll. */
+.revcard .row { flex-wrap:wrap; row-gap:.55rem; }
+
+/* ---- "saved on this device only" notice --------------------------------- */
+.note.local { background:#fbfbfd; border-color:var(--line); color:var(--ink-2); }
+.note.local b { color:var(--ink); }

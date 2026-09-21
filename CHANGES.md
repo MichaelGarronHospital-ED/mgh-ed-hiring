@@ -6,8 +6,8 @@ pass so the morning review has a paper trail.
 
 Verification note (updated Sept 21 2026): the Firestore **rules** have since been
 exercised for real — the emulator suite in [`tests/`](tests/) runs green here,
-**33/33**, and was confirmed load-bearing by breaking `isAdmin()` and watching 16
-of the 30 fail (see the Sept 21 entry below). What remains untested is only the
+**38/38**, and was confirmed load-bearing by breaking `isAdmin()` and watching 20
+of the 38 fail (see the Sept 21 entries below). What remains untested is only the
 **roles auth path**: creating the three Firebase Auth accounts and flipping
 `AUTH.mode`, which needs the live project. Everything else
 was verified by driving the app headlessly with Playwright in **forced local mode**
@@ -21,6 +21,114 @@ errors. The paneling algorithm was re-ported to Python and checked against 300
 randomized trials (optimal matching + every panel invariant). What still needs
 the operator's live testing: Firestore reads/writes under the hardened rules and
 the three role-account sign-ins (see the console steps in README).
+
+---
+
+## Legible grid, honest averages, readable collation, screening read-back (Sept 21 2026)
+
+Prompted by four questions from Alvin after using the tool: the grid's vertical
+names were hard to read, it wasn't clear how averages handle people who didn't
+vote, his own ratings looked missing after a re-login, and nobody knew what the
+collation card does when several people flag one applicant. Answering them
+turned up a shipped CSS bug that had been hiding every instruction in the app.
+
+- **`.tip` collided with `.note.tip` — every "What to do here" box was
+  invisible.** The instant-tooltip class added in *Instant info tooltips* (Sept
+  18) was called `.tip`, and `.note.tip` — the blue guidance box on every tab —
+  had been using that name since the first build. `.note.tip` only overrode
+  `background`/`border-color`/`color`, so it inherited `position:absolute`,
+  `opacity:0` and `pointer-events:none` from the tooltip and rendered nothing.
+  The worst case was the **applicant** view, whose only on-screen explanation of
+  in-person/Zoom/either is one of these boxes: applicants have been picking
+  times with no instructions at all. The tooltip is now `.tooltip`; don't rename
+  it back. Delegated tooltip binding was also widened from `.info` to
+  `[data-tip]`, so the availability grid's per-square names work as its legend
+  has been promising.
+- **Interviewer names in the availability grid are slanted 45°**, not vertical.
+  Each label is absolutely positioned and rotated about its bottom-left corner,
+  so it starts at its own column and rises to the right; a `pad` spacer column
+  keeps the last name from being clipped, since rotated text is out of flow and
+  can't widen the table. Grid cells gained `min-width` — without it the table
+  shrank to fit a phone and squashed the squares into slivers instead of
+  scrolling.
+- **The averages now show their denominator, and the ranking corrects for who
+  did the scoring.** Nothing was ever normalized: both averages are plain means
+  over whoever answered, and a missing answer is (correctly) left out rather
+  than imputed — but the figure alone can't distinguish 4.5-from-two from
+  4.5-from-twelve. Screening now prints "*n* of 13 rated" next to every average.
+  Ranking adds an **Adj** column: each candidate faces a different 3–5 person
+  panel, so a plain mean also measures panel generosity. Adj subtracts each
+  rater's own offset (their mean minus the overall mean) before averaging;
+  raters with a single score have no measurable offset and are left alone, so
+  with disjoint panels Adj degrades gracefully to the raw mean. Rows whose rank
+  changes under the adjustment say so with a ▲/▼. Both columns are shown
+  because the adjustment is a model and the raw mean is the fact.
+- **The collation card is a list, not a six-column table.** Several people
+  flagging one applicant is the normal case, and `"; "`-joining their sentences
+  into one table cell produced an unreadable run-on that also hid who said what.
+  Each reason is now its own attributed line (leadership-only, as before), with
+  bare flags shown as "flagged without a reason" and sorted last. Applicants
+  still in the running sort first. The CSV gained *Flagged by*, *Rated by* and
+  *Committee size* columns for the same reason.
+- **A reviewer's own screening now follows them to any device.** This was the
+  "I rated people, logged out, and my ratings were gone" report, and it had
+  three causes, all real: under the roles model a reviewer could write screening
+  but not read it back, so the app replayed their answers from a per-device
+  localStorage echo — which is not written when you are signed in as *admin*
+  (rate as admin, return as a reviewer, blank), was not written at all before
+  `AUTH.mode` flipped to `roles` on Sept 18, and never crosses to a second
+  device. Plus a remove-and-re-add strands everything on the old `c-<uuid>`.
+
+  **Fix (Alvin's call, Sept 21):** `interviews_screening` now allows `get` to
+  the committee and `list` to admin only. The app subscribes to precisely
+  `<member>~<candidateId>` for the signed-in member — `store.setMember()` →
+  `_syncOwnScreening()`, re-run whenever the roster changes — and never requests
+  a colleague's document. The collation still needs `list`, so it stays
+  leadership-only.
+
+  **Scores were deliberately NOT loosened.** A reviewer who could `get` a score
+  could reconstruct the ranking mid-process, which is the one thing this model
+  exists to prevent; the Score tab still replays from the device mirror and now
+  says so in as many words. The asymmetry is asserted in the test suite so
+  nobody later "tidies" it into symmetry.
+
+  **Honest limit, written down rather than glossed:** all reviewers share one
+  Firebase account, so the `get` is not scoped to the person doing it — a
+  reviewer at a browser console could fetch a colleague's screening document.
+  That is the same trust boundary the *write* side has always had (anyone with
+  the staff code can already submit screening as someone else), so it widens an
+  existing limit rather than introducing a new kind. Closing it properly means
+  per-member accounts; README → "Real access control" spells out the cost. The
+  Screen tab's copy changed accordingly, from the promise "nobody else sees your
+  flags or ratings" to the true statement that the app never shows one reviewer
+  another's.
+
+  Alongside: the coordinator dashboard **counts entries attached to applicants
+  no longer on the list** and points at `scripts/migrate-candidate.mjs`; and the
+  member picker waits for the saved roster (`store.ready`) instead of letting
+  someone commit to a config-default spelling, with a live guard that returns
+  them to the picker if the roster stops containing their name mid-session.
+
+  **⚠ Deploy step:** none of the read-back works until the updated
+  `firestore.rules` is pasted into **Firebase console → Firestore → Rules →
+  Publish**. Until then the app behaves exactly as before — the per-document
+  reads are simply denied and logged.
+- **Declutter.** "What to do here" is now a `<details>` that remembers being
+  collapsed across sessions (localStorage, per tab) — full guidance on a first
+  visit, one line thereafter. Screening review cards are one row each (name ·
+  priority · flag) instead of three, which took ~600px off that page. The Score
+  tab gained a sticky candidate picker with ‹ › and a "*n* of *m* scored by you"
+  count, ticks beside candidates already scored, and 1-based question numbers
+  (they read "Question 0" before; the stored key is still the array index).
+  Applicant lists are alphabetical everywhere.
+
+Verified by driving the real app headlessly (Chromium, forced local mode, the
+`data.js` content module stubbed, fictitious names only) at 400px and 1000px
+across all five tabs plus the applicant view — no console errors. The rules
+suite is **38/38** against the emulator, up from 33: the new screening
+`get`/`list` split is covered both ways, and `tests/store.own-screening.test.mjs`
+drives `FirestoreStore` against a stub Firestore to assert the client only ever
+subscribes to the signed-in member's own documents.
 
 ---
 

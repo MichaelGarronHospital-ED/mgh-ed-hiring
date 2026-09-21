@@ -4,6 +4,12 @@ Tests for [`../firestore.rules`](../firestore.rules). They run against the local
 Firestore **emulator** — no real Firebase project, no real data, no credentials,
 nothing to clean up afterwards.
 
+One file here is not a rules test: `store.own-screening.test.mjs` drives
+`FirestoreStore` against a stub Firestore and asserts that a signed-in reviewer
+subscribes to their **own** screening documents and never requests a
+colleague's. It is the client half of the `get`-yes/`list`-no split in the
+rules, so it lives with them; it needs no emulator and runs in milliseconds.
+
 **The tool itself still has no build step and no dependencies.** Everything here
 is dev-only and never shipped: `node_modules/` is gitignored, and GitHub Pages
 serves the static files regardless of what lives in this folder.
@@ -21,7 +27,7 @@ npm test
 
 `npm test` starts the emulator, runs the suite against it, and shuts it down.
 
-**Last run: Sept 21 2026 — 33 tests, 33 pass.** On a bare Debian devcontainer the
+**Last run: Sept 21 2026 — 38 tests, 38 pass.** On a bare Debian devcontainer the
 toolchain is one line:
 
 ```bash
@@ -35,7 +41,7 @@ Each group maps to a promise the tool makes to a real person:
 | Group | Guarantee |
 |---|---|
 | The ranking stays private to the admin | Reviewers can submit scores but cannot read anyone's — including their own collection. This is the anti-bias guarantee in DESIGN.md. |
-| Screening input stays private to the admin | Same shape for flags and reasons, so one concern can't anchor the committee. |
+| Screening: reviewers get their own back, the collation stays admin-only | A reviewer can `get` a screening document by id — that is what makes their own flags and ratings follow them to a new device — but cannot `list` the collection, so nobody but leadership can sweep up everyone's. Also asserts that scores are **not** loosened the same way. |
 | An applicant cannot reach any committee data | No roster, no other applicants, no scores, no interviewer availability, no setup. |
 | An applicant can do their own scheduling | Reads the PII-free time list, writes their own availability — and *cannot read it back*. |
 | Only the admin can change setup | Roster, chair and times drive panel building; reviewers must not rewrite them. |
@@ -52,7 +58,8 @@ That last group asserts things that are currently **true but not ideal**:
 
 - One applicant can overwrite another's availability by typing their surname.
 - Reviewers share one account, so the rules cannot tell reviewer A from B — one
-  can overwrite another's score.
+  can overwrite another's score, and (since Sept 21 2026) one could `get`
+  another's screening document from a console. Both are the same root cause.
 
 Both are documented under "Honest limits" in the rules file. They are pinned
 here so a change is *deliberate*: if one of these tests ever fails, someone
@@ -84,9 +91,12 @@ everything.** That's expected, and it is not what the tests run against. If you
 want proof rather than reassurance, break something in `../firestore.rules` —
 change `isAdmin()` to `true` — and watch the suite fail.
 
-That check has been done: with `isAdmin()` forced to `true`, **16 of the 30 fail**,
-including every anti-bias guarantee (reviewers reading scores and screening,
-applicants reading the roster). So the suite is testing the real file.
+That check has been done, and re-done on Sept 21 2026: with `isAdmin()` forced
+to `true`, **20 of the 38 fail**, including every anti-bias guarantee
+(reviewers reading scores or listing screening, applicants reading the roster).
+Narrower breaks are covered too — loosening `list` on `interviews_screening` to
+the committee, or tightening its `get` back to admin, each fails exactly one
+test. So the suite is testing the real file.
 
 ## Expected noise
 
