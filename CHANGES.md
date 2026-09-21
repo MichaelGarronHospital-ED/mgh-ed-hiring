@@ -6,7 +6,7 @@ pass so the morning review has a paper trail.
 
 Verification note (updated Sept 21 2026): the Firestore **rules** have since been
 exercised for real — the emulator suite in [`tests/`](tests/) runs green here,
-**30/30**, and was confirmed load-bearing by breaking `isAdmin()` and watching 16
+**33/33**, and was confirmed load-bearing by breaking `isAdmin()` and watching 16
 of the 30 fail (see the Sept 21 entry below). What remains untested is only the
 **roles auth path**: creating the three Firebase Auth accounts and flipping
 `AUTH.mode`, which needs the live project. Everything else
@@ -21,6 +21,66 @@ errors. The paneling algorithm was re-ported to Python and checked against 300
 randomized trials (optimal matching + every panel invariant). What still needs
 the operator's live testing: Firestore reads/writes under the hardened rules and
 the three role-account sign-ins (see the console steps in README).
+
+---
+
+## Availability grid, applicant surname gate, rename tooling (Sept 21 2026)
+
+Three changes prompted by a real incident: an applicant's name was misspelled,
+someone fixed it by removing and re-adding her, and two physicians' screening
+ratings silently disappeared from the Screen tab.
+
+- **"Who's available when" grid** on the Availability tab, visible to reviewers
+  and admin. One row per interview time, one column per interviewer. Each cell
+  carries a letter (`P` in person, `Z` Zoom, `E` either, blank not available) as
+  well as a colour, so it reads correctly without colour vision; hover any square
+  for the name. The right-hand **Panel** column answers the question the grid
+  exists for — whether a balanced panel could actually run at that time — and it
+  calls `buildPanel`, the same function the Panels tab uses, so the two can never
+  disagree about the rules. A non-viable row says *why* on hover (no chair, too
+  few, no mix). Scrolls horizontally inside its own wrapper on a phone with the
+  time column pinned; the page itself never overflows.
+- **Applicants can no longer submit under a surname that isn't on the roster.**
+  This was a silent-loss bug: `interviews_availCand` is keyed by normalized
+  surname and applicants have write-without-read, so a typo or a name we hold
+  differently saved happily to a document nobody reads. The applicant saw
+  "Saved" and would simply never have been scheduled. `firestore.rules` now
+  `get()`s `/interviews_meta/allowed` on every applicant write — server-side, so
+  the roster stays unreadable to applicants — and the app checks the name at the
+  gate and says so plainly instead of accepting it. The list is kept in step with
+  the roster by the admin session (`syncAllowedNames`) and by
+  `scripts/sync-allowed.mjs`. **Fail-closed: run `sync-allowed.mjs --apply`
+  BEFORE publishing the rules**, or applicants are locked out.
+- **`scripts/` — maintenance tooling**, chiefly `rename-candidate.mjs`, which
+  fixes a name **in place**. The app has no rename, so the obvious move is to
+  remove and re-add — which mints a new `c-<uuid>` and strands every rating,
+  score and note on the old id, with the old entry still listed as removed. That
+  is precisely how the ratings went missing. Renaming keeps the document id, so
+  nothing needs migrating. Also `report-data.mjs` (read-only inventory, with an
+  `--issues` mode that flags stale entries, duplicate surnames and availability
+  matching no candidate), `migrate-candidate.mjs` (clean up after a
+  remove-and-re-add) and `purge-candidate.mjs` (hard-delete an entry, refusing
+  while anything still references it). Every writing script is dry-run by default.
+
+`lastKey` moved from `app.js` into `util.js`: the rules' allowed list, the store
+and the app must agree on exactly one definition of an availability document id,
+and there were about to be two.
+
+Rules suite extended to **33 tests, all passing**, including the refusal of an
+unrostered surname and the fail-closed behaviour when the list is missing. The
+"one applicant can overwrite another's availability" limitation test was updated
+rather than deleted — it is narrowed (the target must now be a real applicant),
+not closed. App changes verified headlessly in Chromium at 1100px and 390px in
+local mode with fictitious data: grid geometry, the viability column against
+four hand-built scenarios, the applicant gate accepting and refusing, and no
+console errors in any role.
+
+One bug caught during that verification worth recording: the grid's column
+headers used `class="who"`, colliding with the existing global `.who`
+(`display:flex`), which stopped the `<th>` laying out as table cells — the
+columns stacked into a single unreadable strip. Every element-counting assertion
+still passed. The suite now asserts the headers' **geometry**, not just that they
+exist.
 
 ---
 

@@ -335,3 +335,42 @@ ul.small { margin:.4rem 0 0; padding-left:1.2rem; } ul.small li { margin:.3rem 0
   border:1px solid var(--line); border-radius:var(--radius-sm); padding:.45rem .55rem; margin-top:.25rem; background:#fbfbfd; min-height:2.4rem; }
 .tform input:focus, .tform select:focus { border-color:var(--accent); box-shadow:var(--ring); background:#fff; outline:none; }
 @media (max-width:640px) { .tform { grid-template-columns:1fr 1fr; } .trow .ttime { min-width:0; } }
+
+/* ---- availability grid: who's available when ---------------------------- */
+/* Rows are interview times, columns are interviewers. The letter in each cell
+   carries the same meaning as the colour, so the grid still reads correctly
+   without colour vision. */
+.gridwrap { overflow-x:auto; -webkit-overflow-scrolling:touch; margin:0 -.2rem; padding:0 .2rem .2rem; }
+/* width:auto beats the global table{width:100%}, which would stretch the time
+   column across the card and push the squares to the far right. */
+.avgrid { width:auto; border-collapse:separate; border-spacing:3px; font-size:.8rem; }
+.avgrid th, .avgrid td { padding:0; font-weight:500; }
+/* Interviewer names run bottom-to-top so 13 columns fit without wrapping.
+   NB: class is `ivcol`, not `who` — the global `.who` is display:flex, which
+   would stop these <th> laying out as table cells at all. */
+.avgrid th.ivcol { vertical-align:bottom; height:6.2rem; width:1.9rem; }
+.avgrid th.ivcol span { writing-mode:vertical-rl; transform:rotate(180deg); display:inline-block;
+  white-space:nowrap; font-size:.75rem; color:var(--ink-2); font-weight:600; padding-bottom:.3rem; cursor:default;
+  text-transform:none; letter-spacing:normal; }
+.avgrid th.tlab { text-align:right; padding-right:.55rem; white-space:nowrap; font-variant-numeric:tabular-nums;
+  font-weight:500; color:var(--ink-2); position:sticky; left:0; background:var(--surface); z-index:1;
+  text-transform:none; letter-spacing:normal; font-size:.78rem; }
+.avgrid td.av { width:1.9rem; height:1.9rem; text-align:center; border-radius:var(--radius-xs);
+  font-size:.7rem; font-weight:700; color:#fff; cursor:default; line-height:1.9rem; }
+.avgrid td.av.ip     { background:var(--green); }
+.avgrid td.av.zoom   { background:var(--purple); }
+.avgrid td.av.either { background:var(--accent); }
+.avgrid td.av.no     { background:var(--line-2); }
+.avgrid tr.dayrow td { padding:.6rem .2rem .2rem; font-weight:600; font-size:.82rem; color:var(--ink-2); }
+.avgrid td.sum { text-align:center; white-space:nowrap; padding:0 .45rem; border-radius:var(--radius-xs);
+  font-variant-numeric:tabular-nums; font-weight:600; cursor:default; }
+.avgrid td.sum.yes  { background:var(--green-tint); color:var(--green); }
+.avgrid td.sum.nope { background:var(--red-tint); color:var(--red); }
+.avgrid th.sum { font-size:.75rem; color:var(--mut); font-weight:600; padding:0 .45rem; vertical-align:bottom; }
+.glegend { display:flex; flex-wrap:wrap; gap:.4rem .9rem; align-items:center; margin-top:.7rem;
+  font-size:.8rem; color:var(--ink-2); }
+.glegend span { display:inline-flex; align-items:center; gap:.35rem; }
+.glegend .sw { width:1.15rem; height:1.15rem; border-radius:var(--radius-xs); display:inline-block;
+  font-style:normal; font-size:.65rem; font-weight:700; color:#fff; text-align:center; line-height:1.15rem; }
+.glegend .sw.ip { background:var(--green); } .glegend .sw.zoom { background:var(--purple); }
+.glegend .sw.either { background:var(--accent); } .glegend .sw.no { background:var(--line-2); }

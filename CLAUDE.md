@@ -26,4 +26,18 @@ Full design and reference data (committee, candidates, questions, rules) live in
   renumber; config defaults keep ids `"0"`…`"9"` for data saved before ids existed.
   Write times only via `store.updateTimes` (transactional; also updates the public
   mirror applicants read).
+- **Never fix a candidate's name by removing and re-adding them.** Screening,
+  scores and notes are keyed to the candidate's `c-<uuid>`, and the app's remove
+  is a *soft* delete — so a re-add strands every rating on the old id, invisible
+  in the UI, while the old entry still shows on the Screen tab. Use
+  `scripts/rename-candidate.mjs`, which renames in place and keeps the id. This
+  has already cost one applicant's ratings; `scripts/migrate-candidate.mjs`
+  exists to clean that up.
+- **Applicant availability is keyed by normalized surname** (`lastKey` in
+  `util.js` — ONE definition, shared by the app, the store and the rules'
+  allowed list). Two consequences that keep biting: a surname change moves the
+  document, and two applicants sharing a surname share one document. The rules
+  refuse a write under a surname not on the roster (`/interviews_meta/allowed`,
+  fail-closed) so nothing is silently lost — **sync that list before publishing
+  rules**, or applicants are locked out. `report-data.mjs --issues` flags both.
 - Timeline is tight: **screening cut Sept 23 2026**, interviews start ~week of Sept 30.

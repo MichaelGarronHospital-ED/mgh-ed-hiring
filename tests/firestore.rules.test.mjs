@@ -58,6 +58,7 @@ const SCORE   = "interviews_scores/Marrocco~c-1";
 const SCREEN  = "interviews_screening/Marrocco~c-1";
 const CAND    = "interviews_candidates/c-1";
 const AVAIL_C = "interviews_availCand/nguyen";
+const ALLOWED = "interviews_meta/allowed";
 const AVAIL_I = "interviews_availIv/Marrocco";
 const CONFIG  = "interviews_meta/config";
 const PUBLIC  = "interviews_public/slots";
@@ -151,8 +152,29 @@ describe("an applicant can do their own scheduling, and nothing more", () => {
   });
 
   it("CAN submit and update their own availability", async () => {
+    await seed(ALLOWED, { keys: ["nguyen"] });
     await assertSucceeds(setDoc(doc(applicant(), AVAIL_C), { slots: { 0: "either" } }));
     await assertSucceeds(setDoc(doc(applicant(), AVAIL_C), { slots: { 1: "zoom" } }, { merge: true }));
+  });
+
+  // The silent-loss bug this gate exists to prevent: a typo, a married name, or
+  // the wrong half of a double-barrelled surname used to save happily to a
+  // document nobody reads. The applicant saw "Saved" and was never scheduled.
+  it("CANNOT submit availability under a surname that is not on the roster", async () => {
+    await seed(ALLOWED, { keys: ["nguyen"] });
+    await assertFails(setDoc(doc(applicant(), "interviews_availCand/nguyeen"), { slots: { 0: "ip" } }));
+    await assertFails(setDoc(doc(applicant(), "interviews_availCand/smith"), { slots: { 0: "ip" } }));
+  });
+
+  it("CANNOT submit availability when the roster list is missing (fail closed)", async () => {
+    // No ALLOWED doc seeded. Publishing the rules before syncing the list must
+    // refuse writes rather than wave them through unchecked.
+    await assertFails(setDoc(doc(applicant(), AVAIL_C), { slots: { 0: "either" } }));
+  });
+
+  it("CANNOT read the roster surname list that gates their own writes", async () => {
+    await seed(ALLOWED, { keys: ["nguyen", "okafor"] });
+    await assertFails(getDoc(doc(applicant(), ALLOWED)));
   });
 
   it("CANNOT read back even their own availability (write-without-read)", async () => {
@@ -259,13 +281,20 @@ describe("KNOWN LIMITATIONS — asserted so that changing them is deliberate", (
   // accepted and documented, so that if someone tightens or loosens the rules
   // the test tells them which documented tradeoff they just moved.
 
-  it("one applicant CAN overwrite another applicant's availability", async () => {
+  it("one applicant CAN still overwrite ANOTHER ROSTERED applicant's availability", async () => {
     // Documented in firestore.rules (“Honest limits”). All applicants share one
     // account and submit under their own typed last name, so nothing stops a
     // person typing someone else's surname. Low impact and admin-auditable; the
     // alternative (per-candidate tokens) breaks the one-link flow.
+    //
+    // NARROWED, not closed: the surname must now be on the roster, so the target
+    // has to be a real applicant — a stranger can no longer write anywhere in
+    // this collection (see "CANNOT submit availability under a surname that is
+    // not on the roster"). Two applicants who share a surname still share one
+    // document; report-data.mjs --issues flags that case.
     // If this ever starts FAILING, someone implemented per-applicant identity —
     // update DESIGN.md and delete this test.
+    await seed(ALLOWED, { keys: ["nguyen"] });
     await seed("interviews_availCand/nguyen", { slots: { 0: "either" } });
     await assertSucceeds(
       setDoc(doc(applicant(), "interviews_availCand/nguyen"), { slots: { 3: "zoom" } }, { merge: true }));

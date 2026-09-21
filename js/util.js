@@ -115,6 +115,14 @@ export function debounce(fn, ms = 400) {
 
 export function csvCell(s) { return `"${String(s ?? "").replace(/"/g, '""')}"`; }
 
+// The normalized last-name key applicants submit availability under, and the id
+// of their interviews_availCand document. "Dr Ben Carter" → "carter".
+// ONE definition: app.js, store.js, firestore.rules (via the synced allowed
+// list) and scripts/ must all agree, or an applicant's answers land under a key
+// nobody reads. Changing it strands every answer saved under the old spelling.
+export const lastKey = (name) =>
+  String(name || "").trim().split(/\s+/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
+
 // average of numeric values, or null.
 export function avg(nums) {
   const v = nums.filter((n) => typeof n === "number" && !isNaN(n));

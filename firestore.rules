@@ -32,8 +32,12 @@ rules_version = '2';
 //     private), applicants cannot read committee data at all, and the admin code is
 //     independent of the staff code so a reviewer cannot self-elevate to admin.
 //   • An applicant could overwrite another applicant's availability doc by typing
-//     their last name (write-without-read). Low impact, admin-auditable; the
-//     alternative (per-candidate tokens) breaks the "one link + last name" flow.
+//     THEIR last name (write-without-read). Narrowed but not closed: the surname
+//     must now be on the roster (nameOnRoster below), so only a real applicant's
+//     name works, and two applicants who share a surname still share one document.
+//     Low impact, admin-auditable, and scripts/report-data.mjs --issues flags the
+//     duplicate-surname case; the alternative (per-candidate tokens) breaks the
+//     "one link + last name" flow.
 // ============================================================================
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -41,6 +45,24 @@ service cloud.firestore {
     function isAdmin()     { return em() == 'admin@ed-hiring.app'; }
     function isCommittee() { return em() == 'committee@ed-hiring.app' || isAdmin(); }
     function isApplicant() { return em() == 'applicant@ed-hiring.app'; }
+
+    // An applicant may only write availability under a surname that is actually
+    // on the roster. Without this, a typo or a married/maiden name saves happily
+    // to a document nobody ever reads: the applicant sees "Saved", the committee
+    // sees no response, and the interview quietly never gets scheduled.
+    //
+    // get() here is evaluated server-side and does NOT require the caller to
+    // have read access, so the roster stays unreadable to applicants — they can
+    // only ever learn whether one surname they already guessed is on the list.
+    //
+    // The list is /interviews_meta/allowed { keys: ["kim", "yung", …] }, kept in
+    // sync from the roster by the admin session (app.js syncAllowedNames) and by
+    // scripts/sync-allowed.mjs. FAIL-CLOSED: if that doc is missing, applicant
+    // writes are refused, so publish these rules only AFTER it exists.
+    function nameOnRoster(k) {
+      return exists(/databases/$(database)/documents/interviews_meta/allowed)
+        && get(/databases/$(database)/documents/interviews_meta/allowed).data.keys.hasAny([k]);
+    }
 
     // Public, PII-free interview slots — applicants (and committee) may READ; only admin writes.
     match /interviews_public/{doc} {
@@ -57,7 +79,7 @@ service cloud.firestore {
     // (write-without-read); committee reads to build panels.
     match /interviews_availCand/{doc} {
       allow read:           if isCommittee();
-      allow create, update: if isApplicant() || isCommittee();
+      allow create, update: if isCommittee() || (isApplicant() && nameOnRoster(doc));
       allow delete:         if isCommittee();
     }
 
@@ -80,7 +102,9 @@ service cloud.firestore {
       allow write: if isCommittee();
     }
 
-    // Meta: config (committee/chair/oneDrive/overrides) + state (interviewsComplete).
+    // Meta: config (committee/chair/oneDrive/overrides), state (interviewsComplete),
+    // and allowed (the roster surname keys that gate applicant availability writes
+    // above — never read by applicants, only get() by the rules engine).
     // Committee may read; only admin writes.
     match /interviews_meta/{doc} {
       allow read:  if isCommittee();

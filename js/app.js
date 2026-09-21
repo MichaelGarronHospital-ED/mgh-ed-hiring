@@ -10,8 +10,8 @@ import { firebaseConfig, ORG_NAME, CHAIR, COMMITTEE, SLOTS, ONEDRIVE,
          CANDIDATE_CODE_LOCAL, AUTH, SCREENING_DEADLINE } from "./config.js";
 import { decryptContent } from "./data.js";
 import { LocalStore, FirestoreStore, key } from "./store.js";
-import { autoPanels } from "./panels.js";
-import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell } from "./util.js";
+import { autoPanels, buildPanel } from "./panels.js";
+import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell, lastKey } from "./util.js";
 import { effectiveSlots, slotLabel, slotTimeLabel, groupByDate, checkSlot, splitRange, responseCounts,
          newSlotId, isStructured, fmtDate } from "./slots.js";
 
@@ -23,9 +23,8 @@ const $ = (s) => document.querySelector(s);
 const isConfigured = () => firebaseConfig && Object.keys(firebaseConfig).length > 0 && firebaseConfig.apiKey;
 const ADMIN_SCOPES = ["candidates", "screening", "availIv", "availCand", "scores", "meta"];
 
-// normalized last-name key (applicants submit availability under this, never
-// reading the roster). "Dr Ben Carter" → "carter".
-const lastKey = (name) => String(name || "").trim().split(/\s+/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
+// lastKey (the applicant's availability document id) now lives in util.js, so
+// store.js and the rules' allowed-name list share one definition with this file.
 
 // Effective config: admin-set settings (DB) if present, else placeholder defaults.
 // `slots` = interview times [{id,date,start,end}] in date order; everything that
@@ -128,8 +127,30 @@ async function initStore(role, typed) {
       const pub = Array.isArray(st.times) ? { times: st.times } : (st.slots && st.slots.length ? { slots: st.slots } : null);
       if (pub) { ui._syncedSlots = true; store.syncPublicSlots(pub).catch(() => { ui._syncedSlots = false; }); }
     }
+    if (ui.role === "admin" && isConfigured()) syncAllowedNames();
   });
   S = store.getState();
+}
+
+// Keep the rules' allowed-surname list in step with the roster. firestore.rules
+// refuses an applicant's availability write unless their surname key is in
+// /interviews_meta/allowed, so this is what makes a newly added candidate able
+// to answer at all — and what stops a removed one from still submitting.
+//
+// Runs on every admin snapshot but writes only when the set actually differs,
+// so it is a no-op in the normal case. Self-healing on purpose: any roster edit,
+// from any device or from scripts/, is reconciled the next time an admin has the
+// app open, with no separate step for someone to forget.
+function syncAllowedNames() {
+  const want = [...new Set(S.candidates.filter((c) => !c.removed).map((c) => lastKey(c.name)).filter(Boolean))].sort();
+  if (!want.length) return;                 // never publish an empty list: that would lock every applicant out
+  const have = S.allowedNames;
+  if (have && have.length === want.length && want.every((k, i) => have[i] === k)) return;
+  if (ui._syncingNames) return;
+  ui._syncingNames = true;
+  store.setAllowedNames(want)
+    .catch((e) => console.warn("allowed-name sync failed:", e && e.code))
+    .finally(() => { ui._syncingNames = false; });
 }
 
 async function loadFirestore() {
@@ -401,6 +422,70 @@ function slotRows(slots, map, handler) {
   }).join("")).join("");
 }
 
+// ------------------------------------------- availability at a glance (grid)
+// One row per interview time, one column per interviewer, so "who can do when"
+// is a single look instead of thirteen separate lists.
+//
+// Three things are encoded per cell, deliberately not by colour alone (a letter
+// carries the same information for anyone who can't separate the hues):
+//   P in person · Z Zoom · E either · blank not available
+//
+// The right-hand column answers the question the grid is actually for: can a
+// panel run at this time? That is computed with buildPanel — the same function
+// the Panels tab uses — so the two can never disagree about the rules.
+function availGrid() {
+  const { committee, slots, chair } = EFF();
+  if (!slots.length || !committee.length) return "";
+
+  // Chair first (every panel needs them), then alphabetical.
+  const people = [...committee].sort((a, b) =>
+    a.name === chair ? -1 : b.name === chair ? 1 : a.name.localeCompare(b.name));
+
+  // buildPanel wants { g, avail }; the roster stores the field as `gender`
+  // (same mapping as renderPanels — see the interviewers object there).
+  const ivMap = {};
+  for (const m of committee) ivMap[m.name] = { g: m.gender, avail: S.availIv[m.name] || {} };
+
+  const GLYPH = { ip: "P", zoom: "Z", either: "E" };
+  const WORD = { ip: "in person", zoom: "Zoom", either: "either" };
+
+  const head = `<tr><th class="tlab">Time</th>` +
+    people.map((m) => `<th class="ivcol"><span data-tip="${escapeHtml(m.name)}${m.name === chair ? " (chair)" : ""}">` +
+      `${escapeHtml(m.name)}${m.name === chair ? " ★" : ""}</span></th>`).join("") +
+    `<th class="sum" data-tip="Whether a balanced panel can be formed at this time">Panel</th></tr>`;
+
+  const body = groupByDate(slots).map((g) =>
+    `<tr class="dayrow"><td colspan="${people.length + 2}">${escapeHtml(g.title)}</td></tr>` +
+    g.items.map((t) => {
+      const cells = people.map((m) => {
+        const v = (S.availIv[m.name] || {})[t.id];
+        return v
+          ? `<td class="av ${v}" data-tip="${escapeHtml(m.name)} · ${WORD[v]}">${GLYPH[v]}</td>`
+          : `<td class="av no" data-tip="${escapeHtml(m.name)} · not available"></td>`;
+      }).join("");
+      const n = people.filter((m) => (S.availIv[m.name] || {})[t.id]).length;
+      // A panel needs the chair, 3–5 people and a gender mix; ask buildPanel
+      // rather than guessing from the count, which would be wrong and look right.
+      const ok = buildPanel(t.id, "ip", ivMap, chair) || buildPanel(t.id, "zoom", ivMap, chair);
+      const why = ok ? `A panel can run at this time (${n} available)`
+        : n === 0 ? "Nobody has said they can do this time"
+        : !(S.availIv[chair] || {})[t.id] ? `${chair} (chair) isn't available, so no panel can run`
+        : `${n} available, but not a combination that makes a balanced panel`;
+      return `<tr><th class="tlab">${escapeHtml(slotTimeLabel(t))}</th>${cells}` +
+        `<td class="sum ${ok ? "yes" : "nope"}" data-tip="${escapeHtml(why)}">${n}${ok ? " ✓" : " ✗"}</td></tr>`;
+    }).join("")).join("");
+
+  const legend = `<div class="glegend">
+    <span><i class="sw ip">P</i> in person</span><span><i class="sw zoom">Z</i> Zoom</span>
+    <span><i class="sw either">E</i> either</span><span><i class="sw no"></i> not available</span>
+    <span class="muted small">★ chair · hover any square for the name</span></div>`;
+
+  return `<div class="note tip" style="margin-bottom:.6rem">Every interviewer against every time.
+      The <b>Panel</b> column says whether a balanced panel could actually run then — it uses the same
+      rules as the Panels tab, so a ✓ here means a panel really is possible.</div>
+    <div class="gridwrap"><table class="avgrid"><thead>${head}</thead><tbody>${body}</tbody></table></div>${legend}`;
+}
+
 // ------------------------------------------------------ 2 · Availability
 function renderAvailability() {
   const map = S.availIv[ui.member] || {};
@@ -411,6 +496,11 @@ function renderAvailability() {
   html += slots.length
     ? `<div class="card"><div class="slotgrid"><div class="h">Interview time</div><div class="h">I can do…</div>${slotRows(slots, map, "IV.avail")}</div></div>`
     : empty("🗓️", "No interview times yet", ui.isAdmin ? "Add interview times in Setup (the gear icon)." : "Leadership hasn't published the interview times yet — check back soon.");
+
+  // Everyone on the committee sees the grid — an interviewer choosing times is
+  // far better informed knowing which times are thin.
+  const grid = availGrid();
+  if (grid) html += section("avgrid", "Who's available when", "at a glance", grid, { open: true });
 
   if (ui.isAdmin) {
     const { committee } = EFF();
@@ -755,13 +845,34 @@ function renderCandidate() {
       <h2>Interview availability</h2><p class="muted">Enter your last name to pick the times that work for you.
         You won't see any other applicants or committee information.</p>
       <form id="candForm"><input id="candName" type="text" placeholder="Your last name" autocomplete="family-name" aria-label="Last name" autofocus/>
-      <button class="primary" type="submit">Continue</button></form>
+      <button class="primary" type="submit" id="candGo">Continue</button></form>
       <div id="candErr" class="err" role="alert"></div></div></div>`;
-    $("#candForm").onsubmit = (e) => {
+    $("#candForm").onsubmit = async (e) => {
       e.preventDefault();
       const v = $("#candName").value.trim();
-      if (v.length < 2) { $("#candErr").textContent = "Please enter your last name."; return; }
-      ui.candLast = lastKey(v);
+      const err = $("#candErr"), btn = $("#candGo");
+      if (v.length < 2) { err.textContent = "Please enter your last name."; return; }
+      const k = lastKey(v);
+      // Check the name against the roster BEFORE letting them fill anything in.
+      // Applicants can't read the roster, so the rules answer this for us: an
+      // unknown surname is refused. Without this, a typo or a name we hold
+      // differently saved to a document nobody reads — the applicant saw
+      // "Saved" and was never scheduled, which is the failure we're closing.
+      err.textContent = ""; btn.disabled = true; btn.textContent = "Checking…";
+      let ok;
+      try { ok = await store.checkName(k); }
+      catch { // offline or misconfigured: don't accuse them of a wrong name
+        err.textContent = "Couldn't reach the server. Check your connection and try again.";
+        btn.disabled = false; btn.textContent = "Continue"; return;
+      }
+      btn.disabled = false; btn.textContent = "Continue";
+      if (!ok) {
+        err.innerHTML = `We can't find <b>${escapeHtml(v)}</b> in our applicant list. ` +
+          `Please check the spelling, or try the last name exactly as it appears on your application. ` +
+          `If it still doesn't work, reply to the email that sent you this link and we'll sort it out.`;
+        return;
+      }
+      ui.candLast = k;
       ui.candDisplay = v.replace(/\s+/g, " ");
       sessionStorage.setItem("ed_iv_cand", ui.candLast);
       sessionStorage.setItem("ed_iv_cand_disp", ui.candDisplay);
@@ -1049,7 +1160,13 @@ window.CAND = {
   set: (id, v) => {
     const cur = (S.availCand[ui.candLast] || {})[id];
     store.setAvail("cand", ui.candLast, id, cur === v ? null : v)
-      .then(() => toast("Saved", "ok"), () => toast("Couldn't save — check your connection", "err"));
+      .then(() => toast("Saved", "ok"), (e) => toast(
+        // The name passed at the gate, so a refusal here means the roster
+        // changed underneath them (removed, or renamed). Saying "check your
+        // connection" would send them away thinking they were scheduled.
+        e && e.code === "permission-denied"
+          ? "We can no longer find your name in the applicant list — please contact us"
+          : "Couldn't save — check your connection", "err"));
   },
   rename: () => { sessionStorage.removeItem("ed_iv_cand"); sessionStorage.removeItem("ed_iv_cand_disp"); ui.candLast = null; ui.candDisplay = null; renderCandidate(); },
   logout: () => { ["ed_iv_cand", "ed_iv_cand_disp", "ed_iv_code"].forEach((k) => sessionStorage.removeItem(k)); location.reload(); },

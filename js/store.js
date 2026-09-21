@@ -17,6 +17,7 @@
 // ============================================================================
 
 import { effectiveSlots, toStored } from "./slots.js";
+import { lastKey } from "./util.js";
 
 export const key = (member, candId) => `${member}~${candId}`;
 
@@ -30,6 +31,10 @@ const EMPTY = () => ({
   // admin first edits them, so it is deliberately not defaulted here.
   settings: { committee: [], chair: "", slots: [], oneDrive: "", panelOverrides: {} },
   publicInfo: { orgName: "", note: "" },
+  // Roster surname keys that firestore.rules lets an applicant write availability
+  // under. null = not configured yet (the rules then refuse every applicant
+  // write, so the admin session syncs this from the roster — app.js).
+  allowedNames: null,
 });
 
 // ---------------------------------------------------------------- base class
@@ -78,6 +83,13 @@ export class LocalStore extends BaseStore {
     const id = "c-" + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + "-" + Math.random());
     this.state.candidates = [...this.state.candidates, { id, name, removed: false }];
     this._save();
+  }
+  // Local mode has no rules engine, so mirror what the rules enforce on the
+  // server: the same answer to "is this surname on the roster?", so the applicant
+  // flow can be exercised end-to-end without Firebase.
+  async setAllowedNames(keys) { this.state.allowedNames = keys; this._save(); }
+  async checkName(key) {
+    return this.state.candidates.some((c) => !c.removed && lastKey(c.name) === key);
   }
   async setCandidateRemoved(id, removed) {
     this.state.candidates = this.state.candidates.map((c) => c.id === id ? { ...c, removed } : c);
@@ -166,6 +178,8 @@ export class FirestoreStore extends BaseStore {
       this.state.meta = { interviewsComplete: false, ...(m ? m.data() : {}) };
       const c = snap.docs.find((d) => d.id === "config");
       this.state.settings = { committee: [], chair: "", slots: [], oneDrive: "", ...(c ? c.data() : {}) };
+      const a = snap.docs.find((d) => d.id === "allowed");
+      this.state.allowedNames = a && Array.isArray(a.data().keys) ? a.data().keys : null;
     });
     // Candidates read the slots from the public, PII-free mirror doc.
     if (on("public")) watch("public", doc(db, "interviews_public", "slots"), (snap) => {
@@ -254,6 +268,27 @@ export class FirestoreStore extends BaseStore {
   async setMeta(patch) {
     const { setDoc } = this._fb;
     await setDoc(this._doc("interviews_meta", "state"), patch, { merge: true });
+  }
+  // Admin only. The surname keys applicants may submit availability under; the
+  // rules get() this document on every applicant write, so a name missing here
+  // is refused rather than silently saved somewhere nobody reads.
+  async setAllowedNames(keys) {
+    const { setDoc } = this._fb;
+    await setDoc(this._doc("interviews_meta", "allowed"), { keys }, { mergeFields: ["keys"] });
+  }
+  // Applicant only. Applicants cannot READ the roster, so the only way to tell
+  // them their name is unknown is to try a write and see if the rules allow it.
+  // An empty merge is a no-op for a name that IS on the roster: it creates or
+  // touches the doc without disturbing answers from an earlier visit.
+  async checkName(key) {
+    const { setDoc } = this._fb;
+    try {
+      await setDoc(this._doc("interviews_availCand", key), { slots: {} }, { merge: true });
+      return true;
+    } catch (e) {
+      if (e && e.code === "permission-denied") return false;
+      throw e; // offline or misconfigured — the caller must not read that as "unknown name"
+    }
   }
   async setSettings(patch) {
     const { setDoc } = this._fb;
