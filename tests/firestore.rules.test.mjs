@@ -3,8 +3,10 @@
 //
 //  These assert the promises the tool makes to real people:
 //    • applicants cannot see the roster, the questions, the scores or each other
-//    • reviewers cannot see anyone's scores or screening (so no one can peek at
-//      the ranking mid-process, which is the anti-bias guarantee)
+//    • reviewers cannot see anyone's scores, and cannot list screening (so no
+//      one can peek at the ranking or the collation mid-process, which is the
+//      anti-bias guarantee). A reviewer CAN fetch a screening document by id,
+//      which is how their own review follows them between devices.
 //    • only the admin account can change setup (roster, chair, times)
 //
 //  They run against the local Firestore emulator — no real project, no real
@@ -91,13 +93,27 @@ describe("the ranking stays private to the admin", () => {
   });
 });
 
-describe("screening input stays private to the admin", () => {
-  // Same shape as scores: reviewers submit flags but must not see each other's,
-  // so one person's concern can't anchor the rest of the committee.
+describe("screening: reviewers get their own back, the collation stays admin-only", () => {
+  // Deliberately looser than scores (Sept 21 2026). A reviewer's own flags and
+  // ratings used to be readable only in the browser they were typed in, so
+  // signing in anywhere else showed them a blank review — which reads as lost
+  // work. `get` by exact id is now open to the committee so the app can fetch
+  // "<member>~<candId>"; `list` stays admin-only, so nobody but leadership can
+  // sweep up the collection and see the collation.
+  //
+  // The rules cannot tell one reviewer from another (shared account), so this
+  // does mean a reviewer could `get` a colleague's document from a console.
+  // That is the documented trade, not an oversight — assert it explicitly so
+  // nobody later "fixes" it by accident in either direction.
 
-  it("a reviewer CANNOT read screening", async () => {
+  it("a reviewer CAN get a screening document by id", async () => {
     await seed(SCREEN, { member: "Marrocco", candId: "c-1", flag: true, reason: "x" });
-    await assertFails(getDoc(doc(committee(), SCREEN)));
+    await assertSucceeds(getDoc(doc(committee(), SCREEN)));
+  });
+
+  it("a reviewer CANNOT list the screening collection", async () => {
+    // this is the guarantee that matters: no sweeping up everyone's flags
+    await seed(SCREEN, { flag: true });
     await assertFails(getDocs(collection(committee(), "interviews_screening")));
   });
 
@@ -105,9 +121,17 @@ describe("screening input stays private to the admin", () => {
     await assertSucceeds(setDoc(doc(committee(), SCREEN), { member: "Marrocco", candId: "c-1", flag: true }));
   });
 
-  it("the admin CAN read screening", async () => {
+  it("the admin CAN get and list screening", async () => {
     await seed(SCREEN, { flag: true });
     await assertSucceeds(getDoc(doc(admin(), SCREEN)));
+    await assertSucceeds(getDocs(collection(admin(), "interviews_screening")));
+  });
+
+  it("scores are NOT loosened the same way — a reviewer cannot even get one", async () => {
+    // the asymmetry is the point: a reviewer who could get scores could
+    // reconstruct the ranking mid-process, which is what this model prevents
+    await seed(SCORE, { member: "Marrocco", candId: "c-1", overall: 4 });
+    await assertFails(getDoc(doc(committee(), SCORE)));
   });
 });
 

@@ -135,6 +135,19 @@ do these console steps (they can't be done from the repo):
    > committee Firebase password, so keep it off any public channel and prefer a
    > code that isn't trivially guessable.
 
+   > **What one reviewer can see of another.** All reviewers share the single
+   > `committee@…` account, so the rules cannot tell them apart. Scores are
+   > therefore unreadable to the whole committee — that is what keeps the ranking
+   > private. **Screening is deliberately looser**: a reviewer may fetch a
+   > screening document *by exact id*, which is what lets their own flags and
+   > ratings follow them to a new device, so a reviewer who opened the browser
+   > console could also fetch a colleague's. Bulk listing stays admin-only, and
+   > the app itself never requests anyone else's. The same shared account already
+   > means a reviewer could *submit* screening as someone else. Closing both
+   > properly means per-member accounts: thirteen users instead of three, rules
+   > keyed on `request.auth.token.email`, and the name-pick screen replaced by a
+   > real sign-in.
+
 3. **Firestore → Rules →** paste [`firestore.rules`](firestore.rules) → **Publish**.
 4. In [`js/config.js`](js/config.js) set `AUTH.mode = "roles"` and redeploy.
 5. Sign in as **admin** once — the app publishes the PII-free list of interview times

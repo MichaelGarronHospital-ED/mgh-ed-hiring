@@ -39,7 +39,23 @@ const EMPTY = () => ({
 
 // ---------------------------------------------------------------- base class
 class BaseStore {
-  constructor() { this.state = EMPTY(); this._subs = new Set(); }
+  // `ready` = the first real server snapshot has landed, so the roster on
+  // screen is the SAVED one rather than the config.js fallback. The member
+  // picker waits for it: someone who commits to a name from the fallback list
+  // files their flags, ratings and scores under that spelling, and if the saved
+  // roster spells them differently their input lands under a name nothing reads.
+  constructor() { this.state = EMPTY(); this._subs = new Set(); this.ready = true; }
+  // Which committee member is signed in. Only the Firestore backend acts on it
+  // (it decides which screening documents to fetch back); local mode already
+  // has the whole collection in hand.
+  setMember() { /* no-op except on Firestore */ }
+  // Can this client actually read a reviewer's own screening back?
+  //   true  — confirmed working
+  //   false — the server refused (rules not published yet, or tightened again)
+  //   null  — not answered yet
+  // The UI branches on it rather than promising "on any device" and being wrong
+  // for however long it takes someone to paste the rules into the console.
+  screeningReadBack = true;
   getState() { return this.state; }
   subscribe(cb) { this._subs.add(cb); cb(this.state); return () => this._subs.delete(cb); }
   _emit() { for (const cb of this._subs) cb(this.state); }
@@ -152,14 +168,31 @@ export class FirestoreStore extends BaseStore {
     if (this._echo) this._loadEcho();
     const { db, collection, doc, onSnapshot } = fb;
     const on = (name) => scopes.includes(name);
+    // Not ready until the saved roster/config arrives (see BaseStore). Capped so
+    // a denied or hanging read can never leave the app stuck behind the picker —
+    // it falls back to the config roster, which is what it did before.
+    this.ready = false;
+    const arrive = () => { this.ready = true; };
+    setTimeout(() => { if (!this.ready) { arrive(); this._emit(); } }, 5000);
     this._candEcho = !on("availCand"); // applicants: no read access to availCand
     if (this._candEcho) this._loadCandEcho();
     const watch = (name, ref, apply) =>
       onSnapshot(ref, (snap) => { apply(snap); this._emit(); },
                  (err) => { console.warn("snapshot denied:", name, err && err.code); });
 
+    // A reviewer may `get` a screening document but not `list` the collection
+    // (firestore.rules), so when the collection isn't in scope we instead watch
+    // this member's own documents one by one. Re-run whenever the roster
+    // changes, because the set of ids we want changes with it.
+    this._ownScreening = on("candidates") && !on("screening");
+    this._own = new Map();
+    // unknown until the first per-document listener answers; admins read the
+    // whole collection, so for them it is settled from the start
+    this.screeningReadBack = this._ownScreening ? null : true;
+
     if (on("candidates")) watch("candidates", collection(db, "interviews_candidates"), (snap) => {
       this.state.candidates = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      this._syncOwnScreening();
     });
     if (on("screening")) watch("screening", collection(db, "interviews_screening"), (snap) => {
       this.state.screening = { ...(this._echoScreening || {}), ...Object.fromEntries(snap.docs.map((d) => [d.id, d.data()])) };
@@ -180,6 +213,7 @@ export class FirestoreStore extends BaseStore {
       this.state.settings = { committee: [], chair: "", slots: [], oneDrive: "", ...(c ? c.data() : {}) };
       const a = snap.docs.find((d) => d.id === "allowed");
       this.state.allowedNames = a && Array.isArray(a.data().keys) ? a.data().keys : null;
+      arrive();
     });
     // Candidates read the slots from the public, PII-free mirror doc.
     if (on("public")) watch("public", doc(db, "interviews_public", "slots"), (snap) => {
@@ -187,8 +221,49 @@ export class FirestoreStore extends BaseStore {
       this.state.settings = { ...this.state.settings, slots: d.slots || [] };
       if (Array.isArray(d.times)) this.state.settings.times = d.times; else delete this.state.settings.times;
       this.state.publicInfo = { orgName: d.orgName || "", note: d.note || "" };
+      arrive();
     });
   }
+  // -- the signed-in reviewer's own screening, read back from the server ----
+  // Their flags and ratings used to be visible only in the browser they were
+  // typed in, because reviewers had no read access at all: sign out, sign in
+  // anywhere else, and their own review looked blank. The rules now allow a
+  // `get` by exact id, so we subscribe to precisely "<member>~<candidateId>"
+  // for each candidate and nothing else — the app never requests a colleague's
+  // document. `list` is still admin-only, so the collation stays private.
+  setMember(name) {
+    if (this._member === name) return;
+    this._member = name || null;
+    this._syncOwnScreening();
+  }
+  _syncOwnScreening() {
+    if (!this._ownScreening) return;               // admin/local: whole collection already watched
+    const { onSnapshot } = this._fb;
+    const want = new Set();
+    if (this._member) for (const c of this.state.candidates) want.add(key(this._member, c.id));
+    for (const [k, off] of this._own) if (!want.has(k)) { off(); this._own.delete(k); }
+    for (const k of want) {
+      if (this._own.has(k)) continue;
+      const off = onSnapshot(this._doc("interviews_screening", k), (snap) => {
+        if (this.screeningReadBack !== true) { this.screeningReadBack = true; }
+        // A doc that doesn't exist yet means "not reviewed" — but don't wipe an
+        // echo entry from before reviewers could read anything back.
+        if (!snap.exists()) { this._emit(); return; }
+        this.state.screening = { ...this.state.screening, [k]: snap.data() };
+        if (this._echo) { this._echoScreening[k] = snap.data(); this._saveEcho(); }
+        this._emit();
+      }, (err) => {
+        // Almost always "permission-denied" because firestore.rules hasn't been
+        // published yet. Not fatal: the device mirror still shows their own
+        // input, and the UI drops the "on any device" claim.
+        console.warn("own screening denied:", err && err.code);
+        this.screeningReadBack = false;
+        this._emit();
+      });
+      this._own.set(k, off);
+    }
+  }
+
   // -- echo mirror (reviewer's own screening/scores, per device) ------------
   _loadEcho() {
     try {

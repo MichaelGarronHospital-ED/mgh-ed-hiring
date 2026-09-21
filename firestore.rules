@@ -8,8 +8,10 @@ rules_version = '2';
 //
 //    admin@ed-hiring.app      — leadership: full read/write, incl. scores/ranking
 //    committee@ed-hiring.app  — reviewers: submit screening/scores/availability,
-//                               read the roster + availability, but CANNOT read
-//                               scores/screening (so they can't see the ranking)
+//                               read the roster + availability, fetch their own
+//                               screening documents by id, but CANNOT list
+//                               screening and cannot read scores at all (so they
+//                               can't see the ranking)
 //    applicant@ed-hiring.app  — candidates: read ONLY the public interview slots
 //                               and submit their OWN availability; CANNOT read the
 //                               roster, questions, screening, scores, or panels.
@@ -26,11 +28,13 @@ rules_version = '2';
 //
 //  Honest limits (documented, not hidden):
 //   • Reviewers share one committee account, so rules can't tell reviewer A from
-//     reviewer B — per-member WRITE isolation isn't rule-enforceable here (it
-//     would need per-member accounts or custom claims via Cloud Functions). What
-//     IS enforced: reviewers cannot READ anyone's scores/screening (ranking stays
-//     private), applicants cannot read committee data at all, and the admin code is
-//     independent of the staff code so a reviewer cannot self-elevate to admin.
+//     reviewer B — per-member isolation isn't rule-enforceable here (it would
+//     need per-member accounts or custom claims via Cloud Functions). Neither
+//     writes nor screening `get`s are scoped to the person doing them. What IS
+//     enforced: reviewers cannot read scores at all and cannot list screening
+//     (the ranking and the collation stay private), applicants cannot read
+//     committee data at all, and the admin code is independent of the staff code
+//     so a reviewer cannot self-elevate to admin.
 //   • An applicant could overwrite another applicant's availability doc by typing
 //     THEIR last name (write-without-read). Narrowed but not closed: the surname
 //     must now be on the roster (nameOnRoster below), so only a real applicant's
@@ -88,15 +92,37 @@ service cloud.firestore {
       allow read, write: if isCommittee();
     }
 
-    // Screening flags/ratings — reviewers submit (write) but only admin reads
-    // (keeps per-member input + collation private).
+    // Screening flags/ratings.
+    //
+    // `get` (one document, by exact id) is open to the committee; `list` (the
+    // whole collection) is admin-only. That split is what lets a reviewer see
+    // their OWN flags and ratings again after signing out — the app fetches
+    // exactly "<theirName>~<candidateId>" and never asks for anyone else's —
+    // while the collation and the aggregate stay admin-only.
+    //
+    // Honest limit, decided deliberately (Sept 21 2026): reviewers share one
+    // account, so the rules cannot tell reviewer A from reviewer B. A reviewer
+    // who opened the browser console could therefore fetch a colleague's
+    // screening document, since committee can already read the roster and the
+    // candidate ids. That is the same trust boundary the WRITE side has always
+    // had — anyone with the staff code can already submit screening AS someone
+    // else — so this widens an existing limit rather than creating a new kind
+    // of one. Closing it properly means per-member accounts (README → "Real
+    // access control"). SCORES are NOT treated this way: see below.
     match /interviews_screening/{doc} {
-      allow read:  if isAdmin();
+      allow get:   if isCommittee();
+      allow list:  if isAdmin();
       allow write: if isCommittee();
     }
 
-    // Interview scores — reviewers submit (write) but only admin reads
-    // (this is what keeps the RANKING admin-only for real).
+    // Interview scores — reviewers submit (write); admin alone reads, not even
+    // by exact id. This is what keeps the RANKING admin-only for real, and it
+    // is deliberately stricter than screening above: screening is opened to
+    // `get` so reviewers can see their own input back, but a reviewer who could
+    // `get` scores could reconstruct the whole matrix and be anchored by the
+    // ranking mid-process, which is the one thing this model exists to prevent.
+    // The Score tab therefore still replays a reviewer's own answers from a
+    // per-device mirror (store.js) and says so on screen.
     match /interviews_scores/{doc} {
       allow read:  if isAdmin();
       allow write: if isCommittee();

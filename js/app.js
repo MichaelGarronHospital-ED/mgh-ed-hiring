@@ -101,7 +101,14 @@ async function initStore(role, typed) {
       : (AUTH.mode === "roles" && role === "committee")
         ? ["candidates", "availIv", "availCand", "meta"]   // reviewers can't read scores/screening
         : ADMIN_SCOPES;                                    // admin or anon
-    const echo = AUTH.mode === "roles" && role === "committee";
+    // Mirror your own input locally for EVERY committee role, admin included.
+    // It used to be committee-only, which meant rating something as admin and
+    // coming back with the staff code showed a blank review on the same
+    // machine — the likeliest cause of the "my ratings vanished" report.
+    // Screening now also comes back from the server; scores never do, so for
+    // those this mirror is still the only replay a reviewer gets.
+    const echo = AUTH.mode === "roles" && role !== "candidate";
+    ui.echoOnly = AUTH.mode === "roles" && role === "committee";
     store = new FirestoreStore(fb, { scopes, echo });
   } else {
     store = new LocalStore();
@@ -110,6 +117,14 @@ async function initStore(role, typed) {
     S = s;
     if (ui.role === "candidate") { if ($("#candview") && !$("#candview").classList.contains("hidden")) renderCandidate(); }
     else if ($("#app") && !$("#app").classList.contains("hidden")) {
+      // The roster changed out from under this session and no longer has the
+      // name we're filing input under — everything typed from here would be
+      // saved to a name nobody reads. Send them back to the picker instead.
+      if (ui.member && !EFF().committee.some((m) => m.name === ui.member)) {
+        toast(`“${ui.member}” is no longer on the committee list — please pick your name again`, "err");
+        backToMemberPick();
+        return;
+      }
       renderBanner(); render();
       refreshSetup();   // keep the open Setup modal live
     }
@@ -206,6 +221,20 @@ function fillMemberSel() {
   const names = [...EFF().committee].sort((a, b) => a.name.localeCompare(b.name));
   sel.innerHTML = `<option value="" disabled selected>— Select your name —</option>`
     + names.map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("");
+  // Don't let anyone commit to a name off the config fallback list before the
+  // saved roster lands — input filed under the wrong spelling is invisible
+  // afterwards, and it looks exactly like the app having lost it.
+  const btn = $("#memberBtn"), ready = !store || store.ready;
+  if (btn) { btn.disabled = !ready; btn.textContent = ready ? "Continue" : "Loading the roster…"; }
+  sel.disabled = !ready;
+}
+
+function backToMemberPick() {
+  ui.member = null;
+  if (store) store.setMember(null);
+  ["#appHeader", "#tabs", "#app"].forEach((s) => $(s).classList.add("hidden"));
+  $("#banner").classList.add("hidden");
+  proceedToMemberPick();
 }
 
 // Repaint the list in place without losing a selection the user already made.
@@ -217,6 +246,9 @@ function refreshMemberPick() {
 }
 
 function showApp() {
+  // Tell the store who we are, so it can fetch this member's own screening
+  // documents back from the server (see FirestoreStore.setMember).
+  if (store) store.setMember(ui.member);
   $("#memberpick").classList.add("hidden");
   $("#orgName").textContent = ORG_NAME;
   $("#whoLine").textContent = ui.member;
@@ -288,6 +320,34 @@ function wireSections() {
   document.querySelectorAll("details.section").forEach((d) => {
     d.addEventListener("toggle", () => { ui.openSections[d.dataset.sec] = d.open; });
   });
+  document.querySelectorAll("details.howto").forEach((d) => {
+    d.addEventListener("toggle", () => setHowto(d.dataset.howto, d.open));
+  });
+}
+
+// ---- "What to do here" ----------------------------------------------------
+// The guidance a first-time reviewer needs is a paragraph; the fifth time it is
+// noise above every tab. So it collapses to one line and REMEMBERS that choice
+// across sessions (localStorage, per tab) — unlike the section state, which is
+// deliberately per-render only. Open by default: someone who has never used the
+// tab should never have to go looking for the instructions.
+const HOWTO_KEY = "ed_iv_howto_v1";
+let howtoState = null;
+function howtoAll() {
+  if (howtoState) return howtoState;
+  try { howtoState = JSON.parse(localStorage.getItem(HOWTO_KEY) || "{}") || {}; }
+  catch { howtoState = {}; }
+  return howtoState;
+}
+function setHowto(id, open) {
+  howtoAll()[id] = open;
+  try { localStorage.setItem(HOWTO_KEY, JSON.stringify(howtoState)); } catch { /* storage blocked */ }
+}
+function howto(id, bodyHtml, label = "What to do here") {
+  const open = howtoAll()[id] !== false;
+  const chev = `<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>`;
+  return `<details class="howto" data-howto="${id}" ${open ? "open" : ""}>
+    <summary>${chev}${escapeHtml(label)}</summary><div class="howto-body">${bodyHtml}</div></details>`;
 }
 const empty = (ico, title, msg) =>
   `<div class="empty"><div class="ico" aria-hidden="true">${ico}</div><h4>${escapeHtml(title)}</h4><p>${escapeHtml(msg)}</p></div>`;
@@ -330,25 +390,132 @@ function closeSetup() {
 }
 const setupOpen = () => !$("#setupModal").classList.contains("hidden");
 
+// Collation sort order. A per-device UI preference, not data — remembered so a
+// coordinator who works by rating doesn't re-pick it every time they open the
+// tab. Falls back to "name" whenever storage is unavailable or holds junk.
+const COLL_SORT_KEY = "ed_iv_collsort_v1";
+function collSort() {
+  if (ui.collSort == null) {
+    try { ui.collSort = localStorage.getItem(COLL_SORT_KEY) || "name"; } catch { ui.collSort = "name"; }
+  }
+  return ui.collSort;
+}
+
+// ------------------------------------------------------- screening figures
+// Everyone on the committee screens every applicant, so the denominator for a
+// priority rating is the whole committee. A missing rating is NOT imputed (a
+// non-answer is not a 3) — the mean is over whoever answered, which is why the
+// count is always printed next to it: "4.5 from 2 people" and "4.5 from 12" are
+// very different facts and the number alone can't tell them apart.
+function screenStats(candId) {
+  const { committee } = EFF();
+  const flags = [], ratings = [];
+  committee.forEach((m) => {
+    const s = S.screening[key(m.name, candId)] || {};
+    if (s.flag) flags.push({ who: m.name, reason: String(s.reason || "").trim() });
+    if (s.rating) ratings.push(s.rating);
+  });
+  // reasons first: a bare flag is the least informative line on the card and
+  // shouldn't split two people's sentences apart.
+  flags.sort((a, b) => (b.reason ? 1 : 0) - (a.reason ? 1 : 0));
+  return { flags, ratings, avg: avg(ratings), n: ratings.length, of: committee.length };
+}
+
+// Flags/ratings/scores keyed to a candidate id that no longer exists. This is
+// the footprint of a remove-and-re-add (which mints a fresh c-<uuid>) and it is
+// otherwise completely invisible: the input is still in the database, just
+// attached to nothing the UI lists. It has cost real ratings once already, so
+// the coordinator dashboard now says so out loud. Admin-only — a reviewer's
+// screening map is their own local echo, where an orphan means nothing.
+function strandedInput() {
+  const known = new Set(S.candidates.map((c) => c.id));
+  const ids = new Set();
+  let n = 0;
+  [S.screening, S.scores].forEach((map) => Object.keys(map || {}).forEach((k) => {
+    const i = k.indexOf("~");
+    const id = i < 0 ? "" : k.slice(i + 1);
+    if (id && !known.has(id)) { ids.add(id); n++; }
+  }));
+  return { ids: [...ids], n };
+}
+
+// A reviewer's progress line. Screening now comes back from the server on any
+// device (the rules allow a `get` of your own documents), so it is a plain
+// count. Scores are different on purpose: a reviewer who could read scores back
+// could reconstruct the ranking mid-process, so those stay write-only and are
+// replayed from this browser's mirror — which looks blank on a second device
+// even though every answer is safely recorded. Say so, rather than let it read
+// as lost work.
+function myInputNotice(list, get, deviceOnly) {
+  if (!list.length || (deviceOnly && !ui.echoOnly)) return "";
+  const has = (r) => !!r && !!(r.flag || r.rating || r.overall ||
+    (r.notes && Object.values(r.notes).some((t) => String(t || "").trim())));
+  const done = list.filter((c) => has(get(c))).length;
+  if (!deviceOnly) {
+    // Only claim "any device" once the server has actually answered. Until the
+    // hardened rules are published the read is refused, and promising something
+    // the app can't do is worse than saying nothing.
+    const anywhere = !store || store.screeningReadBack !== false;
+    return `<div class="note local"><b>${done} of ${list.length}</b> reviewed by you.
+      ${anywhere
+        ? `Your flags and ratings follow you — sign in on any device, pick your name, and they'll be here.`
+        : `Saved to leadership the moment you tap. This browser remembers your own answers; on another
+           device they'll look blank until leadership finishes the setup.`}
+      Only leadership can see everyone's together.</div>`;
+  }
+  return `<div class="note local"><b>${done} of ${list.length}</b> scored on this device.
+    Everything you tap is saved to leadership immediately. Scores are deliberately write-only —
+    nobody on the committee can read anyone's back, which is what stops the ranking leaking
+    mid-process — so this page replays <b>your</b> answers from <b>this browser</b>. On another
+    device they'll look blank; that is the privacy model, not lost work.${done ? "" :
+      " If you know you scored somewhere else, check with leadership before re-entering it."}</div>`;
+}
+
 // ------------------------------------------------------------ 1 · Screen
 function renderScreen() {
   const me = ui.member;
   const { committee, oneDrive } = EFF();
-  let html = `<div class="note tip"><b>What to do here:</b> open the applications folder to read each
-    applicant's CV &amp; cover letter, then
+  let html = howto("screen", `Open the applications folder to read each applicant's CV &amp; cover letter, then
     <b>flag</b> anyone you feel isn't qualified (add a short reason). You can also give an optional
-    <b>1–5 priority</b>. Only you and leadership see your input — nobody else sees your flags or ratings.</div>`;
+    <b>1–5 priority</b>. Your input goes to leadership, who see everyone's side by side; the app never
+    shows one reviewer another's flags or ratings.`);
 
   if (ui.isAdmin) {
     const submitted = new Set();
     Object.keys(S.screening).forEach((k) => { const v = S.screening[k]; if (v && (v.flag || v.rating)) submitted.add(k.split("~")[0]); });
     const notYet = committee.filter((m) => !submitted.has(m.name)).map((m) => m.name);
-    const rows = S.candidates.map((c) => {
-      const fc = flagsCount(c.id), out = fc >= 2 || c.removed;
-      const reasons = committee.map((m) => S.screening[key(m.name, c.id)]).filter((s) => s && s.flag && s.reason)
-        .map((s) => escapeHtml(s.reason)).join("; ") || "—";
-      const ratings = committee.map((m) => (S.screening[key(m.name, c.id)] || {}).rating).filter((n) => n);
-      const ar = ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : "—";
+
+    // Still-in first, then excluded/removed — that split is the decision, so it
+    // holds whichever sort is chosen and excluded people never drift back up
+    // into the list you're working. Within each group, your pick.
+    //   name   — alphabetical, the order you can predict and scan
+    //   rating — highest average priority first; unrated last, because "no
+    //            rating" is not a low rating and must not sort as one
+    //   flags  — most-flagged first, for working through the exclusions
+    const SORTS = { name: "Name", rating: "Avg priority", flags: "Flags" };
+    const sortKey = SORTS[collSort()] ? collSort() : "name";
+    const byName = (a, b) => a.name.localeCompare(b.name);
+    const cmp = {
+      name: byName,
+      rating: (a, b) => {
+        const x = screenStats(a.id).avg, y = screenStats(b.id).avg;
+        if (x == null && y == null) return byName(a, b);
+        if (x == null) return 1;
+        if (y == null) return -1;
+        return y - x || byName(a, b);
+      },
+      flags: (a, b) => screenStats(b.id).flags.length - screenStats(a.id).flags.length || byName(a, b),
+    }[sortKey];
+    const ordered = [...S.candidates].sort((a, b) =>
+      (isIn(a) === isIn(b) ? 0 : isIn(a) ? -1 : 1) || cmp(a, b));
+    const sortBar = `<div class="sortbar"><span class="muted small">Sort by</span>
+      <span class="seg" role="group" aria-label="Sort candidates">${Object.entries(SORTS).map(([k, label]) =>
+        `<button type="button" class="${k === sortKey ? "on" : ""}" aria-pressed="${k === sortKey}"
+          onclick="IV.sortColl('${k}')">${label}</button>`).join("")}</span></div>`;
+
+    const rows = ordered.map((c) => {
+      const st = screenStats(c.id);
+      const fc = st.flags.length;
       // distinguish admin-removed from flag-excluded, so "restore" isn't a confusing no-op
       const statusPill = c.removed ? '<span class="pill out">removed</span>'
         : fc >= 2 ? '<span class="pill out">excluded · flags</span>'
@@ -356,35 +523,66 @@ function renderScreen() {
       const action = c.removed
         ? `<button class="linky" onclick="IV.removeCand('${c.id}',false)">restore</button>`
         : `<button class="linky danger" onclick="IV.removeCand('${c.id}',true)">remove</button>`;
-      return `<tr><td class="name">${escapeHtml(c.name)}</td><td>${fc >= 2 ? `<b class="bad">${fc}</b>` : fc}</td>
-        <td class="muted small">${reasons}</td><td>${ar}</td>
-        <td>${statusPill}</td><td>${action}</td></tr>`;
+      // One line per flagger, attributed and quoted in full. Several people
+      // flagging one applicant is the normal case, and each sentence is the
+      // thing leadership actually has to weigh.
+      const reasons = fc ? `<ul class="reasons">` + st.flags.map((f) => f.reason
+          ? `<li><span class="rwho">${escapeHtml(f.who)}</span><span>${escapeHtml(f.reason)}</span></li>`
+          : `<li class="noreason"><span class="rwho">${escapeHtml(f.who)}</span><span>flagged without a reason</span></li>`).join("")
+        + `</ul>` : "";
+      const rateTip = st.n
+        ? `Mean of the ${st.n} priority rating${st.n === 1 ? "" : "s"} actually submitted (${st.ratings.join(", ")}). `
+          + `${st.of - st.n} member${st.of - st.n === 1 ? "" : "s"} didn't rate — non-answers are left out, not counted as a middling score.`
+        : "Nobody has given this applicant a priority rating yet.";
+      const thin = st.n > 0 && st.n < 3;
+      return `<div class="collrow ${fc >= 2 || c.removed ? "out" : ""}">
+        <div class="collhead"><span class="name">${escapeHtml(c.name)}</span>${statusPill}<span class="spacer"></span>${action}</div>
+        <div class="collmeta">
+          <span class="metric ${fc >= 2 ? "flagged" : ""}" data-tip="${fc ? escapeHtml(st.flags.map((f) => f.who).join(", ")) + " flagged this applicant." : "Nobody has flagged this applicant."} Two or more flags take them off the interview list.">
+            <b>${fc}</b> flag${fc === 1 ? "" : "s"}</span>
+          <span class="metric" data-tip="${escapeHtml(rateTip)}"><span aria-hidden="true">★</span>
+            <b>${st.avg == null ? "—" : st.avg.toFixed(1)}</b> avg priority
+            <span class="denom ${thin ? "thin" : ""}">${st.n} of ${st.of} rated</span></span>
+        </div>${reasons}</div>`;
     }).join("");
+
     const collation = `<div class="note">A candidate drops off the interview list at <b>≥2 flags</b> (last year's rule).
-        Flag reasons are visible to leadership only.</div>
-      <div class="tablewrap"><table><thead><tr><th>Candidate</th><th>Flags</th><th>Reasons</th><th>Avg rating</th><th>Status</th><th></th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="6">' + empty("📝", "No candidates yet", "Add applicants below to start screening.") + "</td></tr>"}</tbody></table></div>
+        Flag reasons are attributed here and visible to <b>leadership only</b>.
+        <b>Avg priority</b> is the plain mean of the ratings that were submitted — hover it to see how many.</div>
+      ${S.candidates.length > 1 ? sortBar : ""}
+      <div class="collist">${rows || empty("📝", "No candidates yet", "Add applicants below to start screening.")}</div>
       <div class="adminbar"><button class="btn tinted small" onclick="IV.exportShortlist()"><span aria-hidden="true">⬇︎</span> Export shortlist (CSV)</button></div>`;
 
+    const stranded = strandedInput();
     const dash = `<div class="note">Chase anyone who hasn't submitted before the deadline.</div>
       <p><b>${submitted.size}/${committee.length}</b> members have submitted screening.</p>
       ${notYet.length ? `<p class="muted small">Waiting on:</p><div>${notYet.map((n) => `<span class="chip">${escapeHtml(n)}</span>`).join("")}</div>`
-        : `<p class="ok small">✓ Everyone has submitted.</p>`}`;
+        : `<p class="ok small">✓ Everyone has submitted.</p>`}
+      ${stranded.n ? `<div class="note" style="margin-top:.8rem"><b class="warn">⚠ ${stranded.n} saved entr${stranded.n === 1 ? "y is" : "ies are"}
+        attached to ${stranded.ids.length} applicant${stranded.ids.length === 1 ? "" : "s"} who ${stranded.ids.length === 1 ? "is" : "are"} no longer on the list.</b>
+        That is what a remove-and-re-add leaves behind: the new entry gets a new id and the old flags, ratings and
+        scores stay on the old one, invisible here. Recover them with
+        <code>scripts/migrate-candidate.mjs</code>, and rename in place with <code>scripts/rename-candidate.mjs</code>
+        rather than removing and re-adding.</div>` : ""}`;
 
-    const adder = `<div class="note">Paste applicant names, one per line, then Add. Stored in your database, never in the app's code.</div>
+    const adder = `<div class="note">Paste applicant names, one per line, then Add. Stored in your database, never in the app's code.
+      To fix a spelling, use <code>scripts/rename-candidate.mjs</code> — removing and re-adding strands every rating.</div>
       <textarea id="bulkAdd" rows="4" placeholder="Dr Jane Doe&#10;Dr John Smith" aria-label="New candidate names"></textarea>
       <div style="margin-top:.5rem"><button class="btn tinted small" onclick="IV.addCands(this)">Add candidates</button></div>`;
 
     html += section("collation", "Collation & shortlist", `${activeCands().length} of ${S.candidates.length} still in`, collation,
         { open: false, count: S.candidates.length, info: "Everyone's flags and priority ratings, collated. A candidate drops off the interview list at 2 or more flags. Reasons are visible to leadership only. Export the shortlist as a CSV here." })
       + section("dash", "Coordinator dashboard", `${submitted.size}/${committee.length} submitted`, dash,
-        { open: false, info: "Track who has and hasn't submitted their screening, so you can chase people before the deadline." })
+        { open: false, info: "Track who has and hasn't submitted their screening, so you can chase people before the deadline.", count: stranded.n ? "⚠" : null })
       + section("adder", "Add candidates", "", adder,
         { open: false, info: "Paste applicant names to add them to the interview list. Stored securely in your database — never in the app's code. You can add or remove people any time." })
       + `<h3>Your review</h3>`;
   }
 
-  const toReview = S.candidates.filter((c) => !c.removed);
+  // Alphabetical, like the "Who are you?" list: with a dozen-plus names the
+  // only ordering a reviewer can navigate is the one they can predict.
+  const toReview = S.candidates.filter((c) => !c.removed).sort((a, b) => a.name.localeCompare(b.name));
+  html += myInputNotice(toReview, (c) => S.screening[key(me, c.id)]);
 
   // One OneDrive folder holds every applicant's files, so the link is the same
   // on every candidate. It sits once above the list rather than repeating
@@ -395,17 +593,21 @@ function renderScreen() {
           Applications folder isn't set up yet — leadership adds it in Setup.</span></div>`
       : `<div class="docsbar">
           <a class="doc" href="${escapeHtml(oneDrive)}" target="_blank" rel="noopener"><span aria-hidden="true">📄</span> View CVs &amp; cover letters</a>
-          <span class="muted small">Same folder for every applicant below.</span></div>`;
+          <span class="muted small">Same folder for every applicant below.</span>
+          <span class="spacer" style="flex:1"></span>
+          <span class="muted small">priority 1 (low) – 5 (high), optional</span></div>`;
 
   html += docsBar + toReview.map((c) => {
     const sc = S.screening[key(me, c.id)] || {};
     const flagged = !!sc.flag;
-    return `<div class="card">
+    // Name, priority and flag on one line. The repeated "Optional priority"
+    // label is carried by the column hint above the list instead of being
+    // restated on every card — with twenty applicants that was most of the page.
+    return `<div class="card revcard">
       <div class="row center"><div class="grow"><div class="name">${escapeHtml(c.name)}</div></div>
+        <div class="rate" role="group" aria-label="Priority rating for ${escapeHtml(c.name)}">${[1, 2, 3, 4, 5].map((n) => `<button class="${sc.rating === n ? "on" : ""}" aria-pressed="${sc.rating === n}" onclick="IV.rate('${c.id}',${n})">${n}</button>`).join("")}</div>
         <button class="flagbtn ${flagged ? "on" : ""}" aria-pressed="${flagged}" onclick="IV.toggleFlag('${c.id}')">${flagged ? '<span aria-hidden="true">⚑</span> Flagged' : "Flag concern"}</button></div>
-      <div class="row center" style="margin-top:.6rem"><div class="muted small" style="width:110px">Optional priority</div>
-        <div class="rate" role="group" aria-label="Priority rating">${[1, 2, 3, 4, 5].map((n) => `<button class="${sc.rating === n ? "on" : ""}" aria-pressed="${sc.rating === n}" onclick="IV.rate('${c.id}',${n})">${n}</button>`).join("")}</div></div>
-      ${flagged ? `<textarea id="rsn-${c.id}" placeholder="Reason (optional)" aria-label="Reason">${escapeHtml(sc.reason || "")}</textarea>
+      ${flagged ? `<textarea id="rsn-${c.id}" placeholder="Why? (optional, seen by leadership only)" aria-label="Reason">${escapeHtml(sc.reason || "")}</textarea>
         <div style="margin-top:.4rem"><button class="savebtn" onclick="IV.saveReason('${c.id}',this)">Save reason</button></div>` : ""}
     </div>`;
   }).join("") || (ui.isAdmin ? "" : empty("📝", "Nothing to screen yet", "Applicants will appear here once leadership adds them."));
@@ -452,10 +654,11 @@ function availGrid() {
   const head = `<tr><th class="tlab">Time</th>` +
     people.map((m) => `<th class="ivcol"><span data-tip="${escapeHtml(m.name)}${m.name === chair ? " (chair)" : ""}">` +
       `${escapeHtml(m.name)}${m.name === chair ? " ★" : ""}</span></th>`).join("") +
-    `<th class="sum" data-tip="Whether a balanced panel can be formed at this time">Panel</th></tr>`;
+    `<th class="sum" data-tip="Whether a balanced panel can be formed at this time">Panel</th>` +
+    `<th class="pad" aria-hidden="true"></th></tr>`;
 
   const body = groupByDate(slots).map((g) =>
-    `<tr class="dayrow"><td colspan="${people.length + 2}">${escapeHtml(g.title)}</td></tr>` +
+    `<tr class="dayrow"><td colspan="${people.length + 3}">${escapeHtml(g.title)}</td></tr>` +
     g.items.map((t) => {
       const cells = people.map((m) => {
         const v = (S.availIv[m.name] || {})[t.id];
@@ -472,7 +675,8 @@ function availGrid() {
         : !(S.availIv[chair] || {})[t.id] ? `${chair} (chair) isn't available, so no panel can run`
         : `${n} available, but not a combination that makes a balanced panel`;
       return `<tr><th class="tlab">${escapeHtml(slotTimeLabel(t))}</th>${cells}` +
-        `<td class="sum ${ok ? "yes" : "nope"}" data-tip="${escapeHtml(why)}">${n}${ok ? " ✓" : " ✗"}</td></tr>`;
+        `<td class="sum ${ok ? "yes" : "nope"}" data-tip="${escapeHtml(why)}">${n}${ok ? " ✓" : " ✗"}</td>` +
+        `<td class="pad"></td></tr>`;
     }).join("")).join("");
 
   const legend = `<div class="glegend">
@@ -490,9 +694,9 @@ function availGrid() {
 function renderAvailability() {
   const map = S.availIv[ui.member] || {};
   const slots = EFF().slots;
-  let html = `<div class="note tip"><b>What to do here:</b> for each interview time, tap whether you <b>can</b> do it
+  let html = howto("availability", `For each interview time, tap whether you <b>can</b> do it
     in person, by Zoom, or either. Leave a time untouched if you're not available. Tap a highlighted option again to clear it.
-    <b>Your choices save automatically</b> (watch the “✓ Saved” note at the top).</div>`;
+    <b>Your choices save automatically</b> (watch the “✓ Saved” note at the top).`);
   html += slots.length
     ? `<div class="card"><div class="slotgrid"><div class="h">Interview time</div><div class="h">I can do…</div>${slotRows(slots, map, "IV.avail")}</div></div>`
     : empty("🗓️", "No interview times yet", ui.isAdmin ? "Add interview times in Setup (the gear icon)." : "Leadership hasn't published the interview times yet — check back soon.");
@@ -520,19 +724,34 @@ function renderAvailability() {
 
 // ------------------------------------------------------------- 3 · Score
 function renderScore() {
-  const list = activeCands();
-  let head = `<div class="note tip"><b>What to do here:</b> after each interview, jot notes per question, then give
+  const list = activeCands().slice().sort((a, b) => a.name.localeCompare(b.name));
+  const head = howto("score", `After each interview, jot notes per question, then give
     <b>one overall 1–5 rating</b> using the guide at the bottom. Your score is private to you and leadership.
-    <b>Notes and ratings save automatically</b> — you'll see “✓ Saved” appear at the top each time.</div>`;
+    <b>Notes and ratings save automatically</b> — you'll see “✓ Saved” appear at the top each time.`);
   if (!list.length) { $("#score").innerHTML = head + empty("⭐️", "No candidates to score", "Candidates on the interview list will appear here."); return; }
   if (!ui.scoreCand || !list.some((c) => c.id === ui.scoreCand)) ui.scoreCand = list[0].id;
   const me = ui.member, cid = ui.scoreCand;
   const rec = S.scores[key(me, cid)] || { notes: {} };
-  $("#score").innerHTML = head + `
-    <div class="card"><div class="row center"><div class="muted small" style="width:80px">Scoring</div>
-      <select onchange="IV.pickScore(this.value)" aria-label="Candidate to score">${list.map((c) => `<option value="${c.id}" ${c.id === cid ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("")}</select></div></div>
-    ${QUESTIONS.map((q, i) => `<div class="card"><div class="small muted">Question ${i}</div><div>${escapeHtml(q)}</div>
-      <textarea oninput="IV.note(${i},this.value)" placeholder="Notes" aria-label="Notes for question ${i}">${escapeHtml((rec.notes || {})[i] || "")}</textarea></div>`).join("")}
+  const scored = (c) => !!(S.scores[key(me, c.id)] || {}).overall;
+  const at = list.findIndex((c) => c.id === cid);
+  const jump = (d) => { const t = list[at + d]; return t
+    ? `<button class="btn ghost small" onclick="IV.pickScore('${t.id}')" aria-label="${d < 0 ? "Previous" : "Next"} candidate: ${escapeHtml(t.name)}">${d < 0 ? "‹" : "›"}</button>`
+    : `<button class="btn ghost small" disabled aria-hidden="true">${d < 0 ? "‹" : "›"}</button>`; };
+  // A "scored" tick in the picker turns thirteen identical names into a
+  // progress list — the reviewer can see at a glance who they still owe.
+  $("#score").innerHTML = head
+    + myInputNotice(list, (c) => S.scores[key(me, c.id)], true)
+    + `<div class="card scorebar"><div class="row center"><div class="muted small">Scoring</div>
+      <select class="grow" onchange="IV.pickScore(this.value)" aria-label="Candidate to score">${list.map((c) =>
+        `<option value="${c.id}" ${c.id === cid ? "selected" : ""}>${escapeHtml(c.name)}${scored(c) ? " ✓" : ""}</option>`).join("")}</select>
+      <span class="scorenav">${jump(-1)}${jump(1)}</span></div>
+      <div class="muted small" style="margin-top:.4rem">${list.filter(scored).length} of ${list.length} scored by you${
+        rec.overall ? "" : " · this one isn't yet"}</div></div>
+    ${QUESTIONS.map((q, i) => { const filled = String((rec.notes || {})[i] || "").trim();
+      // numbered from 1 for the human reading it; the note itself is still
+      // keyed by the array index, so nothing saved moves.
+      return `<div class="card qcard ${filled ? "done" : ""}"><div class="small muted">Question ${i + 1} of ${QUESTIONS.length}</div><div>${escapeHtml(q)}</div>
+      <textarea oninput="IV.note(${i},this.value)" placeholder="Notes" aria-label="Notes for question ${i + 1}">${escapeHtml((rec.notes || {})[i] || "")}</textarea></div>`; }).join("")}
     <div class="card"><b>Overall rating</b>
       <div class="rate" role="group" aria-label="Overall rating" style="margin:.6rem 0">${[1, 2, 3, 4, 5].map((n) => `<button class="${rec.overall === n ? "on" : ""}" aria-pressed="${rec.overall === n}" onclick="IV.score(${n})">${n}</button>`).join("")}</div>
       <div class="legend">${SCALE.map((s, i) => `<div style="margin:.35rem 0"><b>${i + 1}</b> — ${escapeHtml(s)}</div>`).join("")}</div></div>
@@ -610,9 +829,9 @@ function renderPanels() {
   const modPill = (m) => `<span class="pill ${m === "ip" ? "ip" : "zoom"}">${m === "ip" ? "In-person" : "Zoom"}</span>`;
   const res = computePanels();
 
-  let html = `<div class="note tip"><b>What to do here:</b> the tool builds a suggested, balanced interview panel for each
+  let html = howto("panels", `The tool builds a suggested, balanced interview panel for each
     applicant from everyone's availability. Review them, tap <b>Edit</b> to adjust any panel by hand, and fix anything under
-    "Needs attention". Panels are one candidate per time slot.</div>`;
+    “Needs attention”. Panels are one candidate per time slot.`);
   if (!EFF().slots.length) { $("#panels").innerHTML = html + empty("🗓️", "No interview times yet", "Add interview times in Setup, then collect availability."); return; }
 
   html += `<div class="adminbar">
@@ -677,26 +896,94 @@ function panelEditor(p) {
 }
 
 // ----------------------------------------------------- 5 · Ranking (admin)
+// How the averages are (and are not) normalized
+// --------------------------------------------
+// "Avg" is the plain mean of the overall scores that were submitted for that
+// candidate. A missing score is left out, never imputed — scoring one candidate
+// 4 and skipping another is not the same as giving the second a 0 or a 3, and
+// pretending otherwise would invent data.
+//
+// What that mean does NOT correct for is WHO did the scoring. Each candidate
+// faces a different 3–5 person panel, so two candidates' means come from
+// different raters, and raters differ in generosity. "Adj" is the standard
+// rater-centred correction for exactly that: each rater's own mean is compared
+// with the overall mean and their personal offset is subtracted from every
+// score they gave. A rater who has scored only one candidate has no measurable
+// offset, so they are left alone (offset 0) rather than guessed at.
+//
+// The table shows both, because the adjustment is a model and the raw mean is
+// the fact. Where the two disagree about the order, the row says so — that is
+// the signal worth discussing, not a number to defer to.
+function rankingRows() {
+  const committee = EFF().committee;
+  const obs = [];
+  activeCands().forEach((c) => committee.forEach((m) => {
+    const v = (S.scores[key(m.name, c.id)] || {}).overall;
+    if (v) obs.push({ m: m.name, c: c.id, v });
+  }));
+  const grand = obs.length ? obs.reduce((a, o) => a + o.v, 0) / obs.length : 0;
+  const byRater = {};
+  obs.forEach((o) => { (byRater[o.m] = byRater[o.m] || []).push(o.v); });
+  const offset = {};
+  Object.entries(byRater).forEach(([m, vs]) => {
+    offset[m] = vs.length >= 2 ? vs.reduce((a, b) => a + b, 0) / vs.length - grand : 0;
+  });
+  // how many people were meant to score this candidate (their panel), so a
+  // missing score reads as "chase Marrocco", not as a quieter average
+  let panelSize = {};
+  try { computePanels().panels.forEach((p) => { panelSize[p.cand] = p.members.length; }); } catch { panelSize = {}; }
+
+  const rows = activeCands().map((c) => {
+    const mine = obs.filter((o) => o.c === c.id);
+    if (!mine.length) return null;
+    // "of N" only where N is the panel that was actually meant to score them;
+    // a stale or hand-edited panel can be smaller than the scores on record,
+    // and "8 of 3" would just look broken.
+    const expected = (panelSize[c.id] || 0) >= mine.length ? panelSize[c.id] : 0;
+    return { id: c.id, name: c.name, n: mine.length, expected,
+      raw: mine.reduce((a, o) => a + o.v, 0) / mine.length,
+      adj: mine.reduce((a, o) => a + (o.v - offset[o.m]), 0) / mine.length,
+      raters: mine.map((o) => o.m) };
+  }).filter(Boolean);
+
+  const byAdj = [...rows].sort((a, b) => b.adj - a.adj).map((r) => r.id);
+  rows.sort((a, b) => b.raw - a.raw || a.name.localeCompare(b.name));
+  rows.forEach((r, i) => { r.shift = i - byAdj.indexOf(r.id); }); // + = adjustment moves them up
+  const adjusted = Object.values(offset).some((v) => Math.abs(v) > 0.001);
+  return { rows, adjusted };
+}
+
 function renderRanking() {
   if (!S.meta.interviewsComplete) {
-    $("#ranking").innerHTML = `<div class="note tip"><b>What to do here:</b> the ranking averages everyone's overall scores into a
-      shortlist for your final discussion. It stays hidden until interviews are complete so it can't bias anyone mid-process.</div>
-      <div class="card">${empty("🏆", "Ranking is hidden", "Reveal it once all interviews are done.")}
+    $("#ranking").innerHTML = howto("ranking", `The ranking averages everyone's overall scores into a
+      shortlist for your final discussion. It stays hidden until interviews are complete so it can't bias anyone mid-process.`)
+      + `<div class="card">${empty("🏆", "Ranking is hidden", "Reveal it once all interviews are done.")}
       <div style="text-align:center"><button class="btn filled" onclick="IV.setComplete(true,this)">Mark interviews complete &amp; reveal ranking</button></div></div>`;
     return;
   }
-  const committee = EFF().committee;
-  const ranked = activeCands().map((c) => {
-    const scores = committee.map((m) => (S.scores[key(m.name, c.id)] || {}).overall).filter((n) => n);
-    return { name: c.name, avg: avg(scores), n: scores.length };
-  }).filter((r) => r.avg != null).sort((a, b) => b.avg - a.avg);
-  $("#ranking").innerHTML = `<div class="note tip"><b>Admin only.</b> Candidates ordered by average interview score — decision support
-    for the committee's discussion, not an automatic decision.</div>
-    <div class="adminbar"><button class="btn tinted small" onclick="IV.exportScores()"><span aria-hidden="true">⬇︎</span> Export scores (CSV)</button>
+  const { rows, adjusted } = rankingRows();
+  const adjInfo = "Each candidate is scored by a different panel, so a plain average also measures who happened to be in the room. "
+    + "Adj subtracts each rater's own tendency to score high or low (their mean minus the overall mean) before averaging. "
+    + "Raters who scored only one candidate have no measurable tendency and are left unadjusted. It is decision support, not a verdict.";
+  const body = rows.map((r, i) => {
+    const thin = r.expected && r.n < r.expected;
+    const shift = r.shift > 0 ? `<span class="shift up" data-tip="Ranks ${r.shift} place${r.shift === 1 ? "" : "s"} higher once rater tendency is taken out">▲${r.shift}</span>`
+      : r.shift < 0 ? `<span class="shift down" data-tip="Ranks ${-r.shift} place${r.shift === -1 ? "" : "s"} lower once rater tendency is taken out">▼${-r.shift}</span>` : "";
+    return `<tr><td class="rankn">${i + 1}</td><td class="name">${escapeHtml(r.name)}</td>
+      <td data-tip="${escapeHtml(`Mean of ${r.n} submitted score${r.n === 1 ? "" : "s"}: ${r.raters.join(", ")}`)}"><b>${r.raw.toFixed(1)}</b></td>
+      <td class="adj" data-tip="${escapeHtml(adjInfo)}">${r.adj.toFixed(1)}${shift}</td>
+      <td class="${thin ? "thinscore" : ""}" data-tip="${thin ? escapeHtml(`Only ${r.n} of the ${r.expected} panellists have scored this candidate.`) : "Every panellist on record has scored this candidate."}">${r.n}${r.expected ? ` of ${r.expected}` : ""}</td></tr>`;
+  }).join("");
+  $("#ranking").innerHTML = howto("ranking", `<b>Admin only.</b> Candidates ordered by their average interview score —
+      decision support for the committee's discussion, not an automatic decision.
+      Averages are taken over the scores that were <b>actually submitted</b>; a missing score is never counted as a zero
+      or a middling 3.${adjusted ? ` <b>Adj</b> additionally removes each rater's tendency to score high or low,
+      because every candidate faced a different panel.` : ""}`)
+    + `<div class="adminbar"><button class="btn tinted small" onclick="IV.exportScores()"><span aria-hidden="true">⬇︎</span> Export scores (CSV)</button>
       <button class="btn ghost small" onclick="IV.setComplete(false,this)">Re-hide ranking</button></div>
-    <div class="card flush"><div class="tablewrap"><table><thead><tr><th>#</th><th>Candidate</th><th>Avg score</th><th># scored</th></tr></thead>
-      <tbody>${ranked.map((r, i) => `<tr><td class="rankn">${i + 1}</td><td class="name">${escapeHtml(r.name)}</td><td><b>${r.avg.toFixed(1)}</b></td><td>${r.n}</td></tr>`).join("")
-        || `<tr><td colspan="4">${empty("⭐️", "No scores yet", "Scores will appear as interviewers submit them.")}</td></tr>`}</tbody></table></div></div>`;
+    <div class="card flush"><div class="tablewrap"><table><thead><tr><th>#</th><th>Candidate</th><th>Avg</th>
+      <th>Adj${infoIcon(adjInfo)}</th><th>Scored by</th></tr></thead>
+      <tbody>${body || `<tr><td colspan="5">${empty("⭐️", "No scores yet", "Scores will appear as interviewers submit them.")}</td></tr>`}</tbody></table></div></div>`;
 }
 
 // ------------------------------------------------------------ 6 · Setup (admin)
@@ -713,10 +1000,10 @@ function renderSettings() {
     <input id="odIn" type="text" placeholder="https://..." value="${escapeHtml(oneDrive === "#" ? "" : oneDrive)}" aria-label="OneDrive link"/>
     <div style="margin-top:.5rem"><button class="btn tinted small" onclick="IV.saveOneDrive(this)">Save link</button></div>`;
 
-  $("#settings").innerHTML = `<div class="note tip"><b>Setup (admin).</b> Everything here is stored privately in your database, never in
+  $("#settings").innerHTML = howto("setup", `Everything here is stored privately in your database, never in
       the app's code — so the tool is <b>fully reusable each hiring round</b>: just update the committee, chair, times, and (on the
-      Screen tab) the applicant list. Nothing is hard-coded.</div>
-    ${section("setChair", "Panel chair", chair, chairBody, { open: false, info: "The chair is on every interview panel. Pick from your committee list below." })}
+      Screen tab) the applicant list. Nothing is hard-coded.`, "Setup (admin)")
+    + `${section("setChair", "Panel chair", chair, chairBody, { open: false, info: "The chair is on every interview panel. Pick from your committee list below." })}
     ${section("setCommittee", "Committee (interviewers)", `${committee.length} members`, committeeBody, { open: false, info: "Your interviewers. One per line as ‘Name, F’ or ‘Name, M’. The F/M is self-identified and used only to build balanced panels — it is never shown as a label. Saving replaces the whole list." })}
     ${section("setSlots", "Interview times", `${slots.length} time${slots.length === 1 ? "" : "s"}`, slotsBody, { open: false, info: "The interview times interviewers and applicants choose from. Add a single time or a block of back-to-back times; edit or remove any time. If people already answered for a time you change, you choose whether to keep their answers or ask them again." })}
     ${section("setOneDrive", "Applications folder (OneDrive)", "", odBody, { open: false, info: "Link to the access-controlled OneDrive folder holding the CVs/cover letters. Committee members open applicant files from here. Stored privately, never in the app's code." })}
@@ -942,7 +1229,12 @@ window.IV = {
     await store.setCandidateRemoved(id, v); toast(v ? "Removed" : "Restored", "ok");
   },
   avail: (id, v) => { const cur = (S.availIv[ui.member] || {})[id]; saved(store.setAvail("iv", ui.member, id, cur === v ? null : v)); },
-  pickScore: (id) => { ui.scoreCand = id; renderScore(); wireSections(); },
+  pickScore: (id) => { ui.scoreCand = id; renderScore(); wireSections(); window.scrollTo({ top: 0, behavior: "smooth" }); },
+  sortColl: (k) => {
+    ui.collSort = k;
+    try { localStorage.setItem(COLL_SORT_KEY, k); } catch { /* storage blocked */ }
+    renderScreen(); wireSections();
+  },
   note: (qi, val) => saveNoteKeyed(ui.member, ui.scoreCand, qi, val),
   score: (n) => { const cur = (S.scores[key(ui.member, ui.scoreCand)] || {}).overall; saved(store.setScore(ui.member, ui.scoreCand, { overall: cur === n ? 0 : n })); },
   setComplete: async (v, btn) => {
@@ -999,14 +1291,17 @@ window.IV = {
   printSchedule: () => window.print(),
   // exports
   exportShortlist: () => {
-    const { committee } = EFF();
-    const rows = [["Candidate", "Flags", "Avg rating", "Status"]];
-    S.candidates.forEach((c) => {
-      const fc = flagsCount(c.id);
-      const ratings = committee.map((m) => (S.screening[key(m.name, c.id)] || {}).rating).filter((n) => n);
-      const ar = ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : "";
-      rows.push([c.name, fc, ar, (fc >= 2 || c.removed) ? "removed" : "interview"]);
-    });
+    // "Rated by / of" travels with the average so the spreadsheet can't be read
+    // as though a 5.0 from one person and a 5.0 from twelve were the same thing.
+    const rows = [["Candidate", "Status", "Flags", "Flagged by", "Reasons", "Avg priority", "Rated by", "Committee size"]];
+    [...S.candidates].sort((a, b) => (isIn(a) === isIn(b) ? 0 : isIn(a) ? -1 : 1) || a.name.localeCompare(b.name))
+      .forEach((c) => {
+        const st = screenStats(c.id);
+        rows.push([c.name, c.removed ? "removed" : st.flags.length >= 2 ? "excluded (flags)" : "interview",
+          st.flags.length, st.flags.map((f) => f.who).join("; "),
+          st.flags.filter((f) => f.reason).map((f) => `${f.who}: ${f.reason}`).join(" | "),
+          st.avg == null ? "" : st.avg.toFixed(1), st.n, st.of]);
+      });
     downloadFile("shortlist.csv", rows.map((r) => r.map(csvCell).join(",")).join("\r\n")); toast("Shortlist exported", "ok");
   },
   exportSchedule: () => {
@@ -1018,11 +1313,12 @@ window.IV = {
   },
   exportScores: () => {
     const { committee } = EFF();
-    const rows = [["Candidate", "Avg", "# scored", ...committee.map((m) => m.name)]];
+    const adj = {}; rankingRows().rows.forEach((r) => { adj[r.id] = r; });
+    const rows = [["Candidate", "Avg", "Rater-adjusted", "Scored by", "Panel size", ...committee.map((m) => m.name)]];
     activeCands().forEach((c) => {
       const per = committee.map((m) => (S.scores[key(m.name, c.id)] || {}).overall || "");
-      const nums = per.filter((n) => typeof n === "number");
-      rows.push([c.name, nums.length ? (nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(2) : "", nums.length, ...per]);
+      const r = adj[c.id];
+      rows.push([c.name, r ? r.raw.toFixed(2) : "", r ? r.adj.toFixed(2) : "", r ? r.n : 0, (r && r.expected) || "", ...per]);
     });
     downloadFile("scores.csv", rows.map((r) => r.map(csvCell).join(",")).join("\r\n")); toast("Scores exported", "ok");
   },
@@ -1178,7 +1474,7 @@ function showTip(target) {
   const text = target.getAttribute("data-tip"); if (!text) return;
   hideTip();
   tipEl = document.createElement("div");
-  tipEl.className = "tip"; tipEl.textContent = text;
+  tipEl.className = "tooltip"; tipEl.textContent = text;
   document.body.appendChild(tipEl);
   const r = target.getBoundingClientRect(), tr = tipEl.getBoundingClientRect();
   let left = r.left + r.width / 2 - tr.width / 2 + window.scrollX;
@@ -1189,9 +1485,12 @@ function showTip(target) {
   requestAnimationFrame(() => tipEl && tipEl.classList.add("show"));
 }
 function hideTip() { if (tipEl) { tipEl.remove(); tipEl = null; } }
-document.addEventListener("mouseover", (e) => { const t = e.target.closest && e.target.closest(".info"); if (t) showTip(t); });
-document.addEventListener("mouseout", (e) => { const t = e.target.closest && e.target.closest(".info"); if (t) hideTip(); });
-document.addEventListener("focusin", (e) => { const t = e.target.closest && e.target.closest(".info"); if (t) showTip(t); });
+// Anything carrying data-tip, not just the "i" badge — the availability grid
+// puts a name on every square and its legend promises that hovering works.
+const tipTarget = (e) => e.target.closest && e.target.closest("[data-tip]");
+document.addEventListener("mouseover", (e) => { const t = tipTarget(e); if (t) showTip(t); });
+document.addEventListener("mouseout", (e) => { if (tipTarget(e)) hideTip(); });
+document.addEventListener("focusin", (e) => { const t = tipTarget(e); if (t) showTip(t); });
 document.addEventListener("focusout", hideTip);
 document.addEventListener("scroll", hideTip, true);
 
@@ -1208,7 +1507,7 @@ $("#memberBtn").onclick = () => {
   if (!v) { toast("Pick your name from the list first", "err"); return; }
   ui.member = v; showApp();
 };
-$("#changeMember").onclick = () => { ui.member = null; ["#appHeader", "#tabs", "#app"].forEach((s) => $(s).classList.add("hidden")); $("#banner").classList.add("hidden"); proceedToMemberPick(); };
+$("#changeMember").onclick = backToMemberPick;
 $("#setupBtn").onclick = () => (setupOpen() ? closeSetup() : openSetup());
 $("#setupClose").onclick = closeSetup;
 $("#settings").addEventListener("focusout", flushSetup); // catch up on held live updates
