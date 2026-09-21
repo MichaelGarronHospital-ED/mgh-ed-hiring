@@ -178,8 +178,13 @@ function fillMemberSel() {
   // Placeholder first, so nobody can click straight through and silently file
   // their flags/ratings/scores under whoever happens to be alphabetically or
   // positionally first (the chair). Picking your name must be deliberate.
+  // Alphabetical, so people can find themselves. Sorted on a COPY — `committee`
+  // is the live settings array (or the COMMITTEE config constant), and panel
+  // building reads that order, so sorting it in place would reorder the roster
+  // everywhere.
+  const names = [...EFF().committee].sort((a, b) => a.name.localeCompare(b.name));
   sel.innerHTML = `<option value="" disabled selected>— Select your name —</option>`
-    + EFF().committee.map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("");
+    + names.map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("");
 }
 
 // Repaint the list in place without losing a selection the user already made.
@@ -308,7 +313,8 @@ const setupOpen = () => !$("#setupModal").classList.contains("hidden");
 function renderScreen() {
   const me = ui.member;
   const { committee, oneDrive } = EFF();
-  let html = `<div class="note tip"><b>What to do here:</b> open each applicant's CV &amp; cover letter, then
+  let html = `<div class="note tip"><b>What to do here:</b> open the applications folder to read each
+    applicant's CV &amp; cover letter, then
     <b>flag</b> anyone you feel isn't qualified (add a short reason). You can also give an optional
     <b>1–5 priority</b>. Only you and leadership see your input — nobody else sees your flags or ratings.</div>`;
 
@@ -358,12 +364,23 @@ function renderScreen() {
   }
 
   const toReview = S.candidates.filter((c) => !c.removed);
-  html += toReview.map((c) => {
+
+  // One OneDrive folder holds every applicant's files, so the link is the same
+  // on every candidate. It sits once above the list rather than repeating
+  // identically down the page.
+  const docsBar = !toReview.length ? ""
+    : oneDrive === "#"
+      ? `<div class="docsbar"><span class="muted small"><span aria-hidden="true">📄</span>
+          Applications folder isn't set up yet — leadership adds it in Setup.</span></div>`
+      : `<div class="docsbar">
+          <a class="doc" href="${escapeHtml(oneDrive)}" target="_blank" rel="noopener"><span aria-hidden="true">📄</span> View CVs &amp; cover letters</a>
+          <span class="muted small">Same folder for every applicant below.</span></div>`;
+
+  html += docsBar + toReview.map((c) => {
     const sc = S.screening[key(me, c.id)] || {};
     const flagged = !!sc.flag;
     return `<div class="card">
-      <div class="row center"><div class="grow"><div class="name">${escapeHtml(c.name)}</div>
-        <a class="doc" href="${escapeHtml(oneDrive)}" ${oneDrive === "#" ? 'onclick="return false" aria-disabled="true"' : 'target="_blank" rel="noopener"'}><span aria-hidden="true">📄</span> View CV &amp; cover letter</a></div>
+      <div class="row center"><div class="grow"><div class="name">${escapeHtml(c.name)}</div></div>
         <button class="flagbtn ${flagged ? "on" : ""}" aria-pressed="${flagged}" onclick="IV.toggleFlag('${c.id}')">${flagged ? '<span aria-hidden="true">⚑</span> Flagged' : "Flag concern"}</button></div>
       <div class="row center" style="margin-top:.6rem"><div class="muted small" style="width:110px">Optional priority</div>
         <div class="rate" role="group" aria-label="Priority rating">${[1, 2, 3, 4, 5].map((n) => `<button class="${sc.rating === n ? "on" : ""}" aria-pressed="${sc.rating === n}" onclick="IV.rate('${c.id}',${n})">${n}</button>`).join("")}</div></div>

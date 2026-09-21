@@ -24,6 +24,28 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## Screen tab: alphabetical names, one applications link (Sept 21 2026)
+- **"Who are you?" is now alphabetical.** It followed the roster's stored order,
+  which puts the chair first — fine for panel building, useless for finding
+  yourself in a list of 13. Sorted on a *copy*: `EFF().committee` is the live
+  settings array (or the `COMMITTEE` constant), and panel building reads that
+  order, so sorting in place would have quietly reordered the roster everywhere.
+  The `— Select your name —` placeholder still comes first, so the existing
+  safeguard against clicking straight through onto someone else's name holds.
+- **The CV & cover-letter link appears once, above the first candidate.** Every
+  applicant's files live in the same OneDrive folder, so the identical link was
+  repeating on all ~20 candidate cards. Now a single bar above the list.
+- While unconfigured (`ONEDRIVE = "#"`, which is what the public repo ships) the
+  bar says the folder isn't set up yet, instead of the old per-card dead link
+  that looked clickable and explained nothing. **Set the real folder in
+  Setup → Applications folder for the link to appear.**
+- Verified headlessly (Chromium, local mode, fictitious candidates) as both
+  reviewer and admin, at 1000px and 400px: list sorted, exactly one link, zero
+  per-card links, link sits above the first card, candidate names unaffected,
+  no console errors, no horizontal overflow.
+
+---
+
 ## Firestore rules actually verified (Sept 21 2026)
 - **Why:** the rules suite was written on Sept 18 but had never been *run* — this
   environment had neither Node nor Java, so every claim about the rules rested on
