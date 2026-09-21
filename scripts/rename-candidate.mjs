@@ -33,6 +33,7 @@ import { getAuth, signInWithEmailAndPassword, connectAuthEmulator } from "fireba
 import { getFirestore, collection, getDocs, doc, setDoc, updateDoc, deleteDoc,
          connectFirestoreEmulator } from "firebase/firestore";
 import { firebaseConfig, AUTH } from "../js/config.js";
+import { refreshAllowed, describeAllowed, lastKey } from "./allowed-list.mjs";
 
 const argv = process.argv.slice(2);
 const val = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : null; };
@@ -45,7 +46,6 @@ if (!WHO || !TO) {
 }
 
 const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-const lastKey = (name) => String(name || "").trim().split(/\s+/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
 const NEW_NAME = TO.trim().replace(/\s+/g, " ");
 
 const PASSWORD = process.env.ED_IV_ADMIN_PASSWORD;
@@ -125,6 +125,12 @@ if (oldKey !== newKey) {
   console.log(`\nSurname key "${oldKey}" is unchanged, so availability needs no move.`);
 }
 
+// The surname gate must move with the name, or the applicant is refused at the
+// gate ("we can't find you") until an admin next opens the app and it self-heals.
+const nextRoster = candidates.map((c) => (c.id === cand.id ? { ...c, name: NEW_NAME } : c));
+const gate = await refreshAllowed(db, nextRoster, { apply: false });
+if (gate.changed) console.log(`\n${describeAllowed(gate)}`);
+
 console.log(`\n${plan.length} change(s)${APPLY ? "" : " — DRY RUN, nothing written"}:`);
 for (const p of plan) console.log(`  ${p.what}\n          ${p.detail}`);
 if (!APPLY) { console.log(`\nRe-run with --apply to perform the rename.`); process.exit(0); }
@@ -142,6 +148,13 @@ if (availMove && !failed) {
     await deleteDoc(doc(db, "interviews_availCand", availMove.from));
     console.log(`Availability moved "${availMove.from}" → "${availMove.to}".`);
   } catch (e) { failed++; console.error(`FAILED availability move: ${e.code || e.message}`); }
+}
+
+if (!failed) {
+  try {
+    const r = await refreshAllowed(db, nextRoster, { apply: true });
+    if (r.changed) console.log(describeAllowed(r));
+  } catch (e) { failed++; console.error(`FAILED updating the applicant surname list: ${e.code || e.message}`); }
 }
 
 if (!failed) console.log(`\nDone. Reviewer input was never touched — it was keyed to the id, which did not change.`);

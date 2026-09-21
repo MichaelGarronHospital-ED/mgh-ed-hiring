@@ -27,11 +27,10 @@ import { initializeApp } from "firebase/app";
 import { getAuth, signInWithEmailAndPassword, connectAuthEmulator } from "firebase/auth";
 import { getFirestore, collection, getDocs, doc, getDoc, setDoc, connectFirestoreEmulator } from "firebase/firestore";
 import { firebaseConfig, AUTH } from "../js/config.js";
+import { lastKey } from "./allowed-list.mjs";
 
 const argv = process.argv.slice(2);
 const APPLY = argv.includes("--apply"), CHECK = argv.includes("--check");
-
-const lastKey = (name) => String(name || "").trim().split(/\s+/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
 
 const PASSWORD = process.env.ED_IV_ADMIN_PASSWORD;
 if (!PASSWORD && !process.env.ED_IV_EMULATOR) { console.error("ED_IV_ADMIN_PASSWORD is not set."); process.exit(1); }

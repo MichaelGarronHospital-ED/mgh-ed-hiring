@@ -27,6 +27,7 @@ run before applying.
 | `migrate-candidate.mjs` | Move reviewer input from one roster entry onto another. For cleaning up after a remove-and-re-add. |
 | `purge-candidate.mjs` | Permanently delete a roster entry. Refuses if anything still references it. |
 | `sync-allowed.mjs` | Publish the roster's surnames to the list the security rules check on applicant writes. |
+| `allowed-list.mjs` | Shared helper, not run directly: the one definition of that list, so a rename or purge can't leave the gate out of step. |
 
 ## Fixing a misspelled name
 
@@ -68,8 +69,9 @@ is in `/interviews_meta/allowed`. Without it, a typo or a name we hold
 differently saved to a document nobody reads: the applicant saw "Saved" and was
 never scheduled.
 
-The admin session keeps that list in sync by itself (`syncAllowedNames` in
-`js/app.js`), so in normal operation there is nothing to run. `sync-allowed.mjs`
+`rename-candidate.mjs` and `purge-candidate.mjs` update the list themselves, and
+the admin session keeps it in sync too (`syncAllowedNames` in `js/app.js`), so in
+normal operation there is nothing to run. `sync-allowed.mjs`
 is for the initial publish and for checking:
 
 ```bash

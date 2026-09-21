@@ -24,6 +24,7 @@ import { initializeApp } from "firebase/app";
 import { getAuth, signInWithEmailAndPassword, connectAuthEmulator } from "firebase/auth";
 import { getFirestore, collection, getDocs, doc, getDoc, deleteDoc, connectFirestoreEmulator } from "firebase/firestore";
 import { firebaseConfig, AUTH } from "../js/config.js";
+import { refreshAllowed, describeAllowed, lastKey } from "./allowed-list.mjs";
 
 const argv = process.argv.slice(2);
 const val = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : null; };
@@ -36,7 +37,6 @@ if (!NAME) {
 }
 
 const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-const lastKey = (name) => String(name || "").trim().split(/\s+/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
 
 const PASSWORD = process.env.ED_IV_ADMIN_PASSWORD;
 if (!PASSWORD && !process.env.ED_IV_EMULATOR) { console.error("ED_IV_ADMIN_PASSWORD is not set."); process.exit(1); }
@@ -116,6 +116,9 @@ if (!APPLY) { console.log(`\nRe-run with --apply to delete. There is no undo.`);
 try {
   await deleteDoc(doc(db, "interviews_candidates", cand.id));
   console.log(`\nDeleted. "${cand.name}" is gone from the Screen tab.`);
+  // Revoke their surname unless a namesake still needs it.
+  const r = await refreshAllowed(db, candidates.filter((c) => c.id !== cand.id), { apply: true });
+  if (r.changed) console.log(describeAllowed(r));
 } catch (e) {
   console.error(`\nFAILED: ${e.code || e.message}`);
   process.exit(1);
