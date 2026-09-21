@@ -4,8 +4,12 @@ Running log of what changed and why, newest first. Companion to DESIGN.md
 (decisions) and README.md (how to run). Written during the autonomous polish
 pass so the morning review has a paper trail.
 
-Verification note: the build environment has no live Firebase, so Firestore
-**rules** and the **roles** auth path could not be exercised here. Everything else
+Verification note (updated Sept 21 2026): the Firestore **rules** have since been
+exercised for real — the emulator suite in [`tests/`](tests/) runs green here,
+**30/30**, and was confirmed load-bearing by breaking `isAdmin()` and watching 16
+of the 30 fail (see the Sept 21 entry below). What remains untested is only the
+**roles auth path**: creating the three Firebase Auth accounts and flipping
+`AUTH.mode`, which needs the live project. Everything else
 was verified by driving the app headlessly with Playwright in **forced local mode**
 (config's firebaseConfig blanked via request interception) with fictitious seed
 data — **never** real applicant PII, **never** the live Firestore. Verified across
@@ -17,6 +21,26 @@ errors. The paneling algorithm was re-ported to Python and checked against 300
 randomized trials (optimal matching + every panel invariant). What still needs
 the operator's live testing: Firestore reads/writes under the hardened rules and
 the three role-account sign-ins (see the console steps in README).
+
+---
+
+## Firestore rules actually verified (Sept 21 2026)
+- **Why:** the rules suite was written on Sept 18 but had never been *run* — this
+  environment had neither Node nor Java, so every claim about the rules rested on
+  reading them. Two days out from the screening cut, that was the biggest
+  unverified thing in the tool.
+- Installed the toolchain (`nodejs npm default-jre-headless`) and ran it:
+  **30 tests, 30 pass**, emulator and all. The guarantees in
+  [`tests/README.md`](tests/README.md) now hold as tested facts: the ranking and
+  screening stay admin-only, an applicant reaches no committee data, an applicant
+  can write availability but not read it back, only the admin can change setup,
+  reviewers can still do their job, and unknown/anonymous accounts get nothing.
+- Confirmed the suite is load-bearing, not vacuously green: replacing
+  `isAdmin()` with `return true` fails **16 of the 30** — including every
+  anti-bias guarantee. Rules file restored byte-for-byte afterwards.
+- **Still needs the operator:** the three Auth accounts + `AUTH.mode` flip
+  against the live project. The rules they will run under are now tested; the
+  accounts themselves cannot be exercised without Firebase.
 
 ---
 
