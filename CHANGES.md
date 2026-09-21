@@ -6,7 +6,7 @@ pass so the morning review has a paper trail.
 
 Verification note (updated Sept 21 2026): the Firestore **rules** have since been
 exercised for real — the emulator suite in [`tests/`](tests/) runs green here,
-**40/40**, and was confirmed load-bearing by breaking `isAdmin()` and watching 20
+**44/44**, and was confirmed load-bearing by breaking `isAdmin()` and watching 20
 of the 39 fail (see the Sept 21 entries below). What remains untested is only the
 **roles auth path**: creating the three Firebase Auth accounts and flipping
 `AUTH.mode`, which needs the live project. Everything else
@@ -21,6 +21,40 @@ errors. The paneling algorithm was re-ported to Python and checked against 300
 randomized trials (optimal matching + every panel invariant). What still needs
 the operator's live testing: Firestore reads/writes under the hardened rules and
 the three role-account sign-ins (see the console steps in README).
+
+---
+
+## A failed write must not look like a saved one (Sept 21 2026)
+
+Chasing the missing rating to its end: it was never stranded and never on the
+server. The coordinator dashboard showed the reviewer in "waiting on" — no
+screening document from them at all — and the hidden-input check was empty. A
+test write then saved and read back correctly, so writes work now.
+
+What made it *look* saved at the time was an asymmetry in the store.
+`setAvail` has always rolled back a failed write — its comment says "don't
+leave an unsaved pick on screen" — but `setScreening` and `setScore` wrote the
+optimistic echo and never undid it. So a refused or dropped write left the
+rating on screen **and in localStorage permanently**, while the server had
+nothing: a phantom that looks saved on that device and is simply absent from
+every other one, and from the collation. Both now roll back to the previous
+value (not merely clear) and rethrow, so the caller's "Couldn't save" toast is
+the only outcome a reviewer ever sees. It matters more for scores, which are
+never read back from the server, so the mirror is the only thing that ever
+shows a reviewer their own answer.
+
+Also: a read-back listener refused by the rules is now dropped from the watch
+map instead of sitting in it. Firestore tears a listener down on error and
+never retries, so a reviewer who had the tab open while the rules were
+published stayed stuck on the refused state — and `_syncOwnScreening` skipped
+the key as already-watched. It now re-subscribes on the next roster snapshot,
+with no reload.
+
+Four tests cover it, confirmed load-bearing: removing the screening rollback
+alone fails two of them. Suite is 44/44.
+
+The original rating is most likely explained by `mock.html`, which carried the
+real applicant names and saved nothing anywhere. It has since been deleted.
 
 ---
 
@@ -200,7 +234,7 @@ turned up a shipped CSS bug that had been hiding every instruction in the app.
 Verified by driving the real app headlessly (Chromium, forced local mode, the
 `data.js` content module stubbed, fictitious names only) at 400px and 1000px
 across all five tabs plus the applicant view — no console errors. The rules
-suite is **40/40** against the emulator, up from 33: the new screening
+suite is **44/44** against the emulator, up from 33: the new screening
 `get`/`list` split is covered both ways, and `tests/store.own-screening.test.mjs`
 drives `FirestoreStore` against a stub Firestore to assert the client only ever
 subscribes to the signed-in member's own documents.

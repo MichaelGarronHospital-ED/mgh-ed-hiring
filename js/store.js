@@ -256,7 +256,14 @@ export class FirestoreStore extends BaseStore {
         // Almost always "permission-denied" because firestore.rules hasn't been
         // published yet. Not fatal: the device mirror still shows their own
         // input, and the UI drops the "on any device" claim.
+        //
+        // Firestore tears the listener down on error and never retries, so drop
+        // it from the map — otherwise a reviewer who had the tab open when the
+        // rules were published stays stuck on the refused state until they
+        // reload, and _syncOwnScreening would skip the key as already-watched.
         console.warn("own screening denied:", err && err.code);
+        const off2 = this._own.get(k);
+        if (off2) { try { off2(); } catch { /* already torn down */ } this._own.delete(k); }
         this.screeningReadBack = false;
         this._emit();
       });
@@ -288,15 +295,39 @@ export class FirestoreStore extends BaseStore {
     const { updateDoc } = this._fb;
     await updateDoc(this._doc("interviews_candidates", id), { removed });
   }
+  // The echo is written optimistically so input appears instantly — but it MUST
+  // be rolled back if the write fails, exactly as setAvail does. Without that, a
+  // refused or dropped write leaves a rating on screen and in localStorage for
+  // good while the server has nothing: a phantom that looks saved on this device
+  // and is simply absent everywhere else. That is not hypothetical — it is how a
+  // reviewer's screening came to "disappear" between sessions.
   async setScreening(member, candId, patch) {
     const { setDoc } = this._fb;
     const k = key(member, candId);
+    const prevEcho = this._echo ? this._echoScreening[k] : undefined;
+    const prevState = this.state.screening[k];
     if (this._echo) { // optimistic local echo so a reviewer sees their own input
       this._echoScreening[k] = { ...(this._echoScreening[k] || {}), member, candId, ...patch };
       this.state.screening = { ...this.state.screening, [k]: this._echoScreening[k] };
       this._saveEcho(); this._emit();
     }
-    await setDoc(this._doc("interviews_screening", k), { member, candId, ...patch }, { merge: true });
+    try {
+      await setDoc(this._doc("interviews_screening", k), { member, candId, ...patch }, { merge: true });
+    } catch (e) {
+      this._rollback("screening", "_echoScreening", k, prevEcho, prevState);
+      throw e;                       // the caller toasts; never claim it saved
+    }
+  }
+  // put back exactly what was there before the optimistic write
+  _rollback(field, echoField, k, prevEcho, prevState) {
+    if (this._echo) {
+      if (prevEcho === undefined) delete this[echoField][k]; else this[echoField][k] = prevEcho;
+      this._saveEcho();
+    }
+    const next = { ...this.state[field] };
+    if (prevState === undefined) delete next[k]; else next[k] = prevState;
+    this.state[field] = next;
+    this._emit();
   }
   async setAvail(kind, who, slot, mod) {
     const { setDoc, deleteField } = this._fb;
@@ -329,16 +360,27 @@ export class FirestoreStore extends BaseStore {
       all[who] = map; localStorage.setItem(CAND_ECHO_KEY, JSON.stringify(all));
     } catch { /* storage blocked — the server copy is still saved */ }
   }
+  // Same rollback as setScreening, and it matters MORE here: scores are never
+  // read back from the server for a reviewer, so this mirror is the only thing
+  // that ever shows them their own answer. A phantom score would survive
+  // unchallenged until leadership noticed the gap.
   async setScore(member, candId, patch) {
     const { setDoc } = this._fb;
     const k = key(member, candId);
+    const prevEcho = this._echo ? this._echoScores[k] : undefined;
+    const prevState = this.state.scores[k];
     if (this._echo) {
       const prev = this._echoScores[k] || { notes: {} };
       this._echoScores[k] = { ...prev, ...patch, member, candId, notes: { ...(prev.notes || {}), ...(patch.notes || {}) } };
       this.state.scores = { ...this.state.scores, [k]: this._echoScores[k] };
       this._saveEcho(); this._emit();
     }
-    await setDoc(this._doc("interviews_scores", k), { member, candId, ...patch }, { merge: true });
+    try {
+      await setDoc(this._doc("interviews_scores", k), { member, candId, ...patch }, { merge: true });
+    } catch (e) {
+      this._rollback("scores", "_echoScores", k, prevEcho, prevState);
+      throw e;
+    }
   }
   async setMeta(patch) {
     const { setDoc } = this._fb;

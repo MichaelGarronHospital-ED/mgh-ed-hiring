@@ -27,7 +27,7 @@ npm test
 
 `npm test` starts the emulator, runs the suite against it, and shuts it down.
 
-**Last run: Sept 21 2026 — 40 tests, 40 pass.** On a bare Debian devcontainer the
+**Last run: Sept 21 2026 — 44 tests, 44 pass.** On a bare Debian devcontainer the
 toolchain is one line:
 
 ```bash
