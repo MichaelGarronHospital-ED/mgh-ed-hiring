@@ -436,6 +436,27 @@ ul.reasons li { display:flex; gap:.5rem; font-size:.84rem; color:var(--ink-2);
   border-radius:var(--radius-xs); padding:.35rem .6rem; }
 ul.reasons li .rwho { font-weight:600; color:var(--ink); white-space:nowrap; }
 ul.reasons li.noreason { color:var(--faint); font-style:italic; border-left-color:var(--line); }
+
+/* who rated, and what. A <details> rather than a tooltip: a phone has no hover,
+   so anything parked in a title/data-tip is unreachable on the device most of
+   this committee actually uses. */
+details.raters > summary { list-style:none; cursor:pointer; color:var(--accent);
+  font-size:.8rem; user-select:none; }
+details.raters > summary::-webkit-details-marker { display:none; }
+details.raters > summary::after { content:" ⌄"; }
+details.raters[open] > summary::after { content:" ⌃"; }
+.raterlist { display:flex; flex-wrap:wrap; gap:.3rem; margin-top:.4rem; }
+.ratechip { display:inline-flex; align-items:center; gap:.35rem; background:var(--bg);
+  border:1px solid var(--line-2); border-radius:980px; padding:.1rem .5rem; font-size:.78rem; }
+.ratechip .rw { color:var(--ink-2); }
+.ratechip b { font-variant-numeric:tabular-nums; }
+
+/* hidden-input warning: input stranded on a removed or deleted roster entry */
+.note.warnbox { background:var(--amber-tint); border-color:#f2dca6; }
+.hidrow { border-top:1px solid #f0dcb0; margin-top:.55rem; padding-top:.55rem; }
+pre.cmd { background:#fffdf7; border:1px solid #f0dcb0; border-radius:var(--radius-xs);
+  padding:.45rem .6rem; margin:.4rem 0 0; font-size:.74rem; overflow-x:auto;
+  white-space:pre; -webkit-overflow-scrolling:touch; }
 .collrow .more { font-size:.82rem; margin-top:.3rem; }
 
 /* ---- ranking ------------------------------------------------------------- */

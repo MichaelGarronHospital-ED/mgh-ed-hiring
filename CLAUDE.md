@@ -76,4 +76,8 @@ Full design and reference data (committee, candidates, questions, rules) live in
   (each rater's mean minus the grand mean, subtracted from their scores),
   skipped for raters with a single score — and it is shown *alongside* the raw
   mean, never instead of it.
+- **Never put a real applicant's name in the repo.** Names belong in Firestore
+  only. A worked example in `scripts/` once carried a real applicant's name in
+  a public repo, alongside the story of her name being mangled — use invented
+  names (`Rosalind Ashcombe`) in docs, comments and seed scripts.
 - Timeline is tight: **screening cut Sept 23 2026**, interviews start ~week of Sept 30.

@@ -152,6 +152,18 @@ describe("an applicant cannot reach any committee data", () => {
     await assertFails(getDoc(doc(applicant(), SCREEN)));
   });
 
+  // Screening was loosened on Sept 21 to let a REVIEWER get their own document
+  // back. That must not have leaked to applicants by either verb — a candidate
+  // reading their own screening would see who flagged them and why.
+  it("CANNOT get OR list screening and scores — the Sept 21 loosening is committee-only", async () => {
+    await seed(SCREEN, { member: "Marrocco", candId: "c-1", flag: true, reason: "x", rating: 2 });
+    await seed(SCORE, { member: "Marrocco", candId: "c-1", overall: 4 });
+    await assertFails(getDoc(doc(applicant(), SCREEN)));
+    await assertFails(getDocs(collection(applicant(), "interviews_screening")));
+    await assertFails(getDoc(doc(applicant(), SCORE)));
+    await assertFails(getDocs(collection(applicant(), "interviews_scores")));
+  });
+
   it("CANNOT read interviewer availability", async () => {
     await seed(AVAIL_I, { slots: { 0: "either" } });
     await assertFails(getDoc(doc(applicant(), AVAIL_I)));

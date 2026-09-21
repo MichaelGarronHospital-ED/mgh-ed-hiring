@@ -5,7 +5,7 @@
 //  THIS IS THE RIGHT WAY TO FIX A MISSPELLED NAME. The app has no rename, so
 //  the temptation is to remove the candidate and add them again — but that
 //  mints a new c-<uuid>, and every rating, score and note stays keyed to the
-//  old one and disappears from the UI (that is what happened to Rosalind).
+//  old one and disappears from the UI (this has already cost one applicant her ratings).
 //
 //  Updating the `name` field keeps the document id, so screening, scores,
 //  notes and manual panels stay attached with nothing to migrate. The only

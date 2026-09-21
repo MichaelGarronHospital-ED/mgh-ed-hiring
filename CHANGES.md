@@ -6,7 +6,7 @@ pass so the morning review has a paper trail.
 
 Verification note (updated Sept 21 2026): the Firestore **rules** have since been
 exercised for real — the emulator suite in [`tests/`](tests/) runs green here,
-**39/39**, and was confirmed load-bearing by breaking `isAdmin()` and watching 20
+**40/40**, and was confirmed load-bearing by breaking `isAdmin()` and watching 20
 of the 39 fail (see the Sept 21 entries below). What remains untested is only the
 **roles auth path**: creating the three Firebase Auth accounts and flipping
 `AUTH.mode`, which needs the live project. Everything else
@@ -21,6 +21,47 @@ errors. The paneling algorithm was re-ported to Python and checked against 300
 randomized trials (optimal matching + every panel invariant). What still needs
 the operator's live testing: Firestore reads/writes under the hardened rules and
 the three role-account sign-ins (see the console steps in README).
+
+---
+
+## Finding input stranded on a removed applicant (Sept 21 2026)
+
+A reviewer reported a rating they had given that no longer appeared. It was not
+the read-back path at all: the applicant had been removed and re-added under a
+corrected surname, so the rating sits on the soft-deleted entry. The
+orphan check added earlier the same day could not see it — `migrate-candidate.mjs`
+says why in its own header: *"the old entry is only soft-deleted
+(removed:true), so it isn't even detectable as an orphan."* That is the one
+shape this failure has actually taken here, so it is the one the check has to
+find.
+
+- **`hiddenInput()` replaces the orphan-only check** and catches both shapes:
+  a roster entry that is gone, and one that is only `removed:true`. The
+  coordinator dashboard now names the entry, breaks down what is stranded
+  (flags / ratings / interview scores), lists the members affected, guesses the
+  live entry it belongs to by matching first name or surname key, and prints a
+  runnable `migrate-candidate.mjs --from … --to … --apply`. It also says
+  plainly that nothing is lost.
+- **Ratings are attributed in the collation**, like flags always were, behind a
+  tap-to-open "*n* ratings". Without it there was no way to answer a reviewer
+  asking "is mine recorded?". A `<details>`, not a tooltip, on purpose: a phone
+  has no hover, so anything parked in `title`/`data-tip` is unreachable on the
+  device most of this committee uses.
+- **A real applicant's name was in the public repo** — the worked example in
+  `scripts/` used the actual applicant whose name was mangled, together with
+  the story of it. Replaced throughout with an invented one. Note this only
+  scrubs the working tree; **git history still contains it**, and removing that
+  needs a history rewrite and a force push.
+
+Reviewer isolation was re-checked against the same data: with input stranded on
+a removed duplicate and other people's flags and ratings present, an ordinary
+reviewer's DOM contains no collation row, no rating chip, no hidden-input row,
+no flag reason, and no mention of the removed entry — while the live applicant
+stays reviewable. An applicant's isolation is asserted in the rules suite by
+both verbs (`get` and `list`) on screening and scores, so the Sept 21 loosening
+for reviewers did not reach them; and the guest code was run through
+`decryptContent` in a real browser, with near-miss guesses, to confirm it
+unwraps no interview questions.
 
 ---
 
@@ -159,7 +200,7 @@ turned up a shipped CSS bug that had been hiding every instruction in the app.
 Verified by driving the real app headlessly (Chromium, forced local mode, the
 `data.js` content module stubbed, fictitious names only) at 400px and 1000px
 across all five tabs plus the applicant view — no console errors. The rules
-suite is **39/39** against the emulator, up from 33: the new screening
+suite is **40/40** against the emulator, up from 33: the new screening
 `get`/`list` split is covered both ways, and `tests/store.own-screening.test.mjs`
 drives `FirestoreStore` against a stub Firestore to assert the client only ever
 subscribes to the signed-in member's own documents.

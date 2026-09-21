@@ -409,34 +409,67 @@ function collSort() {
 // very different facts and the number alone can't tell them apart.
 function screenStats(candId) {
   const { committee } = EFF();
-  const flags = [], ratings = [];
+  const flags = [], ratings = [], by = [];
   committee.forEach((m) => {
     const s = S.screening[key(m.name, candId)] || {};
     if (s.flag) flags.push({ who: m.name, reason: String(s.reason || "").trim() });
-    if (s.rating) ratings.push(s.rating);
+    if (s.rating) { ratings.push(s.rating); by.push({ who: m.name, rating: s.rating }); }
   });
+  by.sort((a, b) => b.rating - a.rating || a.who.localeCompare(b.who));
   // reasons first: a bare flag is the least informative line on the card and
   // shouldn't split two people's sentences apart.
   flags.sort((a, b) => (b.reason ? 1 : 0) - (a.reason ? 1 : 0));
-  return { flags, ratings, avg: avg(ratings), n: ratings.length, of: committee.length };
+  return { flags, ratings, by, avg: avg(ratings), n: ratings.length, of: committee.length };
 }
 
-// Flags/ratings/scores keyed to a candidate id that no longer exists. This is
-// the footprint of a remove-and-re-add (which mints a fresh c-<uuid>) and it is
-// otherwise completely invisible: the input is still in the database, just
-// attached to nothing the UI lists. It has cost real ratings once already, so
-// the coordinator dashboard now says so out loud. Admin-only — a reviewer's
-// screening map is their own local echo, where an orphan means nothing.
-function strandedInput() {
-  const known = new Set(S.candidates.map((c) => c.id));
-  const ids = new Set();
-  let n = 0;
-  [S.screening, S.scores].forEach((map) => Object.keys(map || {}).forEach((k) => {
-    const i = k.indexOf("~");
-    const id = i < 0 ? "" : k.slice(i + 1);
-    if (id && !known.has(id)) { ids.add(id); n++; }
-  }));
-  return { ids: [...ids], n };
+// Input the committee can no longer see, in the two shapes it actually takes.
+//
+//   orphan   the roster entry is gone entirely (a hard delete via scripts/)
+//   removed  the entry is still there but soft-deleted — which is exactly what
+//            a remove-and-re-add leaves behind, and what the orphan check alone
+//            MISSES. migrate-candidate.mjs says so in its own header: "the old
+//            entry is only soft-deleted (removed:true), so it isn't even
+//            detectable as an orphan." That is the case that has really
+//            happened here, so it is the case this has to catch.
+//
+// Admin-only: a reviewer's screening map holds only their own documents, where
+// none of this means anything.
+function hiddenInput() {
+  const byId = new Map(S.candidates.map((c) => [c.id, c]));
+  const found = new Map();
+  const add = (id, member, what) => {
+    const c = byId.get(id);
+    if (c && !c.removed) return;                       // visible: nothing hidden
+    if (!found.has(id)) {
+      found.set(id, { id, name: c ? c.name : "", kind: c ? "removed" : "orphan",
+                      members: new Set(), flags: 0, ratings: 0, scores: 0 });
+    }
+    const e = found.get(id);
+    e.members.add(member);
+    e[what]++;
+  };
+  Object.entries(S.screening || {}).forEach(([k, v]) => {
+    const i = k.indexOf("~"); if (i < 0 || !v) return;
+    if (v.flag) add(k.slice(i + 1), k.slice(0, i), "flags");
+    if (v.rating) add(k.slice(i + 1), k.slice(0, i), "ratings");
+  });
+  Object.entries(S.scores || {}).forEach(([k, v]) => {
+    const i = k.indexOf("~"); if (i < 0 || !v || !v.overall) return;
+    add(k.slice(i + 1), k.slice(0, i), "scores");
+  });
+
+  // Who is this probably now? A remove-and-re-add keeps most of the name, so a
+  // live entry sharing the first name or the surname key is the likely target.
+  const live = S.candidates.filter((c) => !c.removed);
+  const firstTok = (n) => String(n || "").trim().toLowerCase().split(/\s+/)[0] || "";
+  for (const e of found.values()) {
+    e.likely = e.name
+      ? live.filter((c) => (firstTok(c.name) && firstTok(c.name) === firstTok(e.name))
+                        || (lastKey(c.name) && lastKey(c.name) === lastKey(e.name)))
+      : [];
+  }
+  const entries = [...found.values()].sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
+  return { entries, total: entries.reduce((n, e) => n + e.flags + e.ratings + e.scores, 0) };
 }
 
 // A reviewer's progress line. Screening now comes back from the server on any
@@ -531,10 +564,19 @@ function renderScreen() {
           : `<li class="noreason"><span class="rwho">${escapeHtml(f.who)}</span><span>flagged without a reason</span></li>`).join("")
         + `</ul>` : "";
       const rateTip = st.n
-        ? `Mean of the ${st.n} priority rating${st.n === 1 ? "" : "s"} actually submitted (${st.ratings.join(", ")}). `
+        ? `Mean of the ${st.n} priority rating${st.n === 1 ? "" : "s"} actually submitted. `
           + `${st.of - st.n} member${st.of - st.n === 1 ? "" : "s"} didn't rate — non-answers are left out, not counted as a middling score.`
         : "Nobody has given this applicant a priority rating yet.";
       const thin = st.n > 0 && st.n < 3;
+      // Who rated, and what. Flags have always been attributed here; ratings
+      // were not, so there was no way for a reviewer to ask leadership "is mine
+      // recorded?" and get a straight answer. Folded away by default because
+      // thirteen names is a lot of line, and a <details> opens on a tap —
+      // unlike the hover tooltips, which a phone can never reach.
+      const raters = st.n ? `<details class="raters"><summary>${st.n} rating${st.n === 1 ? "" : "s"}</summary>
+        <div class="raterlist">${st.by.map((r) =>
+          `<span class="ratechip"><span class="rw">${escapeHtml(r.who)}</span><b>${r.rating}</b></span>`).join("")}</div>
+        </details>` : "";
       return `<div class="collrow ${fc >= 2 || c.removed ? "out" : ""}">
         <div class="collhead"><span class="name">${escapeHtml(c.name)}</span>${statusPill}<span class="spacer"></span>${action}</div>
         <div class="collmeta">
@@ -543,6 +585,7 @@ function renderScreen() {
           <span class="metric" data-tip="${escapeHtml(rateTip)}"><span aria-hidden="true">★</span>
             <b>${st.avg == null ? "—" : st.avg.toFixed(1)}</b> avg priority
             <span class="denom ${thin ? "thin" : ""}">${st.n} of ${st.of} rated</span></span>
+          ${raters}
         </div>${reasons}</div>`;
     }).join("");
 
@@ -553,17 +596,39 @@ function renderScreen() {
       <div class="collist">${rows || empty("📝", "No candidates yet", "Add applicants below to start screening.")}</div>
       <div class="adminbar"><button class="btn tinted small" onclick="IV.exportShortlist()"><span aria-hidden="true">⬇︎</span> Export shortlist (CSV)</button></div>`;
 
-    const stranded = strandedInput();
+    const hidden = hiddenInput();
+    const part = (n, w) => (n ? `${n} ${w}${n === 1 ? "" : "s"}` : "");
+    const hiddenBlock = !hidden.entries.length ? "" : `<div class="note warnbox" style="margin-top:.8rem">
+      <b class="warn">⚠ ${hidden.total} saved entr${hidden.total === 1 ? "y is" : "ies are"} attached to
+      ${hidden.entries.length} applicant${hidden.entries.length === 1 ? "" : "s"} nobody can see.</b>
+      That is the footprint of a remove-and-re-add: the new entry gets a new id, and the flags, ratings and
+      scores already given stay on the old one. <b>Nothing is lost</b> — it is in the database, just attached
+      to an entry the Screen tab doesn't show reviewers.
+      ${hidden.entries.map((e) => {
+        const bits = [part(e.flags, "flag"), part(e.ratings, "rating"), part(e.scores, "interview score")].filter(Boolean).join(", ");
+        const who = [...e.members].sort().map((m) => `<span class="chip">${escapeHtml(m)}</span>`).join("");
+        const target = e.likely && e.likely.length === 1 ? e.likely[0] : null;
+        const cmd = e.name && target
+          ? `node migrate-candidate.mjs --from ${JSON.stringify(e.name)} --to ${JSON.stringify(target.name)} --apply`
+          : null;
+        return `<div class="hidrow">
+          <div><b>${escapeHtml(e.name || e.id)}</b>
+            <span class="pill out">${e.kind === "removed" ? "removed" : "no longer on the roster"}</span></div>
+          <div class="muted small">${escapeHtml(bits)} — from ${who}</div>
+          ${target ? `<div class="small">Looks like the same person as <b>${escapeHtml(target.name)}</b>, who is still on the list.</div>` : ""}
+          ${cmd ? `<pre class="cmd">${escapeHtml(cmd)}</pre>` : ""}
+        </div>`;
+      }).join("")}
+      <div class="small" style="margin-top:.5rem">Run that from <code>tools/interviews/scripts/</code> on a
+      computer (it needs the admin password, is a dry run without <code>--apply</code>, and never overwrites
+      input already given under the new entry). To fix a spelling in future use
+      <code>scripts/rename-candidate.mjs</code>, which keeps the id, instead of removing and re-adding.</div>
+    </div>`;
     const dash = `<div class="note">Chase anyone who hasn't submitted before the deadline.</div>
       <p><b>${submitted.size}/${committee.length}</b> members have submitted screening.</p>
       ${notYet.length ? `<p class="muted small">Waiting on:</p><div>${notYet.map((n) => `<span class="chip">${escapeHtml(n)}</span>`).join("")}</div>`
         : `<p class="ok small">✓ Everyone has submitted.</p>`}
-      ${stranded.n ? `<div class="note" style="margin-top:.8rem"><b class="warn">⚠ ${stranded.n} saved entr${stranded.n === 1 ? "y is" : "ies are"}
-        attached to ${stranded.ids.length} applicant${stranded.ids.length === 1 ? "" : "s"} who ${stranded.ids.length === 1 ? "is" : "are"} no longer on the list.</b>
-        That is what a remove-and-re-add leaves behind: the new entry gets a new id and the old flags, ratings and
-        scores stay on the old one, invisible here. Recover them with
-        <code>scripts/migrate-candidate.mjs</code>, and rename in place with <code>scripts/rename-candidate.mjs</code>
-        rather than removing and re-adding.</div>` : ""}`;
+      ${hiddenBlock}`;
 
     const adder = `<div class="note">Paste applicant names, one per line, then Add. Stored in your database, never in the app's code.
       To fix a spelling, use <code>scripts/rename-candidate.mjs</code> — removing and re-adding strands every rating.</div>
@@ -573,7 +638,7 @@ function renderScreen() {
     html += section("collation", "Collation & shortlist", `${activeCands().length} of ${S.candidates.length} still in`, collation,
         { open: false, count: S.candidates.length, info: "Everyone's flags and priority ratings, collated. A candidate drops off the interview list at 2 or more flags. Reasons are visible to leadership only. Export the shortlist as a CSV here." })
       + section("dash", "Coordinator dashboard", `${submitted.size}/${committee.length} submitted`, dash,
-        { open: false, info: "Track who has and hasn't submitted their screening, so you can chase people before the deadline.", count: stranded.n ? "⚠" : null })
+        { open: false, info: "Track who has and hasn't submitted their screening, so you can chase people before the deadline.", count: hidden.entries.length ? "⚠" : null })
       + section("adder", "Add candidates", "", adder,
         { open: false, info: "Paste applicant names to add them to the interview list. Stored securely in your database — never in the app's code. You can add or remove people any time." })
       + `<h3>Your review</h3>`;
