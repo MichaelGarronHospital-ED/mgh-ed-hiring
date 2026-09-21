@@ -14,6 +14,10 @@ I've built a **clickable mock** of a tool to run our hiring process end-to-end. 
 **https://dralvinyang.github.io/ED-motion-voting/tools/interviews/mock.html**
 Password: **(the committee code — sent separately)**
 
+> Archived copy of the email as sent on Sept 16 2026. That mock URL **no longer
+> exists** — `mock.html` was deleted on Sept 21 once the real tool replaced it.
+> The live tool is `…/tools/interviews/`.
+
 **Please note:** this is only a *mock* with made-up candidate names to show the idea —
 nothing is saved and it isn't the finished tool. Once you confirm the details below, the
 real working version takes me about **a day** to build.

@@ -6,7 +6,12 @@ Firebase project to go multi-device and real-time.
 
 - **Committee:** [`index.html`](index.html) — enter the committee code, pick your name.
 - **Applicants:** [`book.html`](book.html) — one link, type your name, pick your times.
-- **Mock (design demo):** [`mock.html`](mock.html) — the clickable prototype Kyle reviewed.
+
+The clickable prototype Kyle reviewed (`mock.html`) was **deleted on Sept 21 2026**,
+once the real tool had superseded it. It was still being served publicly, it looked
+enough like the real thing to confuse anyone handed the wrong link, and it carried a
+second copy of the encrypted questions — so re-keying had to be done in two places or
+the stale copy would still open under the old code.
 
 Design + decisions live in [`DESIGN.md`](DESIGN.md); the paneling algorithm is in
 [`js/panels.js`](js/panels.js) (validated in a Python prototype before porting).
@@ -73,7 +78,7 @@ The questions are encrypted once with a random content key `K`; `K` is then wrap
 (`K XOR PBKDF2(code)`) separately under the **staff** and **admin** codes. Changing a
 code = re-wrapping `K`; changing the questions = re-encrypting + re-wrapping. Run this
 (Python 3), then paste the printed `ENC_CIPHER`, `ENC_WRAP_STAFF`, `ENC_WRAP_ADMIN` into
-[`js/data.js`](js/data.js) **and** `mock.html`:
+[`js/data.js`](js/data.js) — the only copy, now that `mock.html` is gone:
 
 ```python
 import hashlib, hmac, json, base64, os

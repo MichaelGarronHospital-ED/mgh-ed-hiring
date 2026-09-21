@@ -141,7 +141,10 @@ applicant PII out of a repo that feeds a public Pages site.
 - **Revised overall rating scale + panelist guidance** incorporated (2026-09-17).
 - **Separate Firebase project**, locked Firestore rules, **delete data after the round**.
 
-## Mock
+## Mock (deleted Sept 21 2026 — kept here as the design record)
+`mock.html` was removed once the real tool superseded it; the description below is
+what it was. `index.html` is the tool now.
+
 `mock.html` — self-contained, "MOCK" banner, **10 fictitious candidate names**,
 **password-gated, two tiers**: the committee code = regular (no tab 5), the code + `!` =
 admin (sees the tab 5 Ranking). The admin password is the regular one + `!`; the app

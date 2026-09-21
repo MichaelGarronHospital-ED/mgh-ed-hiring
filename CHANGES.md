@@ -453,7 +453,7 @@ existing collections/keys unchanged. `availCand` now read by candidate-id (legac
 - The old code `edleadership` (public — it is also Motion Voting's passcode) no
   longer decrypts the interview questions. Re-encrypted `{q,s,g}` under a new
   strong private code (same PBKDF2-SHA256 keystream + XOR scheme, same salt/iters).
-- Updated `ENC_CIPHER` in [`js/data.js`](js/data.js) and [`mock.html`](mock.html).
+- Updated `ENC_CIPHER` in [`js/data.js`](js/data.js) and `mock.html` (since deleted).
 - The new code appears **nowhere** in the repo. It is delivered in the morning
   summary (chat only).
 - Verified end-to-end in a headless browser: old code → "Incorrect code"; new
