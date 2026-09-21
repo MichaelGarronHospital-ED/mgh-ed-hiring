@@ -49,6 +49,13 @@ class BaseStore {
   // (it decides which screening documents to fetch back); local mode already
   // has the whole collection in hand.
   setMember() { /* no-op except on Firestore */ }
+  // Can this client actually read a reviewer's own screening back?
+  //   true  — confirmed working
+  //   false — the server refused (rules not published yet, or tightened again)
+  //   null  — not answered yet
+  // The UI branches on it rather than promising "on any device" and being wrong
+  // for however long it takes someone to paste the rules into the console.
+  screeningReadBack = true;
   getState() { return this.state; }
   subscribe(cb) { this._subs.add(cb); cb(this.state); return () => this._subs.delete(cb); }
   _emit() { for (const cb of this._subs) cb(this.state); }
@@ -179,6 +186,9 @@ export class FirestoreStore extends BaseStore {
     // changes, because the set of ids we want changes with it.
     this._ownScreening = on("candidates") && !on("screening");
     this._own = new Map();
+    // unknown until the first per-document listener answers; admins read the
+    // whole collection, so for them it is settled from the start
+    this.screeningReadBack = this._ownScreening ? null : true;
 
     if (on("candidates")) watch("candidates", collection(db, "interviews_candidates"), (snap) => {
       this.state.candidates = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -235,13 +245,21 @@ export class FirestoreStore extends BaseStore {
     for (const k of want) {
       if (this._own.has(k)) continue;
       const off = onSnapshot(this._doc("interviews_screening", k), (snap) => {
+        if (this.screeningReadBack !== true) { this.screeningReadBack = true; }
         // A doc that doesn't exist yet means "not reviewed" — but don't wipe an
         // echo entry from before reviewers could read anything back.
-        if (!snap.exists()) return;
+        if (!snap.exists()) { this._emit(); return; }
         this.state.screening = { ...this.state.screening, [k]: snap.data() };
         if (this._echo) { this._echoScreening[k] = snap.data(); this._saveEcho(); }
         this._emit();
-      }, (err) => console.warn("own screening denied:", err && err.code));
+      }, (err) => {
+        // Almost always "permission-denied" because firestore.rules hasn't been
+        // published yet. Not fatal: the device mirror still shows their own
+        // input, and the UI drops the "on any device" claim.
+        console.warn("own screening denied:", err && err.code);
+        this.screeningReadBack = false;
+        this._emit();
+      });
       this._own.set(k, off);
     }
   }

@@ -390,6 +390,17 @@ function closeSetup() {
 }
 const setupOpen = () => !$("#setupModal").classList.contains("hidden");
 
+// Collation sort order. A per-device UI preference, not data — remembered so a
+// coordinator who works by rating doesn't re-pick it every time they open the
+// tab. Falls back to "name" whenever storage is unavailable or holds junk.
+const COLL_SORT_KEY = "ed_iv_collsort_v1";
+function collSort() {
+  if (ui.collSort == null) {
+    try { ui.collSort = localStorage.getItem(COLL_SORT_KEY) || "name"; } catch { ui.collSort = "name"; }
+  }
+  return ui.collSort;
+}
+
 // ------------------------------------------------------- screening figures
 // Everyone on the committee screens every applicant, so the denominator for a
 // priority rating is the whole committee. A missing rating is NOT imputed (a
@@ -441,8 +452,15 @@ function myInputNotice(list, get, deviceOnly) {
     (r.notes && Object.values(r.notes).some((t) => String(t || "").trim())));
   const done = list.filter((c) => has(get(c))).length;
   if (!deviceOnly) {
+    // Only claim "any device" once the server has actually answered. Until the
+    // hardened rules are published the read is refused, and promising something
+    // the app can't do is worse than saying nothing.
+    const anywhere = !store || store.screeningReadBack !== false;
     return `<div class="note local"><b>${done} of ${list.length}</b> reviewed by you.
-      Your flags and ratings follow you — sign in on any device, pick your name, and they'll be here.
+      ${anywhere
+        ? `Your flags and ratings follow you — sign in on any device, pick your name, and they'll be here.`
+        : `Saved to leadership the moment you tap. This browser remembers your own answers; on another
+           device they'll look blank until leadership finishes the setup.`}
       Only leadership can see everyone's together.</div>`;
   }
   return `<div class="note local"><b>${done} of ${list.length}</b> scored on this device.
@@ -460,18 +478,40 @@ function renderScreen() {
   let html = howto("screen", `Open the applications folder to read each applicant's CV &amp; cover letter, then
     <b>flag</b> anyone you feel isn't qualified (add a short reason). You can also give an optional
     <b>1–5 priority</b>. Your input goes to leadership, who see everyone's side by side; the app never
-    shows one reviewer another's flags or ratings. Come back any time — <b>on any device</b> — and your
-    own review will be here.`);
+    shows one reviewer another's flags or ratings.`);
 
   if (ui.isAdmin) {
     const submitted = new Set();
     Object.keys(S.screening).forEach((k) => { const v = S.screening[k]; if (v && (v.flag || v.rating)) submitted.add(k.split("~")[0]); });
     const notYet = committee.filter((m) => !submitted.has(m.name)).map((m) => m.name);
 
-    // still-in first, then excluded/removed; alphabetical within each group, so
-    // the list you act on is at the top and the order never shifts under you.
+    // Still-in first, then excluded/removed — that split is the decision, so it
+    // holds whichever sort is chosen and excluded people never drift back up
+    // into the list you're working. Within each group, your pick.
+    //   name   — alphabetical, the order you can predict and scan
+    //   rating — highest average priority first; unrated last, because "no
+    //            rating" is not a low rating and must not sort as one
+    //   flags  — most-flagged first, for working through the exclusions
+    const SORTS = { name: "Name", rating: "Avg priority", flags: "Flags" };
+    const sortKey = SORTS[collSort()] ? collSort() : "name";
+    const byName = (a, b) => a.name.localeCompare(b.name);
+    const cmp = {
+      name: byName,
+      rating: (a, b) => {
+        const x = screenStats(a.id).avg, y = screenStats(b.id).avg;
+        if (x == null && y == null) return byName(a, b);
+        if (x == null) return 1;
+        if (y == null) return -1;
+        return y - x || byName(a, b);
+      },
+      flags: (a, b) => screenStats(b.id).flags.length - screenStats(a.id).flags.length || byName(a, b),
+    }[sortKey];
     const ordered = [...S.candidates].sort((a, b) =>
-      (isIn(a) === isIn(b) ? 0 : isIn(a) ? -1 : 1) || a.name.localeCompare(b.name));
+      (isIn(a) === isIn(b) ? 0 : isIn(a) ? -1 : 1) || cmp(a, b));
+    const sortBar = `<div class="sortbar"><span class="muted small">Sort by</span>
+      <span class="seg" role="group" aria-label="Sort candidates">${Object.entries(SORTS).map(([k, label]) =>
+        `<button type="button" class="${k === sortKey ? "on" : ""}" aria-pressed="${k === sortKey}"
+          onclick="IV.sortColl('${k}')">${label}</button>`).join("")}</span></div>`;
 
     const rows = ordered.map((c) => {
       const st = screenStats(c.id);
@@ -509,6 +549,7 @@ function renderScreen() {
     const collation = `<div class="note">A candidate drops off the interview list at <b>≥2 flags</b> (last year's rule).
         Flag reasons are attributed here and visible to <b>leadership only</b>.
         <b>Avg priority</b> is the plain mean of the ratings that were submitted — hover it to see how many.</div>
+      ${S.candidates.length > 1 ? sortBar : ""}
       <div class="collist">${rows || empty("📝", "No candidates yet", "Add applicants below to start screening.")}</div>
       <div class="adminbar"><button class="btn tinted small" onclick="IV.exportShortlist()"><span aria-hidden="true">⬇︎</span> Export shortlist (CSV)</button></div>`;
 
@@ -1189,6 +1230,11 @@ window.IV = {
   },
   avail: (id, v) => { const cur = (S.availIv[ui.member] || {})[id]; saved(store.setAvail("iv", ui.member, id, cur === v ? null : v)); },
   pickScore: (id) => { ui.scoreCand = id; renderScore(); wireSections(); window.scrollTo({ top: 0, behavior: "smooth" }); },
+  sortColl: (k) => {
+    ui.collSort = k;
+    try { localStorage.setItem(COLL_SORT_KEY, k); } catch { /* storage blocked */ }
+    renderScreen(); wireSections();
+  },
   note: (qi, val) => saveNoteKeyed(ui.member, ui.scoreCand, qi, val),
   score: (n) => { const cur = (S.scores[key(ui.member, ui.scoreCand)] || {}).overall; saved(store.setScore(ui.member, ui.scoreCand, { overall: cur === n ? 0 : n })); },
   setComplete: async (v, btn) => {

@@ -133,7 +133,20 @@ turned up a shipped CSS bug that had been hiding every instruction in the app.
   **⚠ Deploy step:** none of the read-back works until the updated
   `firestore.rules` is pasted into **Firebase console → Firestore → Rules →
   Publish**. Until then the app behaves exactly as before — the per-document
-  reads are simply denied and logged.
+  reads are simply denied and logged, and the app **says so rather than
+  promising otherwise**: `store.screeningReadBack` starts `null`, flips to
+  `true` on the first per-document snapshot and `false` on a refusal, and the
+  Screen tab's wording follows it. The front end can ship ahead of the rules
+  without telling reviewers something untrue.
+
+- **The collation can be sorted by name, average priority or flags.** Whichever
+  is chosen, the still-in / excluded split holds first, so someone already off
+  the list never drifts back up into the list you are working. Unrated
+  applicants sort **last** under average priority rather than as a low score —
+  "nobody rated them" is not "everybody rated them badly", and the two must not
+  look alike. The choice is remembered per device (it is a UI preference, not
+  data). Checked by driving the real order for each key, including the unrated
+  and excluded cases, and across a reload.
 - **Declutter.** "What to do here" is now a `<details>` that remembers being
   collapsed across sessions (localStorage, per tab) — full guidance on a first
   visit, one line thereafter. Screening review cards are one row each (name ·
