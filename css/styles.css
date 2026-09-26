@@ -75,8 +75,9 @@ a:hover { text-decoration:underline; }
   padding:.9rem 1.1rem; border-bottom:1px solid var(--line-2); flex:none; }
 .modal-head h2 { margin:0; font-size:1.2rem; }
 .modal-body { padding:.2rem 1.1rem 1.2rem; overflow-y:auto; -webkit-overflow-scrolling:touch; }
-.modal-body .note.tip:first-child, .modal-body details.howto:first-child { margin-top:.7rem; }
-@media (max-width:640px) { #setupModal { padding:0; } .modal-box { max-height:100vh; border-radius:0; } }
+.modal-body .note.tip:first-child, .modal-body .hint:first-child { margin-top:.7rem; }
+@media (max-width:640px) {
+  #setupModal { padding:0; } .modal-box { max-height:100vh; border-radius:0; } }
 .primary:hover, .btn.filled:hover { background:var(--accent-press); }
 .primary:active, .btn:active { transform:scale(.98); }
 .primary:disabled, .btn:disabled { opacity:.55; cursor:default; transform:none; }
@@ -91,6 +92,11 @@ a:hover { text-decoration:underline; }
 .linky { background:none; border:none; color:var(--accent); cursor:pointer; font:inherit; padding:0; }
 .linky:hover { text-decoration:underline; }
 .linky.danger { color:var(--red); }
+/* Seventeen red "remove" links down a list read as seventeen problems. The
+   action stays exactly where it was and keeps its confirm dialog; it just
+   stops shouting until you reach for it. */
+.collist .linky.danger { color:var(--mut); }
+.collist .linky.danger:hover, .collist .linky.danger:focus-visible { color:var(--red); }
 
 /* header icon button (Setup gear) */
 .iconbtn { background:transparent; border:1px solid var(--line-2); color:var(--ink-2); cursor:pointer;
@@ -175,6 +181,17 @@ h3 { font-size:1rem; margin:1.4rem 0 .4rem; font-weight:600; }
 .card { background:var(--surface); border:1px solid var(--line-2); border-radius:var(--radius);
   padding:1rem 1.1rem; margin:.7rem 0; box-shadow:var(--shadow); }
 .card.flush { padding:0; overflow:hidden; }
+/* ---- ruled list ----------------------------------------------------------
+   Seventeen applicants used to be seventeen cards: seventeen borders, seventeen
+   shadows, and 1.5 screens of gaps between them. One card, hairlines between
+   the rows, so a column of names reads as a list instead of a stack of boxes. */
+.list > .rrow, .list > .prow { padding:.8rem 1.05rem; border-top:1px solid var(--line-2); }
+.list > .rrow:first-child, .list > .prow:first-child { border-top:none; }
+.list > .rrow.flagged { background:#fffafa; }
+.list > .prow.open { background:#fbfbfd; }
+.rrow .row, .prow .row { flex-wrap:wrap; row-gap:.5rem; }
+.rrow .rate, .rrow .flagbtn { margin-left:auto; }
+.prow .members { color:var(--ink-2); margin-top:.35rem; }
 .row { display:flex; gap:.7rem; align-items:flex-start; }
 .row.center { align-items:center; }
 .grow { flex:1; min-width:0; }
@@ -187,19 +204,20 @@ a.doc { font-size:.85rem; color:var(--accent); display:inline-flex; align-items:
 .note.tip { background:var(--accent-tint); border-color:#cfe4fb; color:#0a4a8f; }
 .note b { color:var(--ink); }
 
-/* "What to do here" — full guidance on first visit, collapsible to one line
-   once you know the tab. The open/closed choice is remembered per tab in
-   localStorage, so a returning reviewer isn't re-reading the same paragraph. */
-details.howto { background:var(--accent-tint); border:1px solid #cfe4fb; border-radius:var(--radius-sm);
-  color:#0a4a8f; margin:.55rem 0; font-size:.86rem; }
-details.howto > summary { list-style:none; cursor:pointer; padding:.5rem .85rem; display:flex;
-  align-items:center; gap:.45rem; font-weight:600; user-select:none; }
-details.howto > summary::-webkit-details-marker { display:none; }
-details.howto > summary .chev { width:15px; height:15px; flex:none; transition:transform .2s ease; }
-details.howto[open] > summary .chev { transform:rotate(90deg); }
-details.howto[open] > summary { padding-bottom:.15rem; }
-.howto-body { padding:0 .85rem .65rem; }
-.howto-body b { color:#083a70; }
+/* ---- one line of guidance, and one line of progress ----------------------
+   These replace the blue "What to do here" panel and the boxed "8 of 17
+   reviewed by you" note that used to stack above every list. Same information,
+   no border, no background, no toggle: at this size they read as captions and
+   the content starts at the top of the page where it belongs. */
+.hint { margin:.15rem 0 .8rem; font-size:.85rem; color:var(--mut); max-width:56ch; }
+/* Secondary actions — export, print, undo. Text, not buttons: they are things
+   you do once at the end, not the point of the page. */
+.toolline { margin:.1rem 0 .7rem; font-size:.85rem; display:flex; gap:1.1rem; flex-wrap:wrap; }
+.progress { margin:.15rem 0 .6rem; font-size:.85rem; color:var(--mut); }
+.progress b { color:var(--ink); font-weight:600; }
+.pagetitle { font-size:1.25rem; margin:1rem 0 .1rem; }
+.docline { margin:.15rem 0 .7rem; font-size:.85rem; }
+
 .adminbar { display:flex; gap:.55rem; flex-wrap:wrap; align-items:center; margin:.5rem 0 .3rem; }
 
 /* ---- collapsible section ------------------------------------------------- */
@@ -220,12 +238,6 @@ details.section > summary .count { background:var(--bg); color:var(--mut); borde
 
 /* ---- links out ----------------------------------------------------------- */
 a.doc:hover { text-decoration:underline; }
-
-/* One applications-folder link serving the whole candidate list below it. */
-.docsbar { display:flex; align-items:center; gap:.5rem .7rem; flex-wrap:wrap;
-  background:#fbfbfd; border:1px solid var(--line-2); border-radius:var(--radius-sm);
-  padding:.6rem .85rem; margin:.7rem 0 .3rem; }
-.docsbar a.doc { font-size:.9rem; font-weight:600; }
 
 /* ---- pills / badges ------------------------------------------------------ */
 .pill { display:inline-flex; align-items:center; gap:.25rem; border-radius:980px; padding:.14rem .6rem;
@@ -290,13 +302,15 @@ td .name { font-weight:500; }
 .toggle input:focus-visible + .track { box-shadow:var(--ring); }
 
 /* ---- panels -------------------------------------------------------------- */
-.panelbox { background:var(--surface); border:1px solid var(--line-2); border-radius:var(--radius-sm);
-  padding:.85rem .95rem; margin:.55rem 0; box-shadow:var(--shadow); }
+/* A badge is now only ever a fault. Every panel used to wear "✓ 3 members" and
+   "✓ balanced panel", so the page was a column of ticks confirming nothing was
+   wrong — which is the reading that hides a real ✗. */
 .badges { display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.5rem; font-size:.78rem; }
-.badge { border-radius:980px; padding:.16rem .6rem; background:var(--bg); color:var(--mut); font-weight:600; }
-.badge.ok { background:var(--green-tint); color:var(--green); }
+.badge { border-radius:980px; padding:.16rem .6rem; font-weight:600; }
 .badge.bad { background:var(--red-tint); color:var(--red); }
-.legend { font-size:.85rem; color:var(--mut); } .legend b { color:var(--ink); }
+/* Needs attention: the one place on the tab that is allowed to shout. */
+.attention .ahead { color:var(--amber); }
+.attention ul.small li { margin:.45rem 0; }
 ul.small { margin:.4rem 0 0; padding-left:1.2rem; } ul.small li { margin:.3rem 0; }
 .chip { display:inline-block; background:var(--bg); border:1px solid var(--line-2); border-radius:980px;
   padding:.2rem .6rem; font-size:.82rem; margin:.15rem .25rem .15rem 0; }
@@ -325,6 +339,8 @@ ul.small { margin:.4rem 0 0; padding-left:1.2rem; } ul.small li { margin:.3rem 0
 /* ---- responsive ---------------------------------------------------------- */
 @media (max-width:640px) {
   body { font-size:15.5px; }
+  /* the wordmark wrapped onto two lines and pushed everything down */
+  header.page h1, #appHeader h1 { font-size:1.05rem; }
   main { padding:.5rem .8rem 4rem; }
   header#appHeader, header.page, .banner, nav.tabs { padding-left:.8rem; padding-right:.8rem; }
   .card { padding:.85rem .9rem; border-radius:15px; }
@@ -341,7 +357,15 @@ ul.small { margin:.4rem 0 0; padding-left:1.2rem; } ul.small li { margin:.3rem 0
   /* the rotated names need a little more headroom once columns are at minimum */
   .avgrid th.ivcol { height:5.4rem; }
   .collhead .name { width:100%; }
-  .revcard .rate, .revcard .flagbtn { margin-left:auto; }
+  /* A name, five rating buttons and a flag button do not fit across a phone.
+     The name takes the whole first line and the controls drop below it —
+     without this the name column shrinks to nothing and "Dr Nandakumar" is
+     rendered as two clipped lines underneath the buttons. */
+  .rrow .row > .name { flex:1 0 100%; }
+  .rrow .rate { margin-left:0; }
+  .rrow .flagbtn { margin-left:auto; }
+  /* same story on the scoring list and the panel rows */
+  .prow .row > .grow { flex:1 0 100%; }
 }
 
 /* ---- touch targets -------------------------------------------------------
@@ -359,9 +383,10 @@ ul.small { margin:.4rem 0 0; padding-left:1.2rem; } ul.small li { margin:.3rem 0
 }
 @media print {
   nav.tabs, .primary, .btn, .flagbtn, .savebtn, .linky, #toast, .banner, .note.tip,
-  details.howto, .tooltip { display:none !important; }
+  .hint, .tooltip { display:none !important; }
   body { background:#fff; }
-  .card, .panelbox, details.section { box-shadow:none; border:1px solid #ccc; break-inside:avoid; }
+  .card, details.section { box-shadow:none; border:1px solid #ccc; break-inside:avoid; }
+  .list > .rrow, .list > .prow { break-inside:avoid; }
   details.section > .sec-body, details.section .sec-body { display:block !important; }
   a { color:var(--ink); }
 }
@@ -452,7 +477,11 @@ ul.small { margin:.4rem 0 0; padding-left:1.2rem; } ul.small li { margin:.3rem 0
    own (see the .tip/.info note above — that is how this file has been bitten
    before). Every pinned cell sets its own background, or the columns it floats
    over would show through it. */
-.avgrid.demand td.sum, .avgrid.demand th.sum { position:sticky; right:0; z-index:1; background:var(--surface); }
+/* The pinned column floats over the columns scrolling under it, so it needs an
+   edge of its own — otherwise a rotated name slides beneath "Usable" and the
+   two read as one smudge. */
+.avgrid.demand td.sum, .avgrid.demand th.sum { position:sticky; right:0; z-index:1; background:var(--surface);
+  box-shadow:-7px 0 7px -7px rgba(0,0,0,.22); }
 .avgrid.demand th.sum { padding-left:.55rem; }
 /* Same reason for the date: scrolled a few names in, "Thursday, October 1" had
    left the screen and the rows lost the day they belong to. The cell spans the
@@ -522,15 +551,17 @@ td.adj { font-variant-numeric:tabular-nums; color:var(--ink-2); }
 .thinscore { color:var(--amber); font-weight:600; }
 
 /* ---- score tab: candidate picker stays in reach ------------------------- */
-.scorebar { position:sticky; top:3.1rem; z-index:4; }
-@media (max-width:640px) { .scorebar { top:2.6rem; } }
+/* The candidate picker sits at the top of the scoring list. It used to be a
+   sticky bar of its own; inside the list card that made it overlap the first
+   question (a sticky child of an `overflow:hidden` card paints over its
+   siblings), and the page is short enough that it never needed to follow. */
 .scorebar .row { gap:.5rem; }
+.scorebar select { max-width:100%; }
 .scorenav { display:inline-flex; gap:.3rem; }
-.qcard.done { border-left:3px solid var(--green); }
+.qrow.done .q { color:var(--ink); }
 
-/* One reviewer's own screening card: name, priority and flag on a single line
-   so a list of twenty applicants is a page you can scan, not one you scroll. */
-.revcard .row { flex-wrap:wrap; row-gap:.55rem; }
+/* The question text in the scoring list: quiet until it has an answer. */
+.qrow .q { font-weight:500; margin-bottom:.4rem; }
 
 /* ---- "saved on this device only" notice --------------------------------- */
 .note.local { background:#fbfbfd; border-color:var(--line); color:var(--ink-2); }

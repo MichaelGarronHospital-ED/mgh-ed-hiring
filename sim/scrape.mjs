@@ -20,39 +20,45 @@ export async function readPanels(page) {
   const raw = await page.evaluate(() => {
     const txtOf = (el) => (el ? el.textContent.replace(/\s+/g, " ").trim() : "");
     const panels = [];
-    document.querySelectorAll("#panels .panelbox").forEach((box) => {
-      const head = box.querySelector(":scope > .row > .grow");
+    // One ruled list, a `.prow` per panel: name, then "<time> · in person",
+    // then the members. A valid panel carries no badges at all — only faults
+    // are shown — so `badges` being empty is the normal case.
+    document.querySelectorAll("#panels .list > .prow").forEach((row) => {
+      const head = row.querySelector(":scope > .row > .grow");
       if (!head) return;
-      const editBtn = [...box.querySelectorAll("button")]
+      const editBtn = [...row.querySelectorAll("button")]
         .find((b) => /IV\.editPanel\('/.test(b.getAttribute("onclick") || ""));
       const cand = editBtn ? editBtn.getAttribute("onclick").match(/IV\.editPanel\('([^']+)'\)/)[1] : null;
       if (!cand) return;
-      const name = txtOf(head.querySelector("b"));
-      // the bare text node after the name holds " · <time label> "
-      const slotLabel = [...head.childNodes].filter((n) => n.nodeType === 3)
-        .map((n) => n.textContent).join(" ").replace(/\s+/g, " ").replace(/^\s*·\s*/, "").trim();
-      const pills = [...head.querySelectorAll(".pill")].map((p) => p.textContent.trim());
-      const membersEl = box.querySelector(":scope > .small");
+      const meta = txtOf(head.querySelector(".muted"));          // "<time> · in person · edited"
+      const bits = meta.split(" · ");
+      const modality = /in person/.test(meta) ? "ip" : /Zoom/i.test(meta) ? "zoom" : null;
       panels.push({
-        cand, name, slotLabel,
-        modality: pills.includes("In-person") ? "ip" : pills.includes("Zoom") ? "zoom" : null,
-        manual: pills.includes("manual"),
-        members: txtOf(membersEl).split("·").map((s) => s.trim()).filter(Boolean),
-        badges: [...box.querySelectorAll(".badge")].map((b) => b.textContent.trim()),
+        cand,
+        name: txtOf(head.querySelector(".name")),
+        slotLabel: bits.slice(0, 2).join(" · "),                  // "Thu, Oct 1 · 9:00–10:00 am"
+        modality,
+        manual: /· edited/.test(meta),
+        members: txtOf(row.querySelector(":scope > .members")).split("·").map((s) => s.trim()).filter(Boolean),
+        badges: [...row.querySelectorAll(".badge")].map((b) => b.textContent.trim()),
       });
     });
+    // Identical causes are grouped into one line with every name in it, so a
+    // line can carry several ids.
     const attention = { unschedulable: [], understaffed: [], doubleBooked: [], lostTime: [], reasons: {} };
-    const card = [...document.querySelectorAll("#panels .card")]
-      .find((c) => /Needs attention/.test(c.textContent));
+    const card = document.querySelector("#panels .card.attention");
     if (card) card.querySelectorAll("li").forEach((li) => {
       const t = li.textContent.replace(/\s+/g, " ").trim();
       const ids = [...li.querySelectorAll("button")]
         .map((b) => (b.getAttribute("onclick") || "").match(/IV\.(?:editPanel|clearOverride)\('([^']+)'\)/))
         .filter(Boolean).map((m) => m[1]);
-      if (/booked at the same time/.test(t)) attention.doubleBooked.push({ text: t, ids });
-      else if (/time that has since been removed/.test(t)) attention.lostTime.push(ids[0]);
-      else if (/not enough available interviewers/.test(t)) attention.understaffed.push(t.split(" — ")[0].trim());
-      else if (ids.length) { attention.unschedulable.push(ids[0]); attention.reasons[ids[0]] = t; }
+      const add = (id) => { attention.unschedulable.push(id); attention.reasons[id] = t; };
+      if (/applicants at once/.test(t)) attention.doubleBooked.push({ text: t, ids });
+      else if (/no longer exists/.test(t)) attention.lostTime.push(ids[0]);
+      else if (/nobody can staff/.test(t)) {
+        // each time is its own <span>: the labels contain commas themselves
+        li.querySelectorAll(".tm").forEach((el) => attention.understaffed.push(el.textContent.trim()));
+      } else ids.forEach(add);
     });
     return { panels, attention, empty: /No panels yet/.test(document.querySelector("#panels").textContent) };
   });

@@ -415,49 +415,40 @@ function wireSections() {
   document.querySelectorAll("details.section").forEach((d) => {
     d.addEventListener("toggle", () => { ui.openSections[d.dataset.sec] = d.open; });
   });
-  document.querySelectorAll("details.howto").forEach((d) => {
-    d.addEventListener("toggle", () => setHowto(d.dataset.howto, d.open));
-  });
 }
 
-// ---- "What to do here" ----------------------------------------------------
-// The guidance a first-time reviewer needs is a paragraph; the fifth time it is
-// noise above every tab. So it collapses to one line and REMEMBERS that choice
-// across sessions (localStorage, per tab) — unlike the section state, which is
-// deliberately per-render only. Open by default: someone who has never used the
-// tab should never have to go looking for the instructions.
-const HOWTO_KEY = "ed_iv_howto_v1";
-let howtoState = null;
-function howtoAll() {
-  if (howtoState) return howtoState;
-  try { howtoState = JSON.parse(ls.get(HOWTO_KEY) || "{}") || {}; }
-  catch { howtoState = {}; }
-  return howtoState;
-}
-function setHowto(id, open) {
-  howtoAll()[id] = open;
-  ls.set(HOWTO_KEY, JSON.stringify(howtoState));
-}
-function howto(id, bodyHtml, label = "What to do here") {
-  const open = howtoAll()[id] !== false;
-  const chev = `<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>`;
-  return `<details class="howto" data-howto="${id}" ${open ? "open" : ""}>
-    <summary>${chev}${escapeHtml(label)}</summary><div class="howto-body">${bodyHtml}</div></details>`;
-}
+// ---- the one line of guidance a tab gets ----------------------------------
+// Every tab used to open with a blue "What to do here" panel of three or four
+// sentences, on top of a notice, on top of the content. Three paragraphs of
+// instructions above a list of names is not a page anyone reads twice, and it
+// pushed the actual work below the fold on a phone.
+//
+// What survives is one quiet sentence under the tab bar: enough for a first
+// visit, invisible enough for the fiftieth. Anything longer belongs on the ⓘ
+// beside the thing it explains, where it is asked for rather than announced.
+const hint = (text) => `<p class="hint">${text}</p>`;
 const empty = (ico, title, msg) =>
   `<div class="empty"><div class="ico" aria-hidden="true">${ico}</div><h4>${escapeHtml(title)}</h4><p>${escapeHtml(msg)}</p></div>`;
 
+// The deadline bar is a countdown, so it belongs on screen while there is
+// something to count down to. It used to stay up afterwards — "Screening
+// deadline (Sep 23) has passed" on every tab, every day, for the rest of the
+// round — which is a fact nobody can act on sitting above work everybody has
+// to. It now shows from a fortnight out until the day itself, and then stops.
+//
+// The `past` class stays defined and pinned by tests/css-collisions: it is one
+// `if` away from coming back, and the next person to want it must not have to
+// rediscover why a banner modifier can never be a utility class.
+const BANNER_LEAD_DAYS = 14;
 function renderBanner() {
   const el = $("#banner"); if (!el) return;
   const d = daysUntil(SCREENING_DEADLINE);
-  if (d == null || S.meta.interviewsComplete) { el.classList.add("hidden"); el.innerHTML = ""; return; }
+  const hide = d == null || d < 0 || d > BANNER_LEAD_DAYS || S.meta.interviewsComplete;
+  if (hide) { el.classList.add("hidden"); el.innerHTML = ""; return; }
   let cls = "banner", txt;
   const date = new Date(SCREENING_DEADLINE + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
   if (d > 0) { txt = `<b>Screening closes in ${d} day${d === 1 ? "" : "s"}</b> — due ${date}.`; if (d <= 3) cls += " urgent"; }
-  else if (d === 0) { txt = `<b>Screening closes today</b> (${date}).`; cls += " urgent"; }
-  // "past", never "info": `.info` is the 16px round badge, and this line sets
-  // the banner's whole className (see the note in styles.css).
-  else { txt = `Screening deadline (${date}) has passed.`; cls += " past"; }
+  else { txt = `<b>Screening closes today</b> (${date}).`; cls += " urgent"; }
   el.className = cls;
   el.innerHTML = `<div class="inner"><span aria-hidden="true">🗓️</span><span>${txt}</span></div>`;
 }
@@ -576,39 +567,38 @@ function hiddenInput() {
 // replayed from this browser's mirror — which looks blank on a second device
 // even though every answer is safely recorded. Say so, rather than let it read
 // as lost work.
+// It used to be a boxed paragraph at the top of the tab. It is a count — the
+// only part anyone reads — with the explanation moved onto the ⓘ, which is
+// where a reader asks for it instead of being handed it every visit. Nothing is
+// dropped: the write-only story below is the same text, and it still appears in
+// full for the one case that could look like lost work.
 function myInputNotice(list, get, deviceOnly) {
   if (!list.length || (deviceOnly && !ui.echoOnly)) return "";
   const has = (r) => !!r && !!(r.flag || r.rating || r.overall ||
     (r.notes && Object.values(r.notes).some((t) => String(t || "").trim())));
   const done = list.filter((c) => has(get(c))).length;
-  if (!deviceOnly) {
-    // Only claim "any device" once the server has actually answered. Until the
-    // hardened rules are published the read is refused, and promising something
-    // the app can't do is worse than saying nothing.
-    const anywhere = !store || store.screeningReadBack !== false;
-    return `<div class="note local"><b>${done} of ${list.length}</b> reviewed by you.
-      ${anywhere
-        ? `Your flags and ratings follow you — sign in on any device, pick your name, and they'll be here.`
-        : `Saved to leadership the moment you tap. This browser remembers your own answers; on another
-           device they'll look blank until leadership finishes the setup.`}
-      Only leadership can see everyone's together.</div>`;
-  }
-  return `<div class="note local"><b>${done} of ${list.length}</b> scored on this device.
-    Everything you tap is saved to leadership immediately. Scores are deliberately write-only —
-    nobody on the committee can read anyone's back, which is what stops the ranking leaking
-    mid-process — so this page replays <b>your</b> answers from <b>this browser</b>. On another
-    device they'll look blank; that is the privacy model, not lost work.${done ? "" :
-      " If you know you scored somewhere else, check with leadership before re-entering it."}</div>`;
+  // Only claim "any device" once the server has actually answered. Until the
+  // hardened rules are published the read is refused, and promising something
+  // the app can't do is worse than saying nothing.
+  const anywhere = !store || store.screeningReadBack !== false;
+  const why = deviceOnly
+    ? "Everything you tap is saved to leadership immediately. Scores are deliberately write-only — "
+      + "nobody on the committee can read anyone's back, which is what stops the ranking leaking "
+      + "mid-process — so this page replays your answers from this browser. On another device they "
+      + "will look blank; that is the privacy model, not lost work."
+    : anywhere
+      ? "Saved to leadership as you tap. Your own flags and ratings follow you: sign in on any device, "
+        + "pick your name, and they are here. Only leadership sees everyone's together."
+      : "Saved to leadership as you tap. This browser remembers your own answers; on another device "
+        + "they will look blank until leadership finishes the setup.";
+  return `<p class="progress"><b>${done} of ${list.length}</b> ${deviceOnly ? "scored" : "reviewed"}${infoIcon(why)}</p>`;
 }
 
 // ------------------------------------------------------------ 1 · Screen
 function renderScreen() {
   const me = ui.member;
   const { committee, oneDrive } = EFF();
-  let html = howto("screen", `Open the applications folder to read each applicant's CV &amp; cover letter, then
-    <b>flag</b> anyone you feel isn't qualified (add a short reason). You can also give an optional
-    <b>1–5 priority</b>. Your input goes to leadership, who see everyone's side by side; the app never
-    shows one reviewer another's flags or ratings.`);
+  let html = hint("Flag anyone you feel isn't qualified. Priority is optional.");
 
   if (ui.isAdmin) {
     const submitted = new Set();
@@ -647,9 +637,10 @@ function renderScreen() {
       const st = screenStats(c.id);
       const fc = st.flags.length;
       // distinguish admin-removed from flag-excluded, so "restore" isn't a confusing no-op
+      // A pill only where the status is NOT the expected one. Seventeen green
+      // "interview" pills say nothing and bury the two that matter.
       const statusPill = c.removed ? '<span class="pill out">removed</span>'
-        : fc >= 2 ? '<span class="pill out">excluded · flags</span>'
-        : '<span class="pill in">interview</span>';
+        : fc >= 2 ? '<span class="pill out">excluded · flags</span>' : "";
       const action = c.removed
         ? `<button class="linky" onclick="IV.removeCand('${c.id}',false)">restore</button>`
         : `<button class="linky danger" onclick="IV.removeCand('${c.id}',true)">remove</button>`;
@@ -676,22 +667,19 @@ function renderScreen() {
         </details>` : "";
       return `<div class="collrow ${fc >= 2 || c.removed ? "out" : ""}">
         <div class="collhead"><span class="name">${escapeHtml(c.name)}</span>${statusPill}<span class="spacer"></span>${action}</div>
-        <div class="collmeta">
-          <span class="metric ${fc >= 2 ? "flagged" : ""}" data-tip="${fc ? escapeHtml(st.flags.map((f) => f.who).join(", ")) + " flagged this applicant." : "Nobody has flagged this applicant."} Two or more flags take them off the interview list.">
-            <b>${fc}</b> flag${fc === 1 ? "" : "s"}</span>
-          <span class="metric" data-tip="${escapeHtml(rateTip)}"><span aria-hidden="true">★</span>
-            <b>${st.avg == null ? "—" : st.avg.toFixed(1)}</b> avg priority
-            <span class="denom ${thin ? "thin" : ""}">${st.n} of ${st.of} rated</span></span>
+        ${fc || st.n ? `<div class="collmeta">
+          ${fc ? `<span class="metric ${fc >= 2 ? "flagged" : ""}" data-tip="${escapeHtml(st.flags.map((f) => f.who).join(", "))} flagged this applicant. Two or more flags take them off the interview list.">
+            <b>${fc}</b> flag${fc === 1 ? "" : "s"}</span>` : ""}
+          ${st.n ? `<span class="metric" data-tip="${escapeHtml(rateTip)}"><span aria-hidden="true">★</span>
+            <b>${st.avg.toFixed(1)}</b>
+            <span class="denom ${thin ? "thin" : ""}">from ${st.n} of ${st.of}</span></span>` : ""}
           ${raters}
-        </div>${reasons}</div>`;
+        </div>` : ""}${reasons}</div>`;
     }).join("");
 
-    const collation = `<div class="note">A candidate drops off the interview list at <b>≥2 flags</b> (last year's rule).
-        Flag reasons are attributed here and visible to <b>leadership only</b>.
-        <b>Avg priority</b> is the plain mean of the ratings that were submitted — hover it to see how many.</div>
-      ${S.candidates.length > 1 ? sortBar : ""}
+    const collation = `${S.candidates.length > 1 ? sortBar : ""}
       <div class="collist">${rows || empty("📝", "No candidates yet", "Add applicants below to start screening.")}</div>
-      <div class="adminbar"><button class="btn tinted small" onclick="IV.exportShortlist()"><span aria-hidden="true">⬇︎</span> Export shortlist (CSV)</button></div>`;
+      <p class="toolline"><button class="linky" onclick="IV.exportShortlist()">Export shortlist (CSV)</button></p>`;
 
     const hidden = hiddenInput();
     const part = (n, w) => (n ? `${n} ${w}${n === 1 ? "" : "s"}` : "");
@@ -721,8 +709,7 @@ function renderScreen() {
       input already given under the new entry). To fix a spelling in future use
       <code>scripts/rename-candidate.mjs</code>, which keeps the id, instead of removing and re-adding.</div>
     </div>`;
-    const dash = `<div class="note">Chase anyone who hasn't submitted before the deadline.</div>
-      <p><b>${submitted.size}/${committee.length}</b> members have submitted screening.</p>
+    const dash = `<p><b>${submitted.size}/${committee.length}</b> members have submitted screening.</p>
       ${notYet.length ? `<p class="muted small">Waiting on:</p><div>${notYet.map((n) => `<span class="chip">${escapeHtml(n)}</span>`).join("")}</div>`
         : `<p class="ok small">✓ Everyone has submitted.</p>`}
       ${hiddenBlock}`;
@@ -733,7 +720,7 @@ function renderScreen() {
       <div style="margin-top:.5rem"><button class="btn tinted small" onclick="IV.addCands(this)">Add candidates</button></div>`;
 
     html += section("collation", "Collation & shortlist", `${activeCands().length} of ${S.candidates.length} still in`, collation,
-        { open: false, count: S.candidates.length, info: "Everyone's flags and priority ratings, collated. A candidate drops off the interview list at 2 or more flags. Reasons are visible to leadership only. Export the shortlist as a CSV here." })
+        { open: false, info: "Everyone's flags and priority ratings, collated. A candidate drops off the interview list at 2 or more flags. Reasons are visible to leadership only. Export the shortlist as a CSV here." })
       + section("dash", "Coordinator dashboard", `${submitted.size}/${committee.length} submitted`, dash,
         { open: false, info: "Track who has and hasn't submitted their screening, so you can chase people before the deadline.", count: hidden.entries.length ? "⚠" : null })
       + section("adder", "Add candidates", "", adder,
@@ -746,33 +733,29 @@ function renderScreen() {
   const toReview = S.candidates.filter((c) => !c.removed).sort((a, b) => a.name.localeCompare(b.name));
   html += myInputNotice(toReview, (c) => S.screening[key(me, c.id)]);
 
-  // One OneDrive folder holds every applicant's files, so the link is the same
-  // on every candidate. It sits once above the list rather than repeating
-  // identically down the page.
-  const docsBar = !toReview.length ? ""
-    : oneDrive === "#"
-      ? `<div class="docsbar"><span class="muted small"><span aria-hidden="true">📄</span>
-          Applications folder isn't set up yet — leadership adds it in Setup.</span></div>`
-      : `<div class="docsbar">
-          <a class="doc" href="${escapeHtml(oneDrive)}" target="_blank" rel="noopener"><span aria-hidden="true">📄</span> View CVs &amp; cover letters</a>
-          <span class="muted small">Same folder for every applicant below.</span>
-          <span class="spacer" style="flex:1"></span>
-          <span class="muted small">priority 1 (low) – 5 (high), optional</span></div>`;
+  // The link to the applications folder, once, as a line of text. When it isn't
+  // set there is nothing here at all: a grey box telling a reviewer that
+  // leadership hasn't done something they cannot do themselves is pure noise.
+  const docsBar = toReview.length && oneDrive !== "#"
+    ? `<p class="docline"><a href="${escapeHtml(oneDrive)}" target="_blank" rel="noopener">CVs &amp; cover letters</a></p>` : "";
 
-  html += docsBar + toReview.map((c) => {
+  // Seventeen applicants used to be seventeen bordered cards. One list, ruled
+  // between rows: the same information, a quarter of the ink, and the eye can
+  // follow a column of names instead of hopping between boxes.
+  const rows = toReview.map((c) => {
     const sc = S.screening[key(me, c.id)] || {};
     const flagged = !!sc.flag;
-    // Name, priority and flag on one line. The repeated "Optional priority"
-    // label is carried by the column hint above the list instead of being
-    // restated on every card — with twenty applicants that was most of the page.
-    return `<div class="card revcard">
-      <div class="row center"><div class="grow"><div class="name">${escapeHtml(c.name)}</div></div>
+    return `<div class="rrow${flagged ? " flagged" : ""}">
+      <div class="row center"><div class="grow name">${escapeHtml(c.name)}</div>
         <div class="rate" role="group" aria-label="Priority rating for ${escapeHtml(c.name)}">${[1, 2, 3, 4, 5].map((n) => `<button class="${sc.rating === n ? "on" : ""}" aria-pressed="${sc.rating === n}" onclick="IV.rate('${c.id}',${n})">${n}</button>`).join("")}</div>
-        <button class="flagbtn ${flagged ? "on" : ""}" aria-pressed="${flagged}" onclick="IV.toggleFlag('${c.id}')">${flagged ? '<span aria-hidden="true">⚑</span> Flagged' : "Flag concern"}</button></div>
-      ${flagged ? `<textarea id="rsn-${c.id}" placeholder="Why? (optional, seen by leadership only)" aria-label="Reason">${escapeHtml(sc.reason || "")}</textarea>
+        <button class="flagbtn ${flagged ? "on" : ""}" aria-pressed="${flagged}" aria-label="Flag ${escapeHtml(c.name)}" onclick="IV.toggleFlag('${c.id}')">${flagged ? '<span aria-hidden="true">⚑</span> Flagged' : "Flag"}</button></div>
+      ${flagged ? `<textarea id="rsn-${c.id}" placeholder="Why? (optional, leadership only)" aria-label="Reason">${escapeHtml(sc.reason || "")}</textarea>
         <div style="margin-top:.4rem"><button class="savebtn" onclick="IV.saveReason('${c.id}',this)">Save reason</button></div>` : ""}
     </div>`;
-  }).join("") || (ui.isAdmin ? "" : empty("📝", "Nothing to screen yet", "Applicants will appear here once leadership adds them."));
+  }).join("");
+
+  html += docsBar + (rows ? `<div class="card flush list">${rows}</div>`
+    : ui.isAdmin ? "" : empty("📝", "Nothing to screen yet", "Applicants will appear here once leadership adds them."));
   $("#screen").innerHTML = html;
 }
 
@@ -846,10 +829,7 @@ function availGrid() {
     <span><i class="sw either">E</i> either</span><span><i class="sw no"></i> not available</span>
     <span class="muted small">★ chair · hover any square for the name</span></div>`;
 
-  return `<div class="note tip" style="margin-bottom:.6rem">Every interviewer against every time.
-      The <b>Panel</b> column says whether a balanced panel could actually run then — it uses the same
-      rules as the Panels tab, so a ✓ here means a panel really is possible.</div>
-    <div class="gridwrap"><table class="avgrid"><thead>${head}</thead><tbody>${body}</tbody></table></div>${legend}`;
+  return `<div class="gridwrap"><table class="avgrid"><thead>${head}</thead><tbody>${body}</tbody></table></div>${legend}`;
 }
 
 // ------------------------------------- applicant availability at a glance
@@ -958,10 +938,7 @@ function candGrid() {
     <span><i class="sw either booked">E</i> interviewing then</span>
     <span class="muted small">hover any square for the name</span></div>`;
 
-  return `<div class="note tip" style="margin-bottom:.6rem">Every applicant against every time — what they
-      said they can do, with their interview ringed. The <b>Usable</b> column counts the applicants who
-      offered that hour and says whether a panel could actually run then.</div>
-    ${capacity}
+  return `${capacity}
     <div class="gridwrap"><table class="avgrid demand"><thead>${head}</thead><tbody>${body}${foot}</tbody></table></div>${legend}`;
 }
 
@@ -969,36 +946,40 @@ function candGrid() {
 function renderAvailability() {
   const map = S.availIv[ui.member] || {};
   const slots = EFF().slots;
-  let html = howto("availability", `For each interview time, tap whether you <b>can</b> do it
-    in person, by Zoom, or either. Leave a time untouched if you're not available. Tap a highlighted option again to clear it.
-    <b>Your choices save automatically</b> (watch the “✓ Saved” note at the top).`);
+  let html = hint("Tap how you can do each time you're free. Tap again to clear.");
   html += slots.length
-    ? `<div class="card"><div class="slotgrid"><div class="h">Interview time</div><div class="h">I can do…</div>${slotRows(slots, map, "IV.avail")}</div></div>`
+    ? `<div class="card"><div class="slotgrid">${slotRows(slots, map, "IV.avail")}</div></div>`
     : empty("🗓️", "No interview times yet", ui.isAdmin ? "Add interview times in Setup (the gear icon)." : "Leadership hasn't published the interview times yet — check back soon.");
 
-  // Everyone on the committee sees the grid — an interviewer choosing times is
-  // far better informed knowing which times are thin.
+  // There used to be three sections here — both grids and a separate
+  // "Availability dashboard" whose whole content was who hadn't answered. That
+  // is one line per grid, so it lives in the grid it is about, and the section
+  // is gone. Each header carries its own count, so a closed section still
+  // answers "how far along is this?" without being opened.
+  const { committee } = EFF();
+  const ivIn = committee.filter((m) => liveAnswers(S.availIv[m.name]).length).length;
+  const waiting = (names) => names.length
+    ? `<p class="small muted" style="margin-top:.7rem">Waiting on ${names.map((n) => escapeHtml(n)).join(", ")}</p>`
+    : `<p class="small ok" style="margin-top:.7rem">✓ everyone has answered</p>`;
+
   const grid = availGrid();
-  if (grid) html += section("avgrid", "Who's available when", "interviewers", grid, { open: true });
+  if (grid) {
+    const ivNot = committee.filter((m) => !liveAnswers(S.availIv[m.name]).length).map((m) => m.name);
+    html += section("avgrid", "Who's available when", `${ivIn} of ${committee.length} interviewers`,
+      grid + waiting(ivNot),
+      { open: !ui.isAdmin,
+        info: "Every interviewer against every interview time. The Panel column says whether a balanced panel could actually run then — it uses the same rules as the Panels tab, so a ✓ there means a panel really is possible." });
+  }
 
   if (ui.isAdmin) {
-    // The applicant side of the same picture. Admin only, like the dashboard
-    // below it: it is a coordination view, and it names every applicant.
+    const cands = activeCands();
+    const candIn = cands.filter((c) => liveAnswers(availForCand(c)).length).length;
+    const candNot = cands.filter((c) => !liveAnswers(availForCand(c)).length).map((c) => c.name);
     const cg = candGrid();
-    if (cg) html += section("candgrid", "When can the applicants come", "applicants", cg,
-      { open: true, info: "Every applicant against every interview time, with the interview each one is currently scheduled for ringed. The Usable column shows how many applicants offered that hour and whether a balanced panel could run then — which is where to add times." });
-
-    const { committee } = EFF();
-    const ivSubmitted = committee.filter((m) => liveAnswers(S.availIv[m.name]).length);
-    const ivNot = committee.filter((m) => !liveAnswers(S.availIv[m.name]).length).map((m) => m.name);
-    const candWith = activeCands().filter((c) => liveAnswers(availForCand(c)).length);
-    const candNot = activeCands().filter((c) => !liveAnswers(availForCand(c)).length).map((c) => c.name);
-    const dash = `<div class="note">Who still needs to send their availability. Chase before you build panels.</div>
-      <p><b>Interviewers:</b> ${ivSubmitted.length}/${committee.length} submitted.
-        ${ivNot.length ? `<br><span class="muted small">Waiting on:</span> ${ivNot.map((n) => `<span class="chip">${escapeHtml(n)}</span>`).join("")}` : '<span class="ok small">✓ all in</span>'}</p>
-      <p style="margin-top:.6rem"><b>Applicants:</b> ${candWith.length}/${activeCands().length} submitted.
-        ${candNot.length ? `<br><span class="muted small">Waiting on:</span> ${candNot.map((n) => `<span class="chip">${escapeHtml(n)}</span>`).join("")}` : '<span class="ok small">✓ all in</span>'}</p>`;
-    html += section("availdash", "Availability dashboard", `interviewers & applicants`, dash, { open: true });
+    if (cg) html += section("candgrid", "When can the applicants come", `${candIn} of ${cands.length} applicants`,
+      cg + waiting(candNot),
+      { open: true,
+        info: "Every applicant against every interview time, with the interview each one is currently scheduled for ringed. The Usable column shows how many applicants offered that hour and whether a balanced panel could run then — which is where to add times." });
   }
   $("#availability").innerHTML = html;
 }
@@ -1006,9 +987,7 @@ function renderAvailability() {
 // ------------------------------------------------------------- 3 · Score
 function renderScore() {
   const list = activeCands().slice().sort((a, b) => a.name.localeCompare(b.name));
-  const head = howto("score", `After each interview, jot notes per question, then give
-    <b>one overall 1–5 rating</b> using the guide at the bottom. Your score is private to you and leadership.
-    <b>Notes and ratings save automatically</b> — you'll see “✓ Saved” appear at the top each time.`);
+  const head = hint("Notes per question, then one overall rating.");
   if (!list.length) { $("#score").innerHTML = head + empty("⭐️", "No candidates to score", "Candidates on the interview list will appear here."); return; }
   if (!ui.scoreCand || !list.some((c) => c.id === ui.scoreCand)) ui.scoreCand = list[0].id;
   const me = ui.member, cid = ui.scoreCand;
@@ -1020,22 +999,29 @@ function renderScore() {
     : `<button class="btn ghost small" disabled aria-hidden="true">${d < 0 ? "‹" : "›"}</button>`; };
   // A "scored" tick in the picker turns thirteen identical names into a
   // progress list — the reviewer can see at a glance who they still owe.
+  // One card for the whole interview — picker, questions, rating — ruled
+  // between the parts instead of five separate boxes with five borders. The
+  // full 1–5 scale is on the ⓘ; the label for the score you actually gave is
+  // printed under the buttons, which is the only one that matters at the time.
+  const scaleText = SCALE.map((s, i) => `${i + 1} — ${s}`).join(" · ");
   $("#score").innerHTML = head
     + myInputNotice(list, (c) => S.scores[key(me, c.id)], true)
-    + `<div class="card scorebar"><div class="row center"><div class="muted small">Scoring</div>
-      <select class="grow" onchange="IV.pickScore(this.value)" aria-label="Candidate to score">${list.map((c) =>
-        `<option value="${c.id}" ${c.id === cid ? "selected" : ""}>${escapeHtml(c.name)}${scored(c) ? " ✓" : ""}</option>`).join("")}</select>
-      <span class="scorenav">${jump(-1)}${jump(1)}</span></div>
-      <div class="muted small" style="margin-top:.4rem">${list.filter(scored).length} of ${list.length} scored by you${
-        rec.overall ? "" : " · this one isn't yet"}</div></div>
-    ${QUESTIONS.map((q, i) => { const filled = String((rec.notes || {})[i] || "").trim();
-      // numbered from 1 for the human reading it; the note itself is still
-      // keyed by the array index, so nothing saved moves.
-      return `<div class="card qcard ${filled ? "done" : ""}"><div class="small muted">Question ${i + 1} of ${QUESTIONS.length}</div><div>${escapeHtml(q)}</div>
-      <textarea oninput="IV.note(${i},this.value)" placeholder="Notes" aria-label="Notes for question ${i + 1}">${escapeHtml((rec.notes || {})[i] || "")}</textarea></div>`; }).join("")}
-    <div class="card"><b>Overall rating</b>
-      <div class="rate" role="group" aria-label="Overall rating" style="margin:.6rem 0">${[1, 2, 3, 4, 5].map((n) => `<button class="${rec.overall === n ? "on" : ""}" aria-pressed="${rec.overall === n}" onclick="IV.score(${n})">${n}</button>`).join("")}</div>
-      <div class="legend">${SCALE.map((s, i) => `<div style="margin:.35rem 0"><b>${i + 1}</b> — ${escapeHtml(s)}</div>`).join("")}</div></div>
+    + `<div class="card flush list">
+      <div class="prow scorebar"><div class="row center">
+        <select class="grow" onchange="IV.pickScore(this.value)" aria-label="Candidate to score">${list.map((c) =>
+          `<option value="${c.id}" ${c.id === cid ? "selected" : ""}>${escapeHtml(c.name)}${scored(c) ? " ✓" : ""}</option>`).join("")}</select>
+        <span class="scorenav">${jump(-1)}${jump(1)}</span></div></div>
+      ${QUESTIONS.map((q, i) => {
+        const filled = String((rec.notes || {})[i] || "").trim();
+        // numbered from 1 for the human reading it; the note itself is still
+        // keyed by the array index, so nothing saved moves.
+        return `<div class="prow qrow ${filled ? "done" : ""}"><div class="q">${escapeHtml(q)}</div>
+          <textarea oninput="IV.note(${i},this.value)" placeholder="Notes" aria-label="Notes for question ${i + 1}">${escapeHtml((rec.notes || {})[i] || "")}</textarea></div>`;
+      }).join("")}
+      <div class="prow"><div class="row center"><div class="grow name">Overall rating${infoIcon(scaleText)}</div>
+        <div class="rate" role="group" aria-label="Overall rating">${[1, 2, 3, 4, 5].map((n) => `<button class="${rec.overall === n ? "on" : ""}" aria-pressed="${rec.overall === n}" onclick="IV.score(${n})">${n}</button>`).join("")}</div></div>
+        ${rec.overall ? `<div class="small muted" style="margin-top:.45rem">${rec.overall} — ${escapeHtml(SCALE[rec.overall - 1] || "")}</div>` : ""}</div>
+    </div>
     ${GUIDE.length ? section("guide", "Guidance for panelists", "", `<ul class="small">${GUIDE.map((g) => `<li>${escapeHtml(g)}</li>`).join("")}</ul>`) : ""}`;
 }
 
@@ -1184,22 +1170,62 @@ function unschedulableLine(id, res) {
   return `${who} — no time they can do yields a balanced panel.`;
 }
 
+// Everything that still needs a decision, in as few lines as it takes.
+//
+// It used to be one bullet per applicant, and with fourteen people still to
+// answer that was fourteen copies of the same sentence — a wall that reads as
+// "lots is broken" when the truth is "one thing is, thirteen times". Identical
+// causes are now one line with the names in it, and a cause with nothing in it
+// prints nothing at all.
+function needsAttention(res) {
+  const nameOf = (id) => (cand(id) || {}).name || id;
+  const shortName = (id) => String(nameOf(id)).replace(/^Dr\.?\s+/i, "");
+  const editLink = (id, label) => `<button class="linky" onclick="IV.editPanel('${id}')">${escapeHtml(label)}</button>`;
+  const by = (r) => res.unschedulable.filter((id) => ((res.why[id] || {}).reason || "no-panel") === r);
+
+  const items = [];
+  res.doubleBooked.forEach((d) => items.push(
+    `<b>${escapeHtml(slotName(d.slot))}</b> has ${d.cands.length} applicants at once —
+     ${d.cands.map((id) => editLink(id, shortName(id))).join(", ")}. Move one.`));
+  res.lostTime.forEach((id) => items.push(
+    `<b>${escapeHtml(nameOf(id))}</b>'s hand-picked time no longer exists — showing the suggestion instead.
+     <button class="linky" onclick="IV.clearOverride('${id}')">dismiss</button>`));
+
+  // the common bulk case: people who simply haven't answered yet
+  const silent = by("no-answer");
+  if (silent.length) items.push(
+    `<b>${silent.length} applicant${silent.length === 1 ? " hasn't" : "s haven't"} picked any times yet</b> —
+     ${silent.map((id) => editLink(id, shortName(id))).join(", ")}`);
+
+  // the two specific cases keep their own line, because the fix differs per person
+  by("no-panel").forEach((id) => items.push(`${unschedulableLine(id, res)} ${editLink(id, "set a time")}`));
+  by("contested").forEach((id) => items.push(`${unschedulableLine(id, res)} ${editLink(id, "set a time")}`));
+
+  if (res.understaffed.length) items.push(
+    `<b>${res.understaffed.length} time${res.understaffed.length === 1 ? "" : "s"}</b> nobody can staff a balanced panel for —
+     ${res.understaffed.map((s) => `<span class="tm">${escapeHtml(slotName(s))}</span>`).join(", ")}`);
+
+  if (!items.length) return "";
+  const openEditor = res.unschedulable.filter((id) => ui.editPanel === id)
+    .map((id) => `<div class="prow open">${panelEditor({ cand: id, slot: null, members: [] })}</div>`).join("");
+  return `<div class="card attention"><b class="ahead"><span aria-hidden="true">⚠</span> Needs attention</b>
+    <ul class="small">${items.map((t) => `<li>${t}</li>`).join("")}</ul>${openEditor}</div>`;
+}
+
 function renderPanels() {
   const { committee, chair, slots, overrides } = EFF();
   const nameOf = (id) => (cand(id) || {}).name || id;
   const modPill = (m) => `<span class="pill ${m === "ip" ? "ip" : "zoom"}">${m === "ip" ? "In-person" : "Zoom"}</span>`;
   const res = computePanels();
 
-  let html = howto("panels", `The tool builds a suggested, balanced interview panel for each
-    applicant from everyone's availability. Review them, tap <b>Edit</b> to adjust any panel by hand, and fix anything under
-    “Needs attention”. Panels are one candidate per time slot.`);
+  let html = hint("Suggested panels, one applicant per time. Edit any of them by hand.");
   if (!EFF().slots.length) { $("#panels").innerHTML = html + empty("🗓️", "No interview times yet", "Add interview times in Setup, then collect availability."); return; }
 
-  html += `<div class="adminbar">
-    <button class="btn tinted small" onclick="IV.exportSchedule()"><span aria-hidden="true">⬇︎</span> Export schedule (CSV)</button>
-    <button class="btn ghost small" onclick="IV.printSchedule()"><span aria-hidden="true">🖨</span> Print</button>
-    ${Object.keys(overrides).length ? `<button class="btn ghost small" onclick="IV.clearOverrides(this)"><span aria-hidden="true">↺</span> Reset manual edits</button>` : ""}
-  </div>`;
+  html += `<p class="toolline">
+    <button class="linky" onclick="IV.exportSchedule()">Export CSV</button>
+    <button class="linky" onclick="IV.printSchedule()">Print</button>
+    ${Object.keys(overrides).length ? `<button class="linky" onclick="IV.clearOverrides(this)">Undo my edits</button>` : ""}
+  </p>`;
 
   // Who is actually doing the interviews. Counted from the panels ON SCREEN —
   // auto and manual together — rather than from the builder's own tally, because
@@ -1232,31 +1258,33 @@ function renderPanels() {
         info: "How the interviewing is shared out. The chair is on every panel by rule; the remaining seats go to whoever has done fewest so far, subject to who is actually available and keeping every panel balanced." });
   }
 
-  html += res.panels.map((p) => {
+  // A valid panel says nothing about itself. Every one of them used to carry
+  // "✓ 3 members" and "✓ balanced panel", so the page was a column of green
+  // ticks confirming that nothing was wrong — which is exactly the reading that
+  // makes a real ✗ invisible. Badges now appear only when something IS wrong.
+  const panelRows = res.panels.map((p) => {
     const editing = ui.editPanel === p.cand;
     const v = p.valid || validatePanel(p.members, p.slot, p.modality);
-    let card = `<div class="panelbox"><div class="row center"><div class="grow"><b>${escapeHtml(nameOf(p.cand))}</b> · ${escapeHtml(slotName(p.slot))} ${modPill(p.modality)} ${p.manual ? '<span class="pill neutral">manual</span>' : ""}</div>
-      <button class="btn ghost small" onclick="IV.editPanel('${p.cand}')">${editing ? "Close" : "Edit"}</button></div>
-      <div class="small" style="margin-top:.4rem">${p.members.map(escapeHtml).join(" · ")}</div>
-      <div class="badges"><span class="badge ${v.sizeOk ? "ok" : "bad"}">${v.sizeOk ? "✓" : "✗"} ${v.size} member${v.size === 1 ? "" : "s"}</span>
-        <span class="badge ${v.balanced ? "ok" : "bad"}">${v.balanced ? "✓ balanced panel" : "✗ not balanced"}</span>
-        ${v.warns.filter((w) => w !== "not a balanced panel" && !w.startsWith("fewer") && !w.startsWith("more")).map((w) => `<span class="badge bad">⚠ ${escapeHtml(w)}</span>`).join("")}</div>`;
-    if (editing) card += panelEditor(p);
-    return card + `</div>`;
-  }).join("") || `<div class="card">${empty("🧩", "No panels yet", "Panels appear once interviewers and applicants submit availability.")}</div>`;
+    const faults = [
+      ...(v.sizeOk ? [] : [`${v.size} member${v.size === 1 ? "" : "s"}`]),
+      ...(v.balanced ? [] : ["not balanced"]),
+      ...v.warns.filter((w) => w !== "not a balanced panel" && !w.startsWith("fewer") && !w.startsWith("more")),
+    ];
+    let row = `<div class="prow${editing ? " open" : ""}">
+      <div class="row center"><div class="grow">
+          <div class="name">${escapeHtml(nameOf(p.cand))}</div>
+          <div class="small muted">${escapeHtml(slotName(p.slot))} · ${p.modality === "ip" ? "in person" : "Zoom"}${p.manual ? " · edited" : ""}</div>
+        </div>
+        <button class="btn ghost small" onclick="IV.editPanel('${p.cand}')">${editing ? "Done" : "Edit"}</button></div>
+      <div class="small members">${p.members.map(escapeHtml).join(" · ")}</div>
+      ${faults.length ? `<div class="badges">${faults.map((w) => `<span class="badge bad">⚠ ${escapeHtml(w)}</span>`).join("")}</div>` : ""}`;
+    if (editing) row += panelEditor(p);
+    return row + `</div>`;
+  }).join("");
+  html += panelRows ? `<div class="card flush list">${panelRows}</div>`
+    : `<div class="card">${empty("🧩", "No panels yet", "Panels appear once interviewers and applicants submit availability.")}</div>`;
 
-  if (res.unschedulable.length || res.understaffed.length || res.lostTime.length || res.doubleBooked.length) {
-    html += `<div class="card"><b><span aria-hidden="true">⚠</span> Needs attention</b><ul class="small">
-      ${res.doubleBooked.map((d) => `<li><b>${escapeHtml(slotName(d.slot))}</b> has ${d.cands.length} applicants booked at the same time —
-        ${d.cands.map((id) => `<b>${escapeHtml(nameOf(id))}</b>`).join(", ")}. A manual panel put them together; move one to another time.
-        ${d.cands.map((id) => `<button class="linky" onclick="IV.editPanel('${id}')">edit ${escapeHtml(nameOf(id))}</button>`).join(" ")}</li>`).join("")}
-      ${res.lostTime.map((id) => `<li><b>${escapeHtml(nameOf(id))}</b> — their manual panel was at a time that has since been removed or changed; showing the auto-suggestion instead.
-        <button class="linky" onclick="IV.clearOverride('${id}')">dismiss</button></li>`).join("")}
-      ${res.unschedulable.map((id) => `<li>${unschedulableLine(id, res)}
-        <button class="linky" onclick="IV.editPanel('${id}')">schedule manually</button></li>`).join("")}
-      ${res.understaffed.map((s) => `<li>${escapeHtml(slotName(s))} — not enough available interviewers for a balanced panel.</li>`).join("")}
-    </ul>${res.unschedulable.map((id) => ui.editPanel === id ? `<div class="panelbox">${panelEditor({ cand: id, slot: null, members: [] })}</div>` : "").join("")}</div>`;
-  }
+  html += needsAttention(res);
   $("#panels").innerHTML = html;
 }
 
@@ -1350,9 +1378,7 @@ function rankingRows() {
 
 function renderRanking() {
   if (!S.meta.interviewsComplete) {
-    $("#ranking").innerHTML = howto("ranking", `The ranking averages everyone's overall scores into a
-      shortlist for your final discussion. It stays hidden until interviews are complete so it can't bias anyone mid-process.`)
-      + `<div class="card">${empty("🏆", "Ranking is hidden", "Reveal it once all interviews are done.")}
+    $("#ranking").innerHTML = `<div class="card">${empty("🏆", "Ranking is hidden", "Reveal it once all interviews are done.")}
       <div style="text-align:center"><button class="btn filled" onclick="IV.setComplete(true,this)">Mark interviews complete &amp; reveal ranking</button></div></div>`;
     return;
   }
@@ -1369,13 +1395,9 @@ function renderRanking() {
       <td class="adj" data-tip="${escapeHtml(adjInfo)}">${r.adj.toFixed(1)}${shift}</td>
       <td class="${thin ? "thinscore" : ""}" data-tip="${thin ? escapeHtml(`Only ${r.n} of the ${r.expected} panellists have scored this candidate.`) : "Every panellist on record has scored this candidate."}">${r.n}${r.expected ? ` of ${r.expected}` : ""}</td></tr>`;
   }).join("");
-  $("#ranking").innerHTML = howto("ranking", `<b>Admin only.</b> Candidates ordered by their average interview score —
-      decision support for the committee's discussion, not an automatic decision.
-      Averages are taken over the scores that were <b>actually submitted</b>; a missing score is never counted as a zero
-      or a middling 3.${adjusted ? ` <b>Adj</b> additionally removes each rater's tendency to score high or low,
-      because every candidate faced a different panel.` : ""}`)
-    + `<div class="adminbar"><button class="btn tinted small" onclick="IV.exportScores()"><span aria-hidden="true">⬇︎</span> Export scores (CSV)</button>
-      <button class="btn ghost small" onclick="IV.setComplete(false,this)">Re-hide ranking</button></div>
+  $("#ranking").innerHTML = hint("Average interview scores — decision support, not a decision.")
+    + `<p class="toolline"><button class="linky" onclick="IV.exportScores()">Export scores (CSV)</button>
+      <button class="linky" onclick="IV.setComplete(false,this)">Re-hide ranking</button></p>
     <div class="card flush"><div class="tablewrap"><table><thead><tr><th>#</th><th>Candidate</th><th>Avg</th>
       <th>Adj${infoIcon(adjInfo)}</th><th>Scored by</th></tr></thead>
       <tbody>${body || `<tr><td colspan="5">${empty("⭐️", "No scores yet", "Scores will appear as interviewers submit them.")}</td></tr>`}</tbody></table></div></div>`;
@@ -1395,14 +1417,11 @@ function renderSettings() {
     <input id="odIn" type="text" placeholder="https://..." value="${escapeHtml(oneDrive === "#" ? "" : oneDrive)}" aria-label="OneDrive link"/>
     <div style="margin-top:.5rem"><button class="btn tinted small" onclick="IV.saveOneDrive(this)">Save link</button></div>`;
 
-  $("#settings").innerHTML = howto("setup", `Everything here is stored privately in your database, never in
-      the app's code — so the tool is <b>fully reusable each hiring round</b>: just update the committee, chair, times, and (on the
-      Screen tab) the applicant list. Nothing is hard-coded.`, "Setup (admin)")
-    + `${section("setChair", "Panel chair", chair, chairBody, { open: false, info: "The chair is on every interview panel. Pick from your committee list below." })}
+  $("#settings").innerHTML = `${section("setChair", "Panel chair", chair, chairBody, { open: false, info: "The chair is on every interview panel. Pick from your committee list below." })}
     ${section("setCommittee", "Committee (interviewers)", `${committee.length} members`, committeeBody, { open: false, info: "Your interviewers. One per line as ‘Name, F’ or ‘Name, M’. The F/M is self-identified and used only to build balanced panels — it is never shown as a label. Saving replaces the whole list." })}
     ${section("setSlots", "Interview times", `${slots.length} time${slots.length === 1 ? "" : "s"}`, slotsBody, { open: false, info: "The interview times interviewers and applicants choose from. Add a single time or a block of back-to-back times; edit or remove any time. If people already answered for a time you change, you choose whether to keep their answers or ask them again." })}
     ${section("setOneDrive", "Applications folder (OneDrive)", "", odBody, { open: false, info: "Link to the access-controlled OneDrive folder holding the CVs/cover letters. Committee members open applicant files from here. Stored privately, never in the app's code." })}
-    <div class="note" style="margin-top:1rem">Add or remove <b>applicants (interviewees)</b> on the <b>Screen</b> tab → “Add candidates”.</div>`;
+    ${hint("Applicants are added on the Screen tab, under “Add candidates”.")}`;
 }
 
 // ---------------------------------------------- Setup → Interview times editor
@@ -1566,18 +1585,19 @@ function renderCandidate() {
     || (ui.candLast ? ui.candLast.charAt(0).toUpperCase() + ui.candLast.slice(1) : "");
   // read by the SAME normalized key we write under (ui.candLast), not the display name
   const map = S.availCand[ui.candLast] || {};
+  // The only page anyone outside the department sees. It asks for one thing, so
+  // it shows one thing: who we think you are, the times, and a line saying it
+  // saves itself. The identity card and the boxed instructions that used to sit
+  // above the times are now a subtitle and a single sentence.
   el.innerHTML = `<header class="page"><div class="brandrow"><div class="brandmark" aria-hidden="true">ED</div>
-      <div class="grow"><h1>${escapeHtml(ORG_NAME)}</h1><p class="muted">Interview availability</p></div>
+      <div class="grow"><h1>${escapeHtml(ORG_NAME)}</h1>
+        <p class="muted">${escapeHtml(who)} · <button class="linky" onclick="CAND.rename()">not you?</button></p></div>
       <button class="linky" onclick="CAND.logout()">Log out</button></div></header>
     <main style="max-width:600px">
-      <div class="card"><div class="muted small">Signed in as</div><div class="name">${escapeHtml(who)}</div>
-        <button class="linky" onclick="CAND.rename()" style="font-size:.82rem">not you? change name</button></div>
-      ${slots.length ? `<div class="card"><b>Select the interview times you can attend</b>
-        <div class="note tip" style="margin:.5rem 0">For each time you can make, choose <b>in person</b>, <b>Zoom</b>, or <b>either</b>.
-          In-person interviews are encouraged where possible. Your choices save automatically — you can come back and update them.</div>
-        <div class="slotgrid"><div class="h">Interview time</div><div class="h">I can attend…</div>
-          ${slotRows(slots, map, "CAND.set")}</div>
-        <div class="muted small" style="margin-top:.9rem">Saved automatically. You'll be contacted with your final interview time.</div></div>`
+      ${slots.length ? `<h2 class="pagetitle">When can you interview?</h2>
+        ${hint("Choose in person, Zoom or either for every time you can make. In person is preferred.")}
+        <div class="card"><div class="slotgrid">${slotRows(slots, map, "CAND.set")}</div></div>
+        <p class="hint">Saved as you tap — come back and change it any time. We'll confirm your final time by email.</p>`
         : `<div class="card">${empty("🗓️", "Times not posted yet", "The interview times haven't been published yet. Please check back soon.")}</div>`}
     </main>`;
 }

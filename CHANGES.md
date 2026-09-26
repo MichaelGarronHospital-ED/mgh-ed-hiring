@@ -24,6 +24,64 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## Taking out everything that wasn't the work (Sept 26 2026)
+
+"All the pages look so cluttered with different cards and instructions." They
+did. Every tab opened with a blue **What to do here** panel of three or four
+sentences, then a boxed progress note, then sometimes a third grey box, and only
+then the thing you came to do. Seventeen applicants were seventeen bordered
+cards. Every panel wore two green ticks confirming nothing was wrong. A deadline
+that had passed said so on every screen, every day, for the rest of the round.
+
+Nothing was removed from the tool — the work it does is unchanged, and every
+warning that exists because something once went wrong is still there. What went
+is the packaging around it.
+
+**One line, not a panel.** The instruction panels are gone; each tab now carries
+a single grey sentence under the tab bar ("Flag anyone you feel isn't qualified.
+Priority is optional."). The longer explanations moved onto the ⓘ next to the
+thing they explain, where they are asked for rather than announced — including
+the one that matters most, why scores are write-only and replay from this
+browser. The `localStorage` machinery that remembered whether you had collapsed
+each panel went with them.
+
+**Lists, not stacks of cards.** The applicant list, the panels and the scoring
+questions are each one card ruled between rows. Same information, a fraction of
+the borders, and the eye follows a column of names instead of hopping between
+boxes.
+
+**Status only when it isn't fine.** Panels show a badge only when something is
+actually wrong with them. The collation prints "0 flags · ★ — 0 of 13 rated"
+nowhere: a figure appears when there is one. The green "interview" pill on every
+row is gone — the pills that remain are "removed" and "excluded · flags", which
+are the rows you were looking for. Seventeen red **remove** links are grey until
+you reach for one.
+
+**Repeats collapse.** "Needs attention" grouped fourteen copies of the same
+sentence into one line with the names in it. The Availability tab lost a whole
+section: the dashboard's only content was who hadn't answered, so that is now a
+line inside each grid, and the section headers carry the counts ("7 of 16
+applicants") so a closed section still answers the question.
+
+**The deadline bar counts down and then stops.** It appears a fortnight out and
+goes at the end of the day it names, rather than reporting a passed date
+indefinitely. The `past` style stays defined and still pinned by
+`tests/css-collisions.test.mjs` — one `if` from returning, and the next person to
+want it shouldn't have to rediscover why a banner modifier can't be a utility.
+
+Measured on the same data, full-page height at 1240px: reviewer Screen 2027 →
+1475, leadership Screen 2150 → 1593, Availability 2713 → 1686, Panels 1620 →
+1114. The applicant's own page — the only one anyone outside the department
+sees — is now a title, one sentence and the times.
+
+Two regressions the rendering caught, both invisible in the diff: the scoring
+list's sticky picker painted over the first question once it was inside an
+`overflow:hidden` card, and on a phone the applicant rows squeezed "Dr
+Nandakumar" into two clipped lines behind the rating buttons. Both are fixed;
+[`sim/`](sim/) checks every tab at 390px. 14/14 scenarios, the fuzz and 31/31
+pure tests all pass unchanged — the scraper needed updating for the new markup,
+which is the point of having it.
+
 ## The admin could see THAT applicants had answered, not WHAT they answered (Sept 26 2026)
 
 Asked mid-round why 3 of 17 applicants' availability wasn't visible anywhere:

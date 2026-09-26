@@ -85,7 +85,7 @@ async function round(page, url, sc) {
   // the UI says one thing about every unscheduled applicant; the truth has three cases
   const says = shown.reasons || {};
   const SHOULD_SAY = {
-    "no-answer": /hasn't picked any interview times/,
+    "no-answer": /picked any times yet/,
     "infeasible": /no time they can do yields a balanced panel/,
     "contested": /already taken/,
   };

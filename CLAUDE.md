@@ -84,6 +84,15 @@ Full design and reference data (committee, candidates, questions, rules) live in
   old chair out of every saved override — and if the new chair was already on
   that panel, the swap is unpaid: three members become two. The old chair stays
   on as an ordinary member in that case.
+- **Quiet by default — the page is the work, not the instructions.** A tab gets
+  ONE grey sentence (`hint()`); anything longer goes on the ⓘ beside the thing
+  it explains. No instruction panels, no boxed notes above content. A repeated
+  item is a row in a ruled `.card.flush.list`, never a card each. A status is
+  shown only when it is NOT the expected one: no "✓ balanced panel" on a valid
+  panel, no "0 flags" where there are none, no green pill on every row. When a
+  message would repeat for N people, group it into one line naming them. This
+  is undoing a real complaint ("everything looks so cluttered"), so adding a
+  panel, a tint or a per-row tick back needs a reason beyond "it's helpful".
 - **Two availability grids, one stylesheet block.** `availGrid()` is the
   interviewers, `candGrid()` the applicants (admin-only, and the only place the
   tool shows *what* an applicant answered rather than *whether* they did).
