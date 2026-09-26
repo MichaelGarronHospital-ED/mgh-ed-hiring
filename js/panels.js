@@ -108,6 +108,63 @@ export function buildPanel(slot, candMod, interviewers, chair, opts = {}) {
   return null;
 }
 
+// ---- nobody left out -------------------------------------------------------
+// The greedy fill hands each seat to whoever has fewest panels SO FAR, which is
+// fair at every step and can still finish with somebody on nothing at all. When
+// several people are tied on zero the seat goes to the first alphabetically, and
+// by the time the loser is eligible again the seats they could have taken have
+// gone to others who are now the only ones who fit. A real 13-person round left
+// Yang off all eight panels while free for four of them, and the Panels tab then
+// told the coordinator he probably hadn't sent his availability.
+//
+// The fix is the standard augmenting-path move: seat the unused person, hand the
+// seat's current occupant another one, and so on down the chain — accepting the
+// chain only if every panel it touches is still a legal panel afterwards. Each
+// successful chain adds exactly one person to the schedule and takes nobody off
+// it, so the pass can only improve the share, and it is a no-op when the greedy
+// already used everyone (the common case, and what the fairness tests pin).
+const canSit = (iv, name, panel) => {
+  const av = iv[name].avail[panel.slot];
+  return av !== undefined && modalityOk(av, panel.modality) && !panel.members.includes(name);
+};
+// Would replacing `out` with `inp` leave this a panel we'd have built? Size is
+// unchanged and the chair is never the one replaced, so balance is all that's
+// left to check.
+const swapKeepsPanelLegal = (iv, panel, out, inp, chair) => {
+  if (out === chair) return false;
+  const next = panel.members.map((m) => (m === out ? inp : m));
+  return next.some((m) => iv[m].g === "F") && next.some((m) => iv[m].g === "M");
+};
+export function shareOut(panels, interviewers, chair) {
+  const load = {};
+  Object.keys(interviewers).forEach((n) => { load[n] = 0; });
+  panels.forEach((p) => p.members.forEach((m) => { load[m] = (load[m] || 0) + 1; }));
+  // `seen` locks a panel for the whole chain, so the recursion can't undo a move
+  // it is standing on — and guarantees it terminates.
+  const seat = (name, seen) => {
+    for (const p of panels) {
+      if (seen.has(p) || !canSit(interviewers, name, p)) continue;
+      seen.add(p);
+      for (const m of p.members) {
+        if (!swapKeepsPanelLegal(interviewers, p, m, name, chair)) continue;
+        // the person giving up the seat must keep one: either they already have
+        // another panel, or this same search finds them one
+        if (load[m] > 1 || seat(m, seen)) {
+          p.members[p.members.indexOf(m)] = name;
+          load[m]--; load[name]++;
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+  Object.keys(interviewers)
+    .filter((n) => n !== chair && !load[n])
+    .sort()                                   // deterministic: panels rebuild on every render
+    .forEach((n) => seat(n, new Set()));
+  return panels;
+}
+
 // candidates: { name: { avail: { slot: modality } } }
 // interviewers: as above. slots: ordered array of slot ids.
 // opts.size: force a panel size instead of letting fairSize() choose.
@@ -169,11 +226,29 @@ export function autoPanels(candidates, interviewers, slots, chair, opts = {}) {
   }
   const unschedulable = Object.keys(candidates).filter((c) => !assign[c]).concat(failed);
   panels.sort((a, b) => slots.indexOf(a.slot) - slots.indexOf(b.slot));
+  // sorted first, so the repair works down the panels in the order they are
+  // displayed and the result doesn't depend on the order they were built in
+  shareOut(panels, interviewers, chair);
+
+  // WHY each unscheduled candidate is unscheduled. Three very different
+  // situations reach this list and they need three different actions from the
+  // coordinator — chase the applicant, fix the committee's availability, or add
+  // another interview time — so the caller gets the distinction rather than one
+  // message that is only right in one of the three cases.
+  //   "no-answer"  they have not picked any time that still exists
+  //   "no-panel"   the times they picked can't carry a balanced panel
+  //   "contested"  their times could, but every one of them went to someone else
+  const why = {};
+  for (const c of unschedulable) {
+    const answered = Object.keys(candidates[c].avail).filter((s) => slots.includes(s));
+    why[c] = { reason: !answered.length ? "no-answer" : !feas[c].length ? "no-panel" : "contested",
+               slots: feas[c] };
+  }
   // understaffed = a slot that HAS interviewers but still can't form a balanced
   // panel (actionable). Empty slots are just unused, not flagged.
   const understaffed = slots.filter((s) => {
     const anyone = Object.values(interviewers).some((iv) => iv.avail[s] !== undefined);
     return anyone && !buildPanel(s, "either", interviewers, chair);
   });
-  return { panels, unschedulable, understaffed, panelSize: size };
+  return { panels, unschedulable, understaffed, panelSize: size, why };
 }

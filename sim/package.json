@@ -1,0 +1,17 @@
+{
+  "name": "ed-interviews-sim",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Dev-only simulation of a whole hiring round through the real UI. Never shipped; the tool itself still has no build step and no dependencies.",
+  "scripts": {
+    "pretest": "bash make-site.sh",
+    "test": "node scenarios.mjs && node e2e.mjs && node fuzz.mjs 40",
+    "e2e": "bash make-site.sh && node e2e.mjs",
+    "scenarios": "bash make-site.sh && node scenarios.mjs",
+    "fuzz": "bash make-site.sh && node fuzz.mjs"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^23.0.0"
+  }
+}

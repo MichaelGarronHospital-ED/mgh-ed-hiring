@@ -24,6 +24,77 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## What a simulated round found: right schedule, wrong explanations (Sept 26 2026)
+
+A whole round was played through the real UI, end to end — leadership adds ten
+applicants, thirteen interviewers tap their availability, every applicant goes
+through the applicant link and picks their times, leadership opens Panels. Then
+several hundred randomised rounds on top (committee, times, availability and
+flags all random, replayable by seed). The harness is [`sim/`](sim/); it re-states the
+panel rules from scratch rather than importing `panels.js`, so the scheduler
+cannot mark its own homework.
+
+**The scheduling itself came out clean** — across every round, no panel was ever
+missing the chair, unbalanced, the wrong size, or built from people who hadn't
+said they were free; no applicant was ever double-booked or scheduled at a time
+they hadn't offered; and the number interviewed always matched a separately
+written maximum matching (cross-checked by brute force on the small rounds).
+
+What was wrong was everything the tab *said* about the schedule, plus one
+interviewer quietly doing nothing.
+
+**Yang was on none of the eight panels, and the tab blamed him for it.** The
+seat-sharing hands each free seat to whoever has fewest panels so far — fair at
+every step, and it can still finish with somebody on zero. When several people
+are tied on nothing the seat goes to the first alphabetically; by the time the
+loser comes round again the seats they could have taken belong to people who are
+now the only ones who fit. Yang was free for four of the eight interviews and
+finished with none, while the Interviewer load section said the cause was
+"almost always because they haven't sent their availability" — which he had, days
+earlier. A perfect share existed: every man on exactly one panel, every woman on
+two.
+
+`shareOut()` in `panels.js` now finishes the job with the standard
+augmenting-path move: seat the unused person, hand the seat's occupant another
+one, and on down the chain — accepting a chain only if every panel it touches is
+still legal (chair present, size unchanged, still balanced, everyone still
+available in that modality). Each chain adds exactly one person and takes nobody
+off, so it can only improve the share, and it is a no-op when the greedy already
+used everyone — which is what the existing fairness tests pin. In the round
+above the load went from "one not used, one person on three" to **1–2 each,
+nobody idle**. Where somebody is *still* idle it is now arithmetic: the harness
+proves it by enumerating every legal membership of the panels that were booked
+and taking the best possible arrangement.
+
+**"No available time yields a balanced panel" was told to three different
+people.** It is the answer to only one of them:
+
+| What actually happened | What the tab said | What it says now |
+|---|---|---|
+| The applicant never picked any time | no balanced panel is possible | hasn't picked any interview times yet — chase them |
+| Their times can't carry a panel | (correct) | no time they can do yields a balanced panel |
+| Their times are already taken | no balanced panel is possible | the only time they can do (Thu 10:00) is already taken by Dr Carter — add another time, or move someone |
+
+Half the random rounds hit one of the two wrong cases. The three need three
+different actions — chase the applicant, look at the committee's availability,
+add an interview time — and with interviews a week away, sending a coordinator
+after the wrong one costs a day. `autoPanels` now returns `why` per unscheduled
+candidate (`no-answer` / `no-panel` / `contested`, with the contested times), and
+the Panels tab names the applicants holding those times. "Not on any panel" is
+split the same way for interviewers.
+
+**Changing the chair could leave a hand-built panel with two people.** The swap
+dropped the old chair and added the new one — but if the new chair was *already*
+on that panel, the drop was not paid for: a 3-person panel came back as 2, which
+is not a panel, and the only sign was a small red "✗ 2 members" badge. The old
+chair is still an ordinary committee member, so they now keep the seat.
+
+Nothing else moved: 12 targeted scenarios (returning applicants, unknown and
+removed surnames, editing a time people have answered for both ways, manual
+panels, double-booking, removals, flag exclusions, the CSV export) all pass, and
+the emulator suite is green at **90/90** including the new
+[`tests/panels.share.test.mjs`](tests/panels.share.test.mjs).
+
 ## The phone bugs: a banner that became a badge, and a gate that blocked itself (Sept 26 2026)
 
 Three reports — "can't log in on my phone but fine on desktop", "check mobile

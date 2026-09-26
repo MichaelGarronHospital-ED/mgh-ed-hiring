@@ -999,7 +999,70 @@ function computePanels() {
   const doubleBooked = Object.entries(bySlot).filter(([, cs]) => cs.length > 1)
     .map(([slot, cands]) => ({ slot, cands }));
   return { panels, unschedulable: unsched, understaffed: res.understaffed, interviewers, lostTime,
-           doubleBooked, panelSize: res.panelSize };
+           doubleBooked, panelSize: res.panelSize, why: res.why || {} };
+}
+
+// Why an interviewer is on no panel — again three cases with three different
+// fixes. The line used to guess ("almost always because they haven't sent their
+// availability"), which sends the coordinator to chase someone who answered
+// days ago: the real reason can just as easily be that every panel they could
+// have joined was full by the time their turn came.
+function idleInterviewers(unused, res) {
+  const group = { silent: [], wrongTimes: [], squeezed: [] };
+  unused.forEach((name) => {
+    const mine = S.availIv[name] || {};
+    // Could they have sat on a panel that was actually booked? Saying "free at
+    // that time" is not enough: someone who can only do 10am by Zoom cannot sit
+    // on the in-person panel booked then, and telling them otherwise is how
+    // this line got it wrong before.
+    const couldHaveSat = res.panels.some((p) => {
+      const av = mine[String(p.slot)];
+      return av !== undefined && (av === "either" || av === p.modality);
+    });
+    if (!liveAnswers(mine).length) group.silent.push(name);
+    else if (!couldHaveSat) group.wrongTimes.push(name);
+    else group.squeezed.push(name);
+  });
+  // The lines have to read for one name as well as five, so each tail is a
+  // clause with no subject and no number of its own.
+  const chips = (list) => list.map((x) => `<span class="chip">${escapeHtml(x)}</span>`).join("");
+  const line = (list, tail) => list.length
+    ? `<p class="small" style="margin-top:.45rem">${chips(list)} — ${tail}</p>` : "";
+  return `<p class="small" style="margin-top:.55rem"><b class="warn">⚠ Not on any panel:</b></p>
+    ${line(group.silent, "no availability sent yet.")}
+    ${line(group.wrongTimes, `free only at times nobody is being interviewed in, or only in a format
+      (in person / Zoom) the interviews booked then aren't running in.`)}
+    ${line(group.squeezed, `free while interviews are running, but every panel they could have joined
+      is full — and taking a seat there would either unbalance that panel or leave somebody else with
+      nothing. Another interview time at a time they are free is what fixes this.`)}`;
+}
+
+// Why this applicant has no interview, in the words that point at the fix.
+//
+// Three situations end up on the same list and they need three different
+// actions: chase the applicant, look at the committee's availability, or add
+// another interview time. The tab used to say "no available time yields a
+// balanced panel" to all three, which is plainly wrong for an applicant who has
+// not answered at all, and actively misleading for one whose times are simply
+// taken — that one reads as "their availability doesn't work for us" when the
+// truth is "we have run out of slots".
+function unschedulableLine(id, res) {
+  const nameOf = (cid) => (cand(cid) || {}).name || cid;
+  const who = `<b>${escapeHtml(nameOf(id))}</b>`;
+  const w = res.why[id] || { reason: "no-panel", slots: [] };
+  if (w.reason === "no-answer")
+    return `${who} — hasn't picked any interview times yet. Chase them, or set a time by hand.`;
+  if (w.reason === "contested") {
+    // name the applicants holding those times: the admin can only fix this by
+    // moving one of them or adding a time, and both need to know which.
+    const holders = [...new Set(res.panels.filter((p) => w.slots.includes(String(p.slot)))
+      .map((p) => nameOf(p.cand)))];
+    const times = w.slots.map((s) => escapeHtml(slotName(s))).join(", ");
+    return `${who} — ${w.slots.length === 1 ? "the one time" : "every time"} that could host their
+      interview (${times}) is already taken${holders.length ? ` by ${holders.map(escapeHtml).join(", ")}` : ""}.
+      Add another interview time, or move someone.`;
+  }
+  return `${who} — no time they can do yields a balanced panel.`;
 }
 
 function renderPanels() {
@@ -1042,11 +1105,7 @@ function renderPanels() {
         sit on that one panel, and every panel still has to stay balanced.</div>
       <p class="small"><b>${escapeHtml(chair)}</b> — all ${n} panel${n === 1 ? "" : "s"} (chair).</p>
       <div>${chips}</div>
-      ${unused.length
-        ? `<p class="small" style="margin-top:.55rem"><b class="warn">⚠ Not on any panel:</b>
-           ${unused.map((x) => `<span class="chip">${escapeHtml(x)}</span>`).join("")} —
-           almost always because they haven't sent their availability, or only for times nobody is
-           being interviewed in.</p>`
+      ${unused.length ? idleInterviewers(unused, res)
         : `<p class="ok small" style="margin-top:.55rem">✓ Every interviewer is on at least one panel.</p>`}`;
     html += section("panelload", "Interviewer load",
       unused.length ? `${unused.length} not used` : `${lo}–${hi} each`, loadBody,
@@ -1074,7 +1133,7 @@ function renderPanels() {
         ${d.cands.map((id) => `<button class="linky" onclick="IV.editPanel('${id}')">edit ${escapeHtml(nameOf(id))}</button>`).join(" ")}</li>`).join("")}
       ${res.lostTime.map((id) => `<li><b>${escapeHtml(nameOf(id))}</b> — their manual panel was at a time that has since been removed or changed; showing the auto-suggestion instead.
         <button class="linky" onclick="IV.clearOverride('${id}')">dismiss</button></li>`).join("")}
-      ${res.unschedulable.map((id) => `<li><b>${escapeHtml(nameOf(id))}</b> — no available time yields a balanced panel.
+      ${res.unschedulable.map((id) => `<li>${unschedulableLine(id, res)}
         <button class="linky" onclick="IV.editPanel('${id}')">schedule manually</button></li>`).join("")}
       ${res.understaffed.map((s) => `<li>${escapeHtml(slotName(s))} — not enough available interviewers for a balanced panel.</li>`).join("")}
     </ul>${res.unschedulable.map((id) => ui.editPanel === id ? `<div class="panelbox">${panelEditor({ cand: id, slot: null, members: [] })}</div>` : "").join("")}</div>`;
@@ -1560,7 +1619,14 @@ window.IV = {
       await store.updateConfig((c) => {
         const old = c.chair || CHAIR;
         return { chair: v, panelOverrides: pruneOverrides(c.panelOverrides, (mem) => {
-          const set = new Set(mem.filter((n) => n !== old)); set.add(v); return [...set];
+          const set = new Set(mem.filter((n) => n !== old)); set.add(v);
+          // The new chair may already have been on a hand-built panel. Dropping
+          // the old chair then leaves it a member SHORT — a 3-person panel comes
+          // back as 2, which isn't a panel at all, and the only sign is a red
+          // "✗ 2 members" badge on the Panels tab. The old chair is still an
+          // ordinary committee member, so keep them in that seat.
+          if (set.size < mem.length) set.add(old);
+          return [...set];
         }) };
       });
     } catch { toast("Couldn't save — check your connection", "err"); rerenderSettings(); } // reset the picker

@@ -65,6 +65,25 @@ Full design and reference data (committee, candidates, questions, rules) live in
   average 1.25. The tests assert balance *within* each group at the arithmetic
   minimum. `fairSize()` grows panels past 3 (up to 5) only when 3-person panels
   have too few seats to give everyone one interview.
+- **Fairness needs the repair pass, not just the greedy.** `buildPanel` gives
+  each seat to whoever has fewest panels *so far*; ties break alphabetically, so
+  a round can still end with someone on zero while people later in the alphabet
+  never lose a tie. `shareOut()` (run at the end of `autoPanels`) fixes that with
+  augmenting-path swaps, and only accepts a chain where **every panel it touches
+  is still legal** — chair present, same size, still balanced, everyone still
+  available in that modality, and nobody dropped to zero to seat somebody else.
+  Don't "simplify" it away: without it a real 13-person round left one
+  interviewer off all eight panels while free for four of them.
+- **Three different things put an applicant on the unschedulable list**, and they
+  need three different actions: they never answered, their times can't carry a
+  balanced panel, or their times are taken by someone else. `autoPanels` returns
+  `why[cand] = { reason, slots }` for exactly this; the same split is made for
+  interviewers on no panel. One message for all three is a bug — it sends the
+  coordinator after the wrong fix, which with a one-week runway costs a day.
+- **Changing the chair must not shrink a manual panel.** `IV.setChair` swaps the
+  old chair out of every saved override — and if the new chair was already on
+  that panel, the swap is unpaid: three members become two. The old chair stays
+  on as an ordinary member in that case.
 - **Manual panels bypass most checks.** The auto-matcher gives one candidate per
   slot, so only a **manual override** can double-book a time (now surfaced as
   `doubleBooked`) or seat someone who never said they were free (now warned).
@@ -107,6 +126,13 @@ Full design and reference data (committee, candidates, questions, rules) live in
   off-screen mid-typing. The fixing block is last because `.overlay-box input`
   and `.tform input` have equal specificity and appear later; anything appended
   after it silently undoes it.
+- **Verify the pipeline by playing a round, not by reading the scheduler.**
+  `sim/` drives a whole round through the real UI (leadership adds applicants,
+  interviewers and applicants submit availability, panels get built) and checks
+  what the Panels tab *shows* against the rules restated independently of
+  `panels.js`; `npm run fuzz -- 100 1` does it on random rounds, replayable by
+  seed. Both defects it found — the idle interviewer and the three-cases-one-
+  message diagnosis — were invisible in the code, which was busy being correct.
 - **Verify layout by rendering it, not by reading the CSS.** Both phone bugs
   above looked fine on inspection and were obvious the moment the page was drawn
   at 390px. Drive `index.html` in Chromium with `js/config.js` (blank

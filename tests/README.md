@@ -4,7 +4,14 @@ Tests for [`../firestore.rules`](../firestore.rules). They run against the local
 Firestore **emulator** — no real Firebase project, no real data, no credentials,
 nothing to clean up afterwards.
 
-One file here is not a rules test: `store.own-screening.test.mjs` drives
+Two files here are not rules tests. `panels.share.test.mjs` covers the pure
+scheduler: that nobody is left off every panel when a seat exists for them
+(`shareOut`), that the repair never breaks a panel, and that an applicant with no
+interview is given the right one of the three reasons. It needs no emulator.
+Whole-round behaviour — the applicant flow, time edits, manual panels — is
+simulated through the real UI in [`../sim/`](../sim/).
+
+`store.own-screening.test.mjs` drives
 `FirestoreStore` against a stub Firestore and asserts that a signed-in reviewer
 subscribes to their **own** screening documents and never requests a
 colleague's. It is the client half of the `get`-yes/`list`-no split in the
@@ -27,7 +34,7 @@ npm test
 
 `npm test` starts the emulator, runs the suite against it, and shuts it down.
 
-**Last run: Sept 21 2026 — 44 tests, 44 pass.** On a bare Debian devcontainer the
+**Last run: Sept 26 2026 — 90 tests, 90 pass.** On a bare Debian devcontainer the
 toolchain is one line:
 
 ```bash
