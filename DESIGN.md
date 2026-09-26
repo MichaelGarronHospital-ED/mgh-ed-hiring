@@ -187,3 +187,49 @@ Amanda is not referenced in the tool UI (she remains in the email/coordination p
 - **Name match** (candidate login): case-insensitive, trims; no match → "contact Amanda".
   All 17 last names are unique.
 - **Editing** allowed until admin **closes** a phase.
+
+## Next round — deferred work
+
+Deliberately NOT built during the 2026 round: interviews were a week away and
+these change how reviewer input is recorded, which is the last thing to disturb
+mid-process. Revisit before the next round opens.
+
+### 1. A notes field, so the flag stops doubling as one  ← agreed Sept 26 2026
+
+**The problem.** "Flag concern" is the only way to attach text to a candidate,
+so reviewers use it for anything they want to say — including things that are
+not concerns at all. In the live 2026 round, **two of the six flags were
+explicitly positive**: both opened with wording to the effect of "not a flag" /
+"notes, not concerns", one recording that the candidate was well known and well
+regarded at MGH, the other a declared friendship with a vouch attached.
+
+**Why that matters.** Two flags removes a candidate from the interview list,
+automatically. Nobody reached two in 2026, so nothing was wrongly excluded — but
+it was luck, not design. One more friendly note on either of those candidates
+would have dropped them, with the stated reasons reading as praise. A hiring
+decision would have been made by a misread button.
+
+**What to build.** A second, non-excluding action alongside the flag — "Add a
+note" or "Declare a connection" — storing text that:
+- never counts toward the ≥2-flag cut,
+- still shows on the admin collation card, attributed, beside the flags,
+- is visually distinct from a flag there, so leadership can tell "I know this
+  person" from "I have a concern" at a glance,
+- appears in the shortlist CSV in its own column, not merged with flag reasons.
+
+Conflict-of-interest disclosure is a real need in its own right — one of the two
+notes was exactly that — so consider naming it that way rather than as generic
+notes.
+
+**Gotcha when migrating the old entries.** `IV.toggleFlag` clears `reason` when
+a flag is turned OFF (`reason: cur ? "" : …` in app.js). So converting an
+existing mis-filed flag into a note by un-flagging it in the UI **destroys the
+text**. Copy the reasons out first — `scripts/report-data.mjs` prints them all —
+or write a one-off migration that moves `reason` into the new field before
+clearing the flag.
+
+### 2. Per-member accounts
+
+The standing limitation: all reviewers share one Firebase account, so the rules
+cannot tell reviewer A from reviewer B. Written up in `firestore.rules` and
+README. Everything else in the privacy model is belt-and-braces around it.
