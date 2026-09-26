@@ -69,6 +69,60 @@ export async function readPanels(page) {
   };
 }
 
+// The applicant availability grid (admin, Availability tab), read back as data:
+// { columns, cells: { Surname: { slotLabel-free id: "ip"|"zoom"|"either" } },
+//   booked: { Surname: slotId }, offered: { Surname: "3" }, usable, capacity }
+export async function readCandGrid(page) {
+  const raw = await page.evaluate(() => {
+    const sec = document.querySelector('details[data-sec="candgrid"]');
+    if (!sec) return null;
+    const table = sec.querySelector("table.avgrid");
+    const columns = [...table.querySelectorAll("thead th.ivcol")].map((th) => th.textContent.trim());
+    const cells = {}, booked = {}, offered = {}, usable = {};
+    columns.forEach((c) => { cells[c] = {}; });
+    let day = "";
+    table.querySelectorAll("tbody tr").forEach((tr) => {
+      if (tr.classList.contains("dayrow")) { day = tr.textContent.trim(); return; }
+      if (tr.classList.contains("footrow")) {
+        [...tr.querySelectorAll("td.tot")].forEach((td, i) => { offered[columns[i]] = td.textContent.trim(); });
+        return;
+      }
+      const time = tr.querySelector("th.tlab").textContent.trim();
+      const label = `${day} · ${time}`;
+      [...tr.querySelectorAll("td.av")].forEach((td, i) => {
+        const mod = ["ip", "zoom", "either"].find((m) => td.classList.contains(m));
+        if (mod) cells[columns[i]][label] = mod;
+        if (td.classList.contains("booked")) booked[columns[i]] = label;
+      });
+      const sum = tr.querySelector("td.sum");
+      usable[label] = sum ? sum.textContent.trim() : "";
+    });
+    const warn = sec.querySelector(".note.warnbox");
+    return { columns, cells, booked, offered, usable, capacity: warn ? warn.textContent.replace(/\s+/g, " ").trim() : "" };
+  });
+  if (!raw) return null;
+  // This grid heads each day with the LONG date and labels rows with the time
+  // only, so build the map with the same two helpers the grid itself uses
+  // rather than guessing at slotLabel's short form.
+  const byLabel = await page.evaluate(async () => {
+    const { effectiveSlots, groupByDate, slotTimeLabel } = await import("./js/slots.js");
+    const { SLOTS } = await import("./js/config.js");
+    const st = JSON.parse(localStorage.getItem("ed_interviews_v1") || "{}");
+    const out = {};
+    groupByDate(effectiveSlots(st.settings || {}, SLOTS)).forEach((g) =>
+      g.items.forEach((t) => { out[`${g.title} · ${slotTimeLabel(t)}`] = t.id; }));
+    return out;
+  });
+  const toId = (label) => (label in byLabel ? byLabel[label] : `??${label}`);
+  const remap = (obj) => Object.fromEntries(Object.entries(obj).map(([k, v]) => [toId(k), v]));
+  return {
+    columns: raw.columns,
+    cells: Object.fromEntries(Object.entries(raw.cells).map(([c, m]) => [c, remap(m)])),
+    booked: Object.fromEntries(Object.entries(raw.booked).map(([c, l]) => [c, toId(l)])),
+    offered: raw.offered, usable: remap(raw.usable), capacity: raw.capacity,
+  };
+}
+
 // The interviewer-load section, as shown to the admin.
 export async function readLoad(page) {
   return page.evaluate(() => {

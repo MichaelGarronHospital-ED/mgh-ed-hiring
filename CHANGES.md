@@ -24,6 +24,48 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## The admin could see THAT applicants had answered, not WHAT they answered (Sept 26 2026)
+
+Asked mid-round why 3 of 17 applicants' availability wasn't visible anywhere:
+because it wasn't. The tool said "3 of 17 submitted" and listed the other 14 as
+chips, and the only way to see which hours somebody had actually offered was to
+open the panel editor for that one person and read the Time dropdown. The
+question a coordinator actually has — *where should I add an interview time?* —
+could not be answered from the screen at all.
+
+`candGrid()` is the applicant half of the availability grid, admin-only, on the
+Availability tab under the interviewer one. Rows are times and columns are
+applicants, so a row reads as demand for that hour; the letters (P/Z/E) carry
+the meaning rather than the colour, as in the other grid.
+
+Three things make it answer the question rather than just show the data:
+
+- **The schedule is drawn on top of it.** The applicant who gets each hour has
+  a ringed cell — a shape, not a fifth colour, since the four are already spent
+  and a fifth would be unreadable for anyone who can't separate hues. Five
+  letters in a row with one ring *is* the reason the other four are under
+  "needs attention".
+- **Red is reserved for what you can act on.** The Usable column is green when
+  applicants want that hour and a panel can run, red when they want it and no
+  panel can (the actionable case — that hour needs interviewers), and neutral
+  when nobody has asked for it yet. Painting the quiet hours red would have
+  made the whole grid cry wolf during collection, which is exactly the phase
+  this is for.
+- **The shortfall names its cause.** "17 applicants, 10 times" invites the
+  wrong fix. The note now splits the people who can't be scheduled the same
+  three ways the Panels tab does — hasn't answered / no panel can run at their
+  times / their times are taken — and only the third says more interview times
+  would help. With 14 of 17 still to answer it reads "chase those first".
+
+A footer row gives each applicant's number of offered times, with a red dash
+for nothing at all, which is the column to scan when chasing people. On a phone
+the grid scrolls inside its own wrapper like the interviewer one, but the time
+labels stay pinned left and the Usable column and the date heading are now
+pinned too — with 17 columns the summary you are reading the row *for* was
+otherwise several screens away. `sim/scenarios.mjs` checks every cell against
+what was actually submitted, that the rings match the schedule, and that none
+of it runs off a 390px screen.
+
 ## What a simulated round found: right schedule, wrong explanations (Sept 26 2026)
 
 A whole round was played through the real UI, end to end — leadership adds ten

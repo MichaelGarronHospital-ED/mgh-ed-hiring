@@ -2,7 +2,7 @@
 // edits after people have answered, manual panels, removals and chair changes.
 // Each scenario is a named check that returns a list of problems.
 import { serve, browser, openPage, signIn, pickMember, changeMember, tab, setSlot, dumpState, seedState, sleep } from "./drive.mjs";
-import { readPanels } from "./scrape.mjs";
+import { readPanels, readCandGrid } from "./scrape.mjs";
 
 const COMMITTEE = [
   { name: "Abara", gender: "M" }, { name: "Bruns", gender: "F" }, { name: "Chen", gender: "M" },
@@ -342,6 +342,73 @@ const scenarios = {
       }));
       problems.push(...ok(m.scroll <= m.win + 1, `the Panels tab scrolls sideways on a phone (${m.scroll} > ${m.win})`));
       problems.push(...ok(!m.wide.length, `content runs off the right edge: ${m.wide.join(", ")}`));
+    } finally {
+      await page.setViewport({ width: 1280, height: 900, isMobile: false });
+    }
+    return problems;
+  },
+
+  // The applicant grid: every cell has to match what that applicant actually
+  // submitted, the ring has to be on the hour they are being interviewed, and
+  // it has to survive a phone.
+  async applicantGrid(page, url) {
+    const problems = [];
+    const st = base();
+    st.candidates.push({ id: "c-4", name: "Dr Marcus Bodine", removed: false });   // sends nothing
+    await asAdmin(page, url, st);
+    await tab(page, "availability");
+    const grid = await readCandGrid(page);
+    if (!grid) return ["the applicant grid isn't on the Availability tab"];
+
+    // one column per applicant on the interview list, by surname
+    problems.push(...ok(grid.columns.join(",") === "Ashcombe,Bodine,Carter,Fahmy",
+      `columns are [${grid.columns}]`));
+    // every cell matches the stored availability
+    for (const [surname, picks] of Object.entries(st.availCand)) {
+      const col = surname[0].toUpperCase() + surname.slice(1);
+      for (const [slot, mod] of Object.entries(picks)) {
+        const shown = (grid.cells[col] || {})[slot];
+        problems.push(...ok(shown === mod, `${col} said ${mod} for ${slot}, grid shows ${shown}`));
+      }
+    }
+    problems.push(...ok(Object.keys(grid.cells.Bodine || {}).length === 0, "Bodine's column isn't empty"));
+    problems.push(...ok(grid.offered.Bodine === "—", `Bodine's "times offered" is ${grid.offered.Bodine}`));
+
+    // the ring marks exactly where each applicant is being interviewed
+    await tab(page, "panels");
+    const shown = await readPanels(page);
+    await tab(page, "availability");
+    const booked = Object.fromEntries(shown.schedule.map((p) => [p.name.split(" ").pop(), p.slot]));
+    problems.push(...ok(JSON.stringify(grid.booked) === JSON.stringify(booked),
+      `ringed cells ${JSON.stringify(grid.booked)} but the schedule is ${JSON.stringify(booked)}`));
+
+    // nobody chased for the wrong reason: Bodine hasn't answered, so the
+    // headline must say that rather than "add more times"
+    problems.push(...ok(/haven't sent any availability|hasn't sent any availability/.test(grid.capacity)
+      || !grid.capacity, `the shortfall note blames the wrong thing: ${grid.capacity}`));
+
+    await page.setViewport({ width: 390, height: 844, isMobile: true });
+    try {
+      await asAdmin(page, url, st);
+      await tab(page, "availability");
+      await sleep(200);
+      const m = await page.evaluate(() => {
+        const sec = document.querySelector('details[data-sec="candgrid"]');
+        const wrap = sec && sec.querySelector(".gridwrap");
+        if (wrap) wrap.scrollLeft = wrap.scrollWidth;          // scroll to the far end
+        return { scroll: document.documentElement.scrollWidth, win: window.innerWidth,
+          // the grid may scroll inside its own wrapper; nothing else may
+          outside: [...document.querySelectorAll("#availability *")]
+            .filter((el) => !el.closest(".gridwrap") && el.getBoundingClientRect().right > window.innerWidth + 1)
+            .map((el) => el.className || el.tagName).slice(0, 4),
+          sumVisible: !!(sec && [...sec.querySelectorAll("td.sum")].some((td) => {
+            const r = td.getBoundingClientRect();
+            return r.right <= window.innerWidth + 1 && r.left >= 0;
+          })) };
+      });
+      problems.push(...ok(m.scroll <= m.win + 1, `the Availability tab scrolls sideways on a phone (${m.scroll} > ${m.win})`));
+      problems.push(...ok(!m.outside.length, `content outside the grid runs off the edge: ${m.outside.join(", ")}`));
+      problems.push(...ok(m.sumVisible, "the Usable column isn't visible once the grid is scrolled"));
     } finally {
       await page.setViewport({ width: 1280, height: 900, isMobile: false });
     }

@@ -852,6 +852,119 @@ function availGrid() {
     <div class="gridwrap"><table class="avgrid"><thead>${head}</thead><tbody>${body}</tbody></table></div>${legend}`;
 }
 
+// ------------------------------------- applicant availability at a glance
+// The mirror of availGrid() for the other side of the room, admin only.
+//
+// Until this existed the only thing the tool said about applicant availability
+// was a count — "3 of 17 submitted" — and the only way to see WHICH times
+// somebody had offered was to open the panel editor for that one person. So
+// the question every coordinator actually has ("where should I add a time?")
+// could not be answered from the screen at all.
+//
+// Rows are times and columns are applicants, so a row reads as demand for that
+// hour. The schedule is drawn on top of it: the one applicant who gets each
+// hour has a ringed cell, which makes the crowding visible — five letters in a
+// row and one ring is exactly why the other four are under "needs attention".
+// Letters carry the meaning, never colour alone, and the ring is a shape, so
+// the grid still reads without colour vision.
+function candGrid() {
+  const { slots, committee, chair } = EFF();
+  const surnameOf = (n) => String(n || "").trim().split(/\s+/).pop();
+  const people = activeCands().slice()
+    .sort((a, b) => surnameOf(a.name).localeCompare(surnameOf(b.name)) || a.name.localeCompare(b.name));
+  if (!slots.length || !people.length) return "";
+
+  const ivMap = {};
+  for (const m of committee) ivMap[m.name] = { g: m.gender, avail: S.availIv[m.name] || {} };
+  const canRun = (id) => !!(buildPanel(id, "ip", ivMap, chair) || buildPanel(id, "zoom", ivMap, chair));
+  // where each applicant currently sits — auto or hand-built. Wrapped because
+  // this grid must still draw if panel building throws for any reason.
+  let bookedAt = {}, scheduled = 0, why = {};
+  try {
+    const res = computePanels();
+    res.panels.forEach((p) => { bookedAt[p.cand] = String(p.slot); });
+    scheduled = res.panels.length;
+    why = res.why || {};
+  } catch { bookedAt = {}; scheduled = 0; why = {}; }
+
+  const GLYPH = { ip: "P", zoom: "Z", either: "E" };
+  const WORD = { ip: "in person", zoom: "Zoom", either: "either" };
+  const answers = (c) => liveAnswers(availForCand(c)).length;
+
+  const head = `<tr><th class="tlab">Time</th>` +
+    people.map((c) => {
+      const n = answers(c);
+      return `<th class="ivcol"><span data-tip="${escapeHtml(c.name)}${n ? ` · free for ${n} time${n === 1 ? "" : "s"}` : " · hasn't sent availability"}">` +
+        `${escapeHtml(surnameOf(c.name))}</span></th>`;
+    }).join("") +
+    `<th class="sum" data-tip="How many applicants can do this time, and whether a balanced panel could run then. Green means both — an hour that can actually hold an interview.">Usable</th>` +
+    `<th class="pad" aria-hidden="true"></th></tr>`;
+
+  const body = groupByDate(slots).map((g) =>
+    `<tr class="dayrow"><td colspan="${people.length + 3}">${escapeHtml(g.title)}</td></tr>` +
+    g.items.map((t) => {
+      const cells = people.map((c) => {
+        const v = availForCand(c)[t.id];
+        const booked = bookedAt[c.id] === t.id;
+        const tip = `${escapeHtml(c.name)} · ${v ? WORD[v] : "not available"}${booked ? " · interviewing at this time" : ""}`;
+        return v
+          ? `<td class="av ${v}${booked ? " booked" : ""}" data-tip="${tip}">${GLYPH[v]}</td>`
+          : `<td class="av no" data-tip="${tip}"></td>`;
+      }).join("");
+      const n = people.filter((c) => availForCand(c)[t.id]).length;
+      const panelOk = canRun(t.id);
+      // Red is reserved for what the coordinator can act on: an hour applicants
+      // WANT that no panel can staff. An hour nobody has asked for yet is not a
+      // problem — during collection most hours look like that, and painting
+      // them red would make the whole grid cry wolf.
+      const tone = n === 0 ? "idle" : panelOk ? "yes" : "nope";
+      const note = n === 0
+        ? `Nobody has offered this time yet${panelOk ? " — a panel could run here if someone does" : ", and no balanced panel could run here as things stand"}`
+        : !panelOk ? `${n} applicant${n === 1 ? "" : "s"} could come, but no balanced panel can run then — this hour is unusable until more interviewers are free`
+        : `${n} applicant${n === 1 ? "" : "s"} could come and a panel can run — one of them gets it`;
+      return `<tr><th class="tlab">${escapeHtml(slotTimeLabel(t))}</th>${cells}` +
+        `<td class="sum ${tone}" data-tip="${escapeHtml(note)}">${n}${panelOk ? " ✓" : " ✗"}</td>` +
+        `<td class="pad"></td></tr>`;
+    }).join("")).join("");
+
+  // one number per applicant: how many times they offered. A dash is the
+  // fastest way to see who still has to be chased.
+  const foot = `<tr class="footrow"><th class="tlab">Times offered</th>` +
+    people.map((c) => { const n = answers(c);
+      return `<td class="tot ${n ? "" : "none"}" data-tip="${escapeHtml(c.name)}">${n || "—"}</td>`; }).join("") +
+    `<td class="sum idle"></td><td class="pad"></td></tr>`;
+
+  // Who can't be scheduled, and why — one line per cause, because the three
+  // causes take three different actions and a bare shortfall number implies the
+  // wrong one (add times) for two of them.
+  const usable = slots.filter((t) => canRun(t.id)).length;
+  const missed = people.filter((c) => !bookedAt[c.id]);
+  const count = (r) => missed.filter((c) => (why[c.id] || {}).reason === r).length;
+  const nAnswer = count("no-answer"), nPanel = count("no-panel"), nTaken = count("contested");
+  const causes = [
+    nAnswer && `<li><b>${nAnswer}</b> ${nAnswer === 1 ? "hasn't" : "haven't"} sent any availability yet — chase ${nAnswer === 1 ? "them" : "those"} first (they're the dashes below).</li>`,
+    nPanel && `<li><b>${nPanel}</b> offered only times where no balanced panel can run — the ✗ rows. More interviewers free at those hours is what fixes it.</li>`,
+    nTaken && `<li><b>${nTaken}</b> want times that are already taken. <b>This is the one more interview times would fix.</b></li>`,
+  ].filter(Boolean).join("");
+  const capacity = missed.length && causes     // no causes at all = panel building failed; say nothing
+    ? `<div class="note warnbox"><b class="warn">⚠ ${scheduled} of ${people.length} applicants can be
+        interviewed in the ${usable} usable time${usable === 1 ? "" : "s"} you have.</b>
+        <ul class="small" style="margin:.4rem 0 0">${causes}</ul></div>`
+    : "";
+
+  const legend = `<div class="glegend">
+    <span><i class="sw ip">P</i> in person</span><span><i class="sw zoom">Z</i> Zoom</span>
+    <span><i class="sw either">E</i> either</span><span><i class="sw no"></i> not available</span>
+    <span><i class="sw either booked">E</i> interviewing then</span>
+    <span class="muted small">hover any square for the name</span></div>`;
+
+  return `<div class="note tip" style="margin-bottom:.6rem">Every applicant against every time — what they
+      said they can do, with their interview ringed. The <b>Usable</b> column counts the applicants who
+      offered that hour and says whether a panel could actually run then.</div>
+    ${capacity}
+    <div class="gridwrap"><table class="avgrid demand"><thead>${head}</thead><tbody>${body}${foot}</tbody></table></div>${legend}`;
+}
+
 // ------------------------------------------------------ 2 · Availability
 function renderAvailability() {
   const map = S.availIv[ui.member] || {};
@@ -866,9 +979,15 @@ function renderAvailability() {
   // Everyone on the committee sees the grid — an interviewer choosing times is
   // far better informed knowing which times are thin.
   const grid = availGrid();
-  if (grid) html += section("avgrid", "Who's available when", "at a glance", grid, { open: true });
+  if (grid) html += section("avgrid", "Who's available when", "interviewers", grid, { open: true });
 
   if (ui.isAdmin) {
+    // The applicant side of the same picture. Admin only, like the dashboard
+    // below it: it is a coordination view, and it names every applicant.
+    const cg = candGrid();
+    if (cg) html += section("candgrid", "When can the applicants come", "applicants", cg,
+      { open: true, info: "Every applicant against every interview time, with the interview each one is currently scheduled for ringed. The Usable column shows how many applicants offered that hour and whether a balanced panel could run then — which is where to add times." });
+
     const { committee } = EFF();
     const ivSubmitted = committee.filter((m) => liveAnswers(S.availIv[m.name]).length);
     const ivNot = committee.filter((m) => !liveAnswers(S.availIv[m.name]).length).map((m) => m.name);

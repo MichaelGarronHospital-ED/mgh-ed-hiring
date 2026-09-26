@@ -435,6 +435,37 @@ ul.small { margin:.4rem 0 0; padding-left:1.2rem; } ul.small li { margin:.3rem 0
 .glegend .sw.ip { background:var(--green); } .glegend .sw.zoom { background:var(--purple); }
 .glegend .sw.either { background:var(--accent); } .glegend .sw.no { background:var(--line-2); }
 
+/* ---- the same grid for applicants -------------------------------------- */
+/* Same table, one extra state: the time an applicant is actually being
+   interviewed at. It is drawn as a RING rather than another colour — the grid
+   already spends its four colours on in person / Zoom / either / unavailable,
+   and a fifth hue would be both unreadable and invisible to anyone who can't
+   separate them. A shape is neither. `inset` so it can't widen a cell and
+   nudge the 1.9rem column grid out of line. */
+.avgrid td.av.booked { box-shadow:inset 0 0 0 2.5px var(--ink); }
+/* An hour nobody has asked for yet: neither good news nor a problem. */
+.avgrid td.sum.idle { background:var(--bg); color:var(--mut); }
+/* Seventeen applicants is wider than any phone, and the summary is the column
+   you are reading the row FOR — so it is pinned to the right edge the way the
+   time label is pinned to the left, instead of living past a long scroll.
+   `demand` is only ever a modifier on .avgrid; it is never a utility of its
+   own (see the .tip/.info note above — that is how this file has been bitten
+   before). Every pinned cell sets its own background, or the columns it floats
+   over would show through it. */
+.avgrid.demand td.sum, .avgrid.demand th.sum { position:sticky; right:0; z-index:1; background:var(--surface); }
+.avgrid.demand th.sum { padding-left:.55rem; }
+/* Same reason for the date: scrolled a few names in, "Thursday, October 1" had
+   left the screen and the rows lost the day they belong to. The cell spans the
+   table, so pinning it left keeps the words where the time labels are. */
+.avgrid.demand tr.dayrow td { position:sticky; left:0; background:var(--surface); }
+.glegend .sw.booked { box-shadow:inset 0 0 0 2px var(--ink); }
+/* Footer row: how many times each applicant offered, and a dash for the ones
+   who have sent nothing at all — the column you scan to know who to chase. */
+.avgrid tr.footrow th.tlab { padding-top:.45rem; font-weight:600; color:var(--mut); font-size:.72rem; }
+.avgrid td.tot { text-align:center; padding-top:.45rem; font-size:.72rem; font-weight:600;
+  color:var(--ink-2); font-variant-numeric:tabular-nums; cursor:default; }
+.avgrid td.tot.none { color:var(--red); }
+
 /* ---- collation & shortlist (admin) -------------------------------------- */
 /* A row per applicant instead of a six-column table. Flag reasons are the
    reason this isn't a table: several people can flag one applicant, each with a

@@ -84,6 +84,15 @@ Full design and reference data (committee, candidates, questions, rules) live in
   old chair out of every saved override — and if the new chair was already on
   that panel, the swap is unpaid: three members become two. The old chair stays
   on as an ordinary member in that case.
+- **Two availability grids, one stylesheet block.** `availGrid()` is the
+  interviewers, `candGrid()` the applicants (admin-only, and the only place the
+  tool shows *what* an applicant answered rather than *whether* they did).
+  Both are `.avgrid`; the applicant one adds `.demand`, which pins the summary
+  column, and `.booked`, the ring marking the hour an applicant is actually
+  being interviewed. In its **Usable** column red means *actionable* — people
+  want that hour and no panel can run — never "nobody has answered yet", which
+  is most hours while availability is still coming in and would make the grid
+  cry wolf exactly when it is most used.
 - **Manual panels bypass most checks.** The auto-matcher gives one candidate per
   slot, so only a **manual override** can double-book a time (now surfaced as
   `doubleBooked`) or seat someone who never said they were free (now warned).

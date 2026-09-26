@@ -62,8 +62,11 @@ from DESIGN.md and checks the schedule on screen against them:
   third: someone who can do 10am only by Zoom cannot sit on the in-person panel
   booked then, and both this check and the tab got that wrong first time round.
 
-`scenarios.mjs` covers the paths a random round rarely reaches, including the
-Panels tab at **390px** — the "needs attention" lines are prose, and prose is
+`scenarios.mjs` covers the paths a random round rarely reaches: it also reads
+the **applicant availability grid** back cell by cell and checks it against what
+each applicant actually submitted, that the ringed cells match the schedule, and
+that the summary column survives being scrolled on a phone. It renders both the
+Panels and Availability tabs at **390px** — the "needs attention" lines are prose, and prose is
 what runs off the edge of a phone.
 
 ## Scope
