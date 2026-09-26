@@ -135,11 +135,22 @@ header.page .muted { margin:.15rem 0 0; }
 .tag { background:var(--purple); color:#fff; border-radius:980px; padding:.12rem .6rem; font-size:.72rem; font-weight:600; letter-spacing:.01em; }
 .tag.soft { background:#eceafe; color:var(--purple); }
 
-/* ---- deadline / info banner --------------------------------------------- */
-.banner { max-width:var(--maxw); margin:.4rem auto 0; padding:.6rem 1.15rem; }
+/* ---- deadline banner ------------------------------------------------------
+   The state modifier is `past`, NOT `info`. renderBanner sets the whole
+   className ("banner past"), and `.info` is the 16px round badge above — so
+   `banner info` collapsed the banner to a 16px inline-flex circle with its
+   contents hanging off the left edge, overlapping the header. It needed no
+   code change to appear: the class only gets added once the deadline is in
+   the past, so it broke by itself the morning after the deadline. Same trap
+   as `.tip` vs `.tooltip` below.
+   The explicit display/width/height/radius are the belt-and-braces half: this
+   rule sits after every utility, so a modifier that collides in future is
+   overridden here rather than reshaping the bar. */
+.banner { display:block; width:auto; height:auto; border-radius:0;
+  max-width:var(--maxw); margin:.4rem auto 0; padding:.6rem 1.15rem; }
 .banner .inner { display:flex; align-items:center; gap:.6rem; background:var(--amber-tint);
   border:1px solid #f2dca6; color:var(--amber); border-radius:var(--radius-sm); padding:.55rem .85rem; font-size:.88rem; }
-.banner.info .inner { background:var(--accent-tint); border-color:#bcdcfb; color:#0060c0; }
+.banner.past .inner { background:var(--accent-tint); border-color:#bcdcfb; color:#0060c0; }
 .banner.urgent .inner { background:var(--red-tint); border-color:#f5c2c2; color:var(--red); }
 .banner .inner b { font-weight:600; }
 
@@ -332,6 +343,20 @@ ul.small { margin:.4rem 0 0; padding-left:1.2rem; } ul.small li { margin:.3rem 0
   .collhead .name { width:100%; }
   .revcard .rate, .revcard .flagbtn { margin-left:auto; }
 }
+
+/* ---- touch targets -------------------------------------------------------
+   Text-link buttons ("change", "remove", "dismiss") were 19–23px tall and the
+   info badge 16px — well under a fingertip. The negative margins cancel the
+   padding exactly, so the hit box grows to ~39px while the layout stays
+   pixel-identical. Vertical only: these sit in flex rows with small gaps, and
+   horizontal negative margins would close those gaps up.
+
+   Keyed on `pointer: coarse` as well as width, because a tablet is a touch
+   device at 768px+ and would otherwise be treated as a mouse. */
+@media (max-width:640px), (pointer: coarse) {
+  .linky { padding-top:.5rem; padding-bottom:.5rem; margin-top:-.5rem; margin-bottom:-.5rem; }
+  .info { width:22px; height:22px; font-size:.78rem; }
+}
 @media print {
   nav.tabs, .primary, .btn, .flagbtn, .savebtn, .linky, #toast, .banner, .note.tip,
   details.howto, .tooltip { display:none !important; }
@@ -479,3 +504,20 @@ td.adj { font-variant-numeric:tabular-nums; color:var(--ink-2); }
 /* ---- "saved on this device only" notice --------------------------------- */
 .note.local { background:#fbfbfd; border-color:var(--line); color:var(--ink-2); }
 .note.local b { color:var(--ink); }
+
+/* ---- mobile field sizing — MUST STAY LAST --------------------------------
+   iOS Safari zooms the whole page whenever a focused field's text is smaller
+   than 16px. The responsive block sets `body { font-size:15.5px }` for density
+   and every control takes `font:inherit`, so on a phone tapping the access-code
+   box, a reason, a note or a date picker zoomed the page in and shoved the
+   button you were reaching for off-screen. Typing then felt broken.
+
+   Density stays; the things you type into do not shrink. This block sits at the
+   end ON PURPOSE: several of the rules it overrides (`.overlay-box input`,
+   `.tform input`) have identical specificity and appear later in the file, so
+   order is what decides it. Adding rules after this one will silently undo it. */
+@media (max-width:640px) {
+  input, select, textarea,
+  .overlay-box input, .overlay-box select,
+  .tform input, .tform select { font-size:16px; }
+}

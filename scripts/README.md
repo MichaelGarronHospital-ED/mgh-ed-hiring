@@ -23,6 +23,7 @@ run before applying.
 | Script | What it does |
 | --- | --- |
 | `report-data.mjs` | Read-only inventory of everything stored, grouped by candidate. **Start here.** `--issues` lists only what needs attention. |
+| `diagnose-login.mjs` | Read-only. Why won't a code sign in? Tests the two independent halves — does it decrypt the questions (staff vs admin), and does Firebase accept it as that account's password — and names the fault. `ED_IV_CODE='…' node diagnose-login.mjs`; `--offline` skips the network half. Never prints the code. |
 | `rename-candidate.mjs` | Fix a candidate's name **in place**. The right way to correct a spelling. |
 | `migrate-candidate.mjs` | Move reviewer input from one roster entry onto another. For cleaning up after a remove-and-re-add. |
 | `purge-candidate.mjs` | Permanently delete a roster entry. Refuses if anything still references it. |

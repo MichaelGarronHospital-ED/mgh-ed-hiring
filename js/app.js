@@ -11,7 +11,8 @@ import { firebaseConfig, ORG_NAME, CHAIR, COMMITTEE, SLOTS, ONEDRIVE,
 import { decryptContent } from "./data.js";
 import { LocalStore, FirestoreStore, key } from "./store.js";
 import { autoPanels, buildPanel } from "./panels.js";
-import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell, lastKey } from "./util.js";
+import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell, lastKey,
+         ss, ls, storageWorks } from "./util.js";
 import { effectiveSlots, slotLabel, slotTimeLabel, groupByDate, checkSlot, splitRange, responseCounts,
          newSlotId, isStructured, fmtDate } from "./slots.js";
 
@@ -45,9 +46,8 @@ const availForCand = (c) => (S.availCand[c.id]) || (S.availCand[lastKey(c.name)]
 
 // ------------------------------------------------------------------ gate
 async function unlock(typed, silent) {
-  const gerr = $("#gerr");
   if (!(window.crypto && window.crypto.subtle)) {
-    if (gerr) gerr.textContent = "Open the secure https link (not a local file).";
+    gateFail("Open the secure https link (not a local file).");
     return;
   }
   // 1) admin OR committee — the code independently decrypts the questions and
@@ -59,8 +59,17 @@ async function unlock(typed, silent) {
     ui.isAdmin = decrypted.isAdmin;
     ui.role = ui.isAdmin ? "admin" : "committee";
     try { await initStore(ui.role, typed); }
-    catch (e) { if (gerr) gerr.textContent = signInError(e); return; }
-    sessionStorage.setItem("ed_iv_code", typed);
+    catch (e) {
+      // A stored code that fails must not be replayed on every page load:
+      // Firebase throttles the DEVICE after repeated failures, so a stale code
+      // in sessionStorage can lock someone out all by itself — and each reload
+      // makes the block longer while looking like the code is the problem.
+      ss.del("ed_iv_code");
+      gateFail(signInError(e, { codeVerified: true, isAdmin: ui.isAdmin,
+        email: ui.isAdmin ? AUTH.adminEmail : AUTH.committeeEmail }));
+      return;
+    }
+    ss.set("ed_iv_code", typed);
     $("#gate").classList.add("hidden");
     proceedToMemberPick();
     return;
@@ -68,32 +77,106 @@ async function unlock(typed, silent) {
   // 2) applicant — a different code; goes straight to their own scheduling
   const localCandOk = typed === CANDIDATE_CODE_LOCAL;
   if (AUTH.mode !== "roles" && !localCandOk) {
-    if (!silent && gerr) gerr.textContent = "Incorrect code.";
+    if (!silent) gateFail("Incorrect code.");
     return;
   }
   try {
     ui.role = "candidate";
     await initStore("candidate", typed);
   } catch (e) {
-    if (!silent && gerr) gerr.textContent = signInError(e);
+    ss.del("ed_iv_code");
+    // The code decrypted nothing, so it is either the applicant code or simply
+    // wrong — we genuinely cannot tell which, and must not imply otherwise.
+    if (!silent) gateFail(signInError(e, { email: AUTH.candidateEmail }));
     return;
   }
-  sessionStorage.setItem("ed_iv_code", typed);
+  ss.set("ed_iv_code", typed);
   $("#gate").classList.add("hidden");
   proceedCandidate();
 }
 
-function signInError(e) {
+// Why the sign-in failed, in words that point at the actual fault.
+//
+// `codeVerified` is the load-bearing distinction. A code that DECRYPTED is
+// cryptographically proven to be a real staff or admin code — nothing else
+// unwraps the content key. So if Firebase then rejects it, the code is right
+// and the ACCOUNT is wrong: its password was never set to this code, or it
+// doesn't exist, or the provider is off. Reporting that as "Incorrect code."
+// sends the one person who holds a valid code away to retype it, which is the
+// one thing that cannot help — and it is indistinguishable from a typo, so
+// nobody thinks to look in the Firebase console.
+//
+// The detailed messages are safe to show: they appear ONLY after a valid code
+// has decrypted, so the reader already has staff or admin access.
+function signInError(e, opts = {}) {
   const c = (e && e.code) || "";
-  if (c.includes("wrong-password") || c.includes("invalid-credential") || c.includes("user-not-found"))
-    return "Incorrect code.";
-  if (c.includes("network")) return "Network problem — check your connection and try again.";
-  return "Couldn't sign in. Please try again.";
+  const known = !!opts.codeVerified;
+  const who = opts.email || "the role account";
+  const console_ = "Leadership: Firebase console → Authentication";
+
+  // The SDK itself never arrived — nothing was even attempted.
+  if (c === "app/sdk-unreachable")
+    return "Couldn't load the sign-in service. A hospital network, VPN or content blocker may be "
+      + "blocking www.gstatic.com. Try another network (mobile data is the quickest test).";
+  // Firebase throttles the DEVICE, not the account, and every retry extends it.
+  // Saying "try again" here is actively harmful, so say the opposite.
+  if (c.includes("too-many-requests"))
+    return "Too many sign-in attempts — the server has temporarily blocked this device. "
+      + "Wait about 15 minutes, then try ONCE. Retrying now makes the block last longer.";
+  if (c.includes("network-request-failed") || c.includes("network"))
+    return "Network problem — check your connection and try again.";
+  if (c.includes("operation-not-allowed"))
+    return `Email/Password sign-in is switched off for this project. ${console_} → Sign-in method.`;
+  if (c.includes("user-disabled"))
+    return `The ${who} account is disabled. ${console_} → Users.`;
+  // "invalid-credential" is what a modern project returns for BOTH a wrong
+  // password and a missing account once email-enumeration protection is on, so
+  // these three cannot be told apart from here — the message covers both.
+  if (c.includes("wrong-password") || c.includes("invalid-credential") || c.includes("user-not-found")) {
+    if (!known) return "Incorrect code.";
+    return `This is a valid ${opts.isAdmin ? "admin" : "staff"} code — it unlocked the questions — but `
+      + `${who} rejected it. That account either doesn't exist or its password isn't this code. `
+      + `${console_} → Users → ${who}, and set its password to this exact code.`;
+  }
+  if (!known) return "Couldn't sign in. Please try again.";
+  return `The code is recognised but sign-in failed${c ? ` (${c})` : ""}. ${console_} → Users, and check ${who}.`;
+}
+
+// One place that paints a gate failure, so every path gets the same treatment
+// (and the hint below counts attempts across all of them).
+let gateAttempts = 0;
+function gateFail(msg) {
+  gateAttempts++;
+  const gerr = $("#gerr"); if (!gerr) return;
+  // .overlay-box centres its text, which is fine for "Incorrect code." and
+  // unreadable for the several-sentence diagnoses below.
+  gerr.innerHTML = `<div style="text-align:${msg.length > 40 ? "left" : "center"}">${escapeHtml(msg)}</div>`
+    + gateHint(gateAttempts);
+}
+
+// Three separate codes reach this one box, so "it doesn't work" is ambiguous by
+// construction. After a couple of failures, say what the three are.
+function gateHint(n) {
+  if (n < 2) return "";
+  return `<div class="note tip" style="text-align:left; margin-top:.7rem">There are three different codes:
+    the <b>staff</b> code (reviewers), the <b>admin</b> code (leadership — Panels, Ranking and Setup)
+    and the <b>applicant</b> code. They are not interchangeable: the staff code will sign you in, but
+    without the leadership view. If you are sure you have the right one, leadership should check the
+    matching account in the Firebase console.</div>`;
 }
 
 async function initStore(role, typed) {
   if (isConfigured()) {
-    const fb = await loadFirestore();
+    // Separate "the SDK never arrived" from "the server said no". They are the
+    // same thrown error to the gate otherwise, and a blocked CDN then reads as
+    // a bad code — a hospital network or content blocker is a real cause here.
+    let fb;
+    try { fb = await loadFirestore(); }
+    catch (e) {
+      const err = new Error("could not load the Firebase SDK");
+      err.code = "app/sdk-unreachable"; err.cause = e;
+      throw err;
+    }
     await signInFor(fb, role, typed); // may throw → surfaced at the gate
     const scopes = role === "candidate"
         ? (AUTH.mode === "roles" ? ["public"] : ["meta"])  // roles: only the PII-free public slots doc; anon: config
@@ -204,6 +287,18 @@ function proceedToMemberPick() {
   // always ask who you are on each sign-in (never auto-restore)
   ui.member = null;
   fillMemberSel();
+  // Say which of the two codes was used. The staff code signs you in perfectly
+  // well — just without Panels, Ranking and Setup — so someone who reaches for
+  // the wrong one gets in and then finds the leadership view missing, which
+  // they report as "I can't log in as admin". Nothing on screen told them.
+  const rl = $("#roleLine");
+  if (rl) {
+    rl.className = ui.isAdmin ? "note tip" : "note";
+    rl.innerHTML = ui.isAdmin
+      ? `<b>Leadership access</b> — you'll have Panels, Ranking and Setup.`
+      : `<b>Committee access</b> — Screen, Availability and Score. Expecting Panels, Ranking and Setup?
+         That's the separate <b>admin</b> code, not this one.`;
+  }
   $("#memberpick").classList.remove("hidden");
 }
 
@@ -335,13 +430,13 @@ const HOWTO_KEY = "ed_iv_howto_v1";
 let howtoState = null;
 function howtoAll() {
   if (howtoState) return howtoState;
-  try { howtoState = JSON.parse(localStorage.getItem(HOWTO_KEY) || "{}") || {}; }
+  try { howtoState = JSON.parse(ls.get(HOWTO_KEY) || "{}") || {}; }
   catch { howtoState = {}; }
   return howtoState;
 }
 function setHowto(id, open) {
   howtoAll()[id] = open;
-  try { localStorage.setItem(HOWTO_KEY, JSON.stringify(howtoState)); } catch { /* storage blocked */ }
+  ls.set(HOWTO_KEY, JSON.stringify(howtoState));
 }
 function howto(id, bodyHtml, label = "What to do here") {
   const open = howtoAll()[id] !== false;
@@ -360,7 +455,9 @@ function renderBanner() {
   const date = new Date(SCREENING_DEADLINE + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
   if (d > 0) { txt = `<b>Screening closes in ${d} day${d === 1 ? "" : "s"}</b> — due ${date}.`; if (d <= 3) cls += " urgent"; }
   else if (d === 0) { txt = `<b>Screening closes today</b> (${date}).`; cls += " urgent"; }
-  else { txt = `Screening deadline (${date}) has passed.`; cls += " info"; }
+  // "past", never "info": `.info` is the 16px round badge, and this line sets
+  // the banner's whole className (see the note in styles.css).
+  else { txt = `Screening deadline (${date}) has passed.`; cls += " past"; }
   el.className = cls;
   el.innerHTML = `<div class="inner"><span aria-hidden="true">🗓️</span><span>${txt}</span></div>`;
 }
@@ -396,7 +493,7 @@ const setupOpen = () => !$("#setupModal").classList.contains("hidden");
 const COLL_SORT_KEY = "ed_iv_collsort_v1";
 function collSort() {
   if (ui.collSort == null) {
-    try { ui.collSort = localStorage.getItem(COLL_SORT_KEY) || "name"; } catch { ui.collSort = "name"; }
+    ui.collSort = ls.get(COLL_SORT_KEY) || "name";
   }
   return ui.collSort;
 }
@@ -838,10 +935,18 @@ function validatePanel(members, slot, modality) {
   if (!balanced) warns.push("not a balanced panel");
   if (!sizeOk) warns.push(size < 3 ? "fewer than 3 members" : "more than 5 members");
   if (members.length !== present.length) warns.push("has members no longer on the committee");
-  // availability sanity for the chosen slot/modality
+  // availability sanity for the chosen slot/modality.
+  // "Hasn't answered at all" is the more serious case and used to pass in
+  // silence: the check only fired when someone had answered with the WRONG
+  // modality, so `av === undefined` — a panellist who never said they could
+  // make that time — produced no warning on a hand-built panel. The auto
+  // builder can't do this (buildPanel only picks from people who answered),
+  // so it only ever hid a manual mistake, which is exactly the one nothing
+  // else catches.
   if (slot != null) present.forEach((m) => {
     const av = (S.availIv[m] || {})[String(slot)];
-    if (av !== undefined && modality && !(av === "either" || av === modality)) warns.push(`${m} can't do ${modality} that time`);
+    if (av === undefined) warns.push(`${m} hasn't said they can do that time`);
+    else if (modality && !(av === "either" || av === modality)) warns.push(`${m} can't do ${modality} that time`);
   });
   return { ok: sizeOk && chairOk && balanced && members.length === present.length && !warns.length, sizeOk, chairOk, balanced, size, warns };
 }
@@ -885,7 +990,16 @@ function computePanels() {
     unsched = unsched.filter((x) => x !== cid);
   });
   const panels = Object.values(byCand).sort((a, b) => slotIds.indexOf(a.slot) - slotIds.indexOf(b.slot));
-  return { panels, unschedulable: unsched, understaffed: res.understaffed, interviewers, lostTime };
+  // Two candidates at one time. The auto-matcher cannot produce this — it
+  // matches one candidate per slot by construction — but a manual override can,
+  // and nothing else notices: validatePanel only ever sees one panel. Left
+  // unsaid, it surfaces as two applicants turning up for the same hour.
+  const bySlot = {};
+  panels.forEach((p) => { (bySlot[String(p.slot)] = bySlot[String(p.slot)] || []).push(p.cand); });
+  const doubleBooked = Object.entries(bySlot).filter(([, cs]) => cs.length > 1)
+    .map(([slot, cands]) => ({ slot, cands }));
+  return { panels, unschedulable: unsched, understaffed: res.understaffed, interviewers, lostTime,
+           doubleBooked, panelSize: res.panelSize };
 }
 
 function renderPanels() {
@@ -905,6 +1019,41 @@ function renderPanels() {
     ${Object.keys(overrides).length ? `<button class="btn ghost small" onclick="IV.clearOverrides(this)"><span aria-hidden="true">↺</span> Reset manual edits</button>` : ""}
   </div>`;
 
+  // Who is actually doing the interviews. Counted from the panels ON SCREEN —
+  // auto and manual together — rather than from the builder's own tally, because
+  // a hand-edited panel skews the share and that is exactly what this should
+  // show. The builder shares the non-chair seats out by load; this is the proof.
+  if (res.panels.length) {
+    const load = {}; committee.forEach((m) => { load[m.name] = 0; });
+    res.panels.forEach((p) => p.members.forEach((m) => { if (m in load) load[m]++; }));
+    const others = Object.entries(load).filter(([n]) => n !== chair);
+    const counts = others.map(([, v]) => v);
+    const unused = others.filter(([, v]) => !v).map(([n]) => n);
+    const lo = counts.length ? Math.min(...counts) : 0, hi = counts.length ? Math.max(...counts) : 0;
+    const chips = others.slice().sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([n, v]) => `<span class="chip">${escapeHtml(n)} <b>${v ? "×" + v : "—"}</b></span>`).join("");
+    const n = res.panels.length;
+    const loadBody = `<div class="note">${escapeHtml(chair)} chairs every panel, so the share that can be
+        spread is the <b>other</b> ${res.panelSize > 1 ? res.panelSize - 1 : 0} seat${res.panelSize === 2 ? "" : "s"} on each one.
+        They go to whoever has done fewest interviews so far${res.panelSize > 3
+          ? `, and panels are set to <b>${res.panelSize}</b> rather than the minimum 3 precisely so there are enough seats for everyone`
+          : ""}.
+        Availability wins over fairness where they conflict: someone free for only one time can only ever
+        sit on that one panel, and every panel still has to stay balanced.</div>
+      <p class="small"><b>${escapeHtml(chair)}</b> — all ${n} panel${n === 1 ? "" : "s"} (chair).</p>
+      <div>${chips}</div>
+      ${unused.length
+        ? `<p class="small" style="margin-top:.55rem"><b class="warn">⚠ Not on any panel:</b>
+           ${unused.map((x) => `<span class="chip">${escapeHtml(x)}</span>`).join("")} —
+           almost always because they haven't sent their availability, or only for times nobody is
+           being interviewed in.</p>`
+        : `<p class="ok small" style="margin-top:.55rem">✓ Every interviewer is on at least one panel.</p>`}`;
+    html += section("panelload", "Interviewer load",
+      unused.length ? `${unused.length} not used` : `${lo}–${hi} each`, loadBody,
+      { open: false, count: unused.length ? "⚠" : null,
+        info: "How the interviewing is shared out. The chair is on every panel by rule; the remaining seats go to whoever has done fewest so far, subject to who is actually available and keeping every panel balanced." });
+  }
+
   html += res.panels.map((p) => {
     const editing = ui.editPanel === p.cand;
     const v = p.valid || validatePanel(p.members, p.slot, p.modality);
@@ -918,8 +1067,11 @@ function renderPanels() {
     return card + `</div>`;
   }).join("") || `<div class="card">${empty("🧩", "No panels yet", "Panels appear once interviewers and applicants submit availability.")}</div>`;
 
-  if (res.unschedulable.length || res.understaffed.length || res.lostTime.length) {
+  if (res.unschedulable.length || res.understaffed.length || res.lostTime.length || res.doubleBooked.length) {
     html += `<div class="card"><b><span aria-hidden="true">⚠</span> Needs attention</b><ul class="small">
+      ${res.doubleBooked.map((d) => `<li><b>${escapeHtml(slotName(d.slot))}</b> has ${d.cands.length} applicants booked at the same time —
+        ${d.cands.map((id) => `<b>${escapeHtml(nameOf(id))}</b>`).join(", ")}. A manual panel put them together; move one to another time.
+        ${d.cands.map((id) => `<button class="linky" onclick="IV.editPanel('${id}')">edit ${escapeHtml(nameOf(id))}</button>`).join(" ")}</li>`).join("")}
       ${res.lostTime.map((id) => `<li><b>${escapeHtml(nameOf(id))}</b> — their manual panel was at a time that has since been removed or changed; showing the auto-suggestion instead.
         <button class="linky" onclick="IV.clearOverride('${id}')">dismiss</button></li>`).join("")}
       ${res.unschedulable.map((id) => `<li><b>${escapeHtml(nameOf(id))}</b> — no available time yields a balanced panel.
@@ -1184,7 +1336,7 @@ function rerenderSettings() {
 
 // ------------------------------------------------------------ candidate view
 function proceedCandidate() {
-  const saved = sessionStorage.getItem("ed_iv_cand");
+  const saved = ss.get("ed_iv_cand");
   if (saved) ui.candLast = saved;
   $("#candview").classList.remove("hidden");
   renderCandidate();
@@ -1226,13 +1378,13 @@ function renderCandidate() {
       }
       ui.candLast = k;
       ui.candDisplay = v.replace(/\s+/g, " ");
-      sessionStorage.setItem("ed_iv_cand", ui.candLast);
-      sessionStorage.setItem("ed_iv_cand_disp", ui.candDisplay);
+      ss.set("ed_iv_cand", ui.candLast);
+      ss.set("ed_iv_cand_disp", ui.candDisplay);
       renderCandidate();
     };
     return;
   }
-  const who = ui.candDisplay || sessionStorage.getItem("ed_iv_cand_disp")
+  const who = ui.candDisplay || ss.get("ed_iv_cand_disp")
     || (ui.candLast ? ui.candLast.charAt(0).toUpperCase() + ui.candLast.slice(1) : "");
   // read by the SAME normalized key we write under (ui.candLast), not the display name
   const map = S.availCand[ui.candLast] || {};
@@ -1297,7 +1449,7 @@ window.IV = {
   pickScore: (id) => { ui.scoreCand = id; renderScore(); wireSections(); window.scrollTo({ top: 0, behavior: "smooth" }); },
   sortColl: (k) => {
     ui.collSort = k;
-    try { localStorage.setItem(COLL_SORT_KEY, k); } catch { /* storage blocked */ }
+    ls.set(COLL_SORT_KEY, k);
     renderScreen(); wireSections();
   },
   note: (qi, val) => saveNoteKeyed(ui.member, ui.scoreCand, qi, val),
@@ -1529,8 +1681,8 @@ window.CAND = {
           ? "We can no longer find your name in the applicant list — please contact us"
           : "Couldn't save — check your connection", "err"));
   },
-  rename: () => { sessionStorage.removeItem("ed_iv_cand"); sessionStorage.removeItem("ed_iv_cand_disp"); ui.candLast = null; ui.candDisplay = null; renderCandidate(); },
-  logout: () => { ["ed_iv_cand", "ed_iv_cand_disp", "ed_iv_code"].forEach((k) => sessionStorage.removeItem(k)); location.reload(); },
+  rename: () => { ss.del("ed_iv_cand"); ss.del("ed_iv_cand_disp"); ui.candLast = null; ui.candDisplay = null; renderCandidate(); },
+  logout: () => { ["ed_iv_cand", "ed_iv_cand_disp", "ed_iv_code"].forEach((k) => ss.del(k)); location.reload(); },
 };
 
 // ------------------------------------------------- instant info tooltips
@@ -1578,6 +1730,20 @@ $("#setupClose").onclick = closeSetup;
 $("#settings").addEventListener("focusout", flushSetup); // catch up on held live updates
 $("#setupModal").onclick = (e) => { if (e.target === $("#setupModal")) closeSetup(); };
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.defaultPrevented && setupOpen()) closeSetup(); });
-$("#logout").onclick = () => { ["ed_iv_code", "ed_iv_member", "ed_iv_cand"].forEach((k) => sessionStorage.removeItem(k)); location.reload(); };
-const savedCode = sessionStorage.getItem("ed_iv_code");
+$("#logout").onclick = () => { ["ed_iv_code", "ed_iv_member", "ed_iv_cand"].forEach((k) => ss.del(k)); location.reload(); };
+// Tells the net in index.html that the module really did load and run. Without
+// this it shows "the page didn't finish loading" after 8 seconds.
+window.__edReady = true;
+
+// A browser that blocks site storage can still do everything that matters —
+// every answer goes to the server — but it cannot replay your own input on a
+// later visit. Say so once, plainly, rather than let it look like lost work.
+if (!storageWorks()) {
+  const el = $("#gerr");
+  if (el) el.innerHTML = `<div style="text-align:left" class="muted">Your browser is blocking site storage
+    (often Settings → Safari → “Block All Cookies”, or Private Browsing). You can still sign in and
+    everything you submit is saved — this device just won’t remember your own answers between visits.</div>`;
+}
+
+const savedCode = ss.get("ed_iv_code");
 if (savedCode) unlock(savedCode, true);

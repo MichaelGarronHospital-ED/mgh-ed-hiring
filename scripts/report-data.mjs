@@ -134,7 +134,19 @@ const liveKeys = new Set([...bySurname.keys()]);
 const allKeys = new Set(candidates.map((c) => lastKey(c.name)));
 for (const a of availCand) {
   const picks = Object.keys(a.slots || {}).length;
-  if (!picks) continue;
+  // A document with NO times is still evidence: it is only created when someone
+  // typed that surname at the applicant gate and was let through. So it means
+  // "they showed up and nothing is recorded", which is not the same fact as an
+  // applicant who never opened the link — and it is the fingerprint the
+  // checkName wipe left behind (store.js: the probe used to send `{slots:{}}`,
+  // which replaced the map on every return visit). Chase these by hand; the
+  // data cannot say whether they picked times and lost them or picked none.
+  if (!picks) {
+    if (liveKeys.has(a.id))
+      issues.push(`"${a.id}" reached the applicant page but has NO times saved — they got past the ` +
+        `name check, so they did open the link. Ask them directly rather than assuming no reply.`);
+    continue;
+  }
   if (!allKeys.has(a.id))
     issues.push(`Availability under "${a.id}" (${picks} time(s)) matches NO candidate — ` +
       `someone submitted under a name that isn't on the roster, and nobody is reading it.`);

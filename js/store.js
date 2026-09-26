@@ -17,7 +17,7 @@
 // ============================================================================
 
 import { effectiveSlots, toStored } from "./slots.js";
-import { lastKey } from "./util.js";
+import { lastKey, ls } from "./util.js";
 
 export const key = (member, candId) => `${member}~${candId}`;
 
@@ -85,12 +85,12 @@ export class LocalStore extends BaseStore {
   }
   _load() {
     try {
-      const raw = localStorage.getItem(LS_KEY);
+      const raw = ls.get(LS_KEY);
       this.state = raw ? { ...EMPTY(), ...JSON.parse(raw) } : EMPTY();
     } catch { this.state = EMPTY(); }
   }
   _save() {
-    localStorage.setItem(LS_KEY, JSON.stringify(this.state));
+    ls.set(LS_KEY, JSON.stringify(this.state));   // a blocked browser just forgets
     try { this._ch && this._ch.postMessage(1); } catch { /* ignore */ }
     this._emit();
   }
@@ -274,7 +274,7 @@ export class FirestoreStore extends BaseStore {
   // -- echo mirror (reviewer's own screening/scores, per device) ------------
   _loadEcho() {
     try {
-      const raw = JSON.parse(localStorage.getItem(ECHO_KEY) || "{}");
+      const raw = JSON.parse(ls.get(ECHO_KEY) || "{}");
       this._echoScreening = raw.screening || {};
       this._echoScores = raw.scores || {};
       this.state.screening = { ...this._echoScreening };
@@ -283,7 +283,7 @@ export class FirestoreStore extends BaseStore {
   }
   _saveEcho() {
     if (!this._echo) return;
-    try { localStorage.setItem(ECHO_KEY, JSON.stringify({ screening: this._echoScreening, scores: this._echoScores })); } catch { /* ignore */ }
+    ls.set(ECHO_KEY, JSON.stringify({ screening: this._echoScreening, scores: this._echoScores }));
   }
   _doc(name, id) { const { db, doc } = this._fb; return doc(db, name, id); }
   async addCandidate(name) {
@@ -352,12 +352,12 @@ export class FirestoreStore extends BaseStore {
   // applicant's own answers, remembered on this device so a returning applicant
   // sees what they picked (the server copy is write-only for them)
   _loadCandEcho() {
-    try { this.state.availCand = JSON.parse(localStorage.getItem(CAND_ECHO_KEY) || "{}"); } catch { this.state.availCand = {}; }
+    try { this.state.availCand = JSON.parse(ls.get(CAND_ECHO_KEY) || "{}"); } catch { this.state.availCand = {}; }
   }
   _saveCandEcho(who, map) {
     try {
-      const all = JSON.parse(localStorage.getItem(CAND_ECHO_KEY) || "{}");
-      all[who] = map; localStorage.setItem(CAND_ECHO_KEY, JSON.stringify(all));
+      const all = JSON.parse(ls.get(CAND_ECHO_KEY) || "{}");
+      all[who] = map; ls.set(CAND_ECHO_KEY, JSON.stringify(all));
     } catch { /* storage blocked — the server copy is still saved */ }
   }
   // Same rollback as setScreening, and it matters MORE here: scores are never
@@ -395,12 +395,24 @@ export class FirestoreStore extends BaseStore {
   }
   // Applicant only. Applicants cannot READ the roster, so the only way to tell
   // them their name is unknown is to try a write and see if the rules allow it.
-  // An empty merge is a no-op for a name that IS on the roster: it creates or
-  // touches the doc without disturbing answers from an earlier visit.
+  //
+  // The probe writes NOTHING — `{}` with merge carries no field paths, so the
+  // rules still evaluate it (an unknown surname is refused, which is the whole
+  // point) while an existing document is left exactly as it was.
+  //
+  // It used to send `{ slots: {} }`. That is NOT a no-op: an empty map has no
+  // leaf paths of its own, so merge treats `slots` itself as the leaf and
+  // REPLACES it — wiping every time the applicant had already picked. And this
+  // fires on the way IN, every time they type their surname, which is every
+  // visit after the browser tab has closed (the name lives in sessionStorage).
+  // Worse, it was invisible: the applicant's own screen replays from the
+  // per-device echo, so they still saw their old picks ticked while the server
+  // held an empty map and the committee saw "waiting on" them.
+  // Pinned by tests/audit.checkname.test.mjs.
   async checkName(key) {
     const { setDoc } = this._fb;
     try {
-      await setDoc(this._doc("interviews_availCand", key), { slots: {} }, { merge: true });
+      await setDoc(this._doc("interviews_availCand", key), {}, { merge: true });
       return true;
     } catch (e) {
       if (e && e.code === "permission-denied") return false;

@@ -40,6 +40,80 @@ Full design and reference data (committee, candidates, questions, rules) live in
   refuse a write under a surname not on the roster (`/interviews_meta/allowed`,
   fail-closed) so nothing is silently lost — **sync that list before publishing
   rules**, or applicants are locked out. `report-data.mjs --issues` flags both.
+- **Never `merge` an empty map into Firestore — it REPLACES, it doesn't merge.**
+  `setDoc(ref, { slots: {} }, { merge: true })` deletes the whole `slots` map:
+  merge builds its field mask from the data's *leaf* paths, and an empty map has
+  none of its own, so the map itself is the leaf. This is how `store.checkName`
+  — the probe that asks the rules whether a surname is on the roster — wiped an
+  applicant's availability on every return visit, invisibly (they saw their
+  picks replayed from the per-device echo; the committee saw "waiting on"). The
+  probe now sends `{}`, which carries no paths at all and still gets refused for
+  an unknown name. `setAvail` writes exactly one key and `rename-`/
+  `migrate-candidate.mjs` guard on `picks(from) > 0`; keep it that way, and pin
+  any new applicant write in `tests/applicant-availability.test.mjs`.
+- **Panel membership is load-balanced; don't reintroduce roster order.**
+  `buildPanel` takes `{ loads, lastUsed, size }` and picks fewest-panels-first,
+  then least-recently-used, then alphabetical (determinism — panels rebuild on
+  every render). It used to fill in roster order, which made *every* panel chair
+  + first F + first M, leaving 10 of 13 members with no interviews. This is safe
+  to do greedily because feasibility is a property of the eligible **pool**
+  (chair present, both genders present, ≥3 people), so ordering can never change
+  *which candidates* get scheduled — `tests/panels.fairness.test.mjs` pins that
+  against a copy of the old algorithm over 400 random rosters. Load cannot be
+  flat across the whole roster and that is arithmetic, not a bug: every panel
+  needs ≥1 woman, so 4 women covering 10 panels average 2.5 each while 8 men
+  average 1.25. The tests assert balance *within* each group at the arithmetic
+  minimum. `fairSize()` grows panels past 3 (up to 5) only when 3-person panels
+  have too few seats to give everyone one interview.
+- **Manual panels bypass most checks.** The auto-matcher gives one candidate per
+  slot, so only a **manual override** can double-book a time (now surfaced as
+  `doubleBooked`) or seat someone who never said they were free (now warned).
+  Overlapping times are only *warned* at creation — accept one and the chair can
+  be auto-scheduled into two at once.
+- **A sign-in failure is not a wrong code.** A code that decrypts is *proof* it
+  is a real staff/admin code (nothing else unwraps the content key), so a
+  Firebase rejection after that means the **account** is wrong — its password was
+  never set to that code, or it doesn't exist. `signInError(e, {codeVerified})`
+  keeps those apart; never collapse them back to "Incorrect code.", which sends
+  the one person holding a valid code away to retype it. The two halves are
+  independent by design and nothing keeps them in step: `data.js` decides
+  staff-vs-admin, the Firebase console decides whether the password matches.
+  `scripts/diagnose-login.mjs` tests both halves for a given code and names the
+  fault. Note Firebase throttles the **device** after repeated failures, so a
+  stale code in `sessionStorage` used to lock people out by replaying on every
+  reload — it is now cleared on failure.
+- **Storage must never be touched directly — use `ss`/`ls` from `util.js`.**
+  iOS Safari with "Block All Cookies", Private Browsing and some in-app browsers
+  make `localStorage`/`sessionStorage` throw, *including the property getter*,
+  so `"localStorage" in window` throws too and feature-detection is useless. An
+  unguarded `sessionStorage.setItem` right after a successful sign-in meant the
+  right code signed in, the write threw, and the gate never closed — "works on
+  desktop, not on my phone". A blocked browser must degrade to forgetting
+  between visits, never to being locked out. No raw storage calls remain; keep
+  it that way.
+- **A class used as a state modifier must not also be a utility class.** Third
+  time now: `.tip` (tooltip vs `.note.tip`) and then `.info` — `renderBanner`
+  sets the banner's *whole* className, so `"banner info"` gave the deadline bar
+  the 16px round badge's `display:inline-flex; width:16px`, collapsing it to a
+  circle with its text off the left edge of the screen. It needed no code change
+  to appear: the modifier is only added once the deadline has passed, so it
+  broke by itself the next morning. Modifiers are now `urgent`/`past`, `.banner`
+  pins its own box, and `tests/css-collisions.test.mjs` fails if any banner
+  modifier is also a standalone rule.
+- **Form controls stay ≥16px on a phone, and that rule must stay LAST in
+  `styles.css`.** `body` drops to 15.5px under `max-width:640px` and controls
+  are `font:inherit`, so every field fell under the threshold at which iOS
+  zooms the page on focus — the access-code box zoomed the Enter button
+  off-screen mid-typing. The fixing block is last because `.overlay-box input`
+  and `.tform input` have equal specificity and appear later; anything appended
+  after it silently undoes it.
+- **Verify layout by rendering it, not by reading the CSS.** Both phone bugs
+  above looked fine on inspection and were obvious the moment the page was drawn
+  at 390px. Drive `index.html` in Chromium with `js/config.js` (blank
+  `firebaseConfig` → LocalStore) and `js/data.js` (stub `decryptContent`)
+  swapped for doubles, so the gate opens without the real code and nothing
+  reaches Firebase. Check every width for horizontal scroll, escaping elements,
+  sub-16px fields and tap targets under ~40px.
 - **The tooltip class is `.tooltip`, never `.tip`.** `.note.tip` is the blue
   guidance box and has been since the first build; when the instant tooltip was
   briefly also called `.tip` it silently gave every one of those boxes

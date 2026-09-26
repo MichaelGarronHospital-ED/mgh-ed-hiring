@@ -24,6 +24,232 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## The phone bugs: a banner that became a badge, and a gate that blocked itself (Sept 26 2026)
+
+Three reports — "can't log in on my phone but fine on desktop", "check mobile
+layout", "the deadline pop-up is off centre" — and the first two turned out to be
+the same kind of fault: something that worked everywhere the developer looked.
+
+All of it was found by driving the real page in Chromium at phone widths (the
+harness serves `tools/interviews/` with `config.js` and `data.js` swapped for
+test doubles, so the gate opens without the real code and nothing touches
+Firebase). Reasoning about the CSS had produced the wrong answer twice before
+the page was actually rendered.
+
+**The deadline bar collapsed into a badge.** `renderBanner` sets the bar's whole
+className, and for a deadline in the past it used `"banner info"`. `.info` is the
+16px round "i" badge — `display:inline-flex; width:16px; height:16px;
+border-radius:50%`. Nothing overrode it, so the bar became a 26px circle with its
+text hanging off the **left edge of the screen**, over the header. Measured:
+`.inner` at left −50 on a phone, −44 on desktop.
+
+It needed no code change to appear. The modifier is only added once the deadline
+is in the past, so it broke by itself on the morning of Sept 24 — which is why it
+looked like a mystery. Exactly the `.tip`/`.tooltip` trap again, and the third
+time this family of bug has cost real confusion here.
+
+The modifier is now `past`, and `.banner` pins its own `display`, `width`,
+`height` and `border-radius` as a last line of defence, since that rule sits
+after every utility. [`tests/css-collisions.test.mjs`](tests/css-collisions.test.mjs)
+reads the modifiers straight out of `app.js` and fails if any of them is also a
+standalone class in the stylesheet — restoring `" info"` fails it. The bar now
+measures 268/268 on desktop and 13/13 on a phone, flush with the header and cards.
+
+**The gate locked out the phone it was typed on.** iOS Safari with Settings →
+Safari → **Block All Cookies**, Private Browsing on older iOS, and several
+in-app browsers make `localStorage` and `sessionStorage` throw — and not only on
+write: the *property getter itself* throws, so `"localStorage" in window` throws
+too and feature-detection doesn't help.
+
+Straight after a successful sign-in the gate did an unguarded
+`sessionStorage.setItem("ed_iv_code", …)`. On such a phone: the right code, a
+real sign-in, then the write throws, the gate never closes, and a toast appears
+reading **"The operation is insecure."** Reproduced exactly in the harness — the
+correct code, stuck at the gate. That is "works on my desktop, not on my phone".
+
+Every storage access in `app.js` and `store.js` now goes through `ss`/`ls`
+helpers in `util.js` that cannot throw; there are no raw calls left. A browser
+that blocks storage simply forgets between visits, which the gate now says
+plainly, instead of being unable to sign in. All three roles were re-tested under
+both shapes of blocking: 6/6 get in, against 1/3 before.
+
+Two more things that made a broken phone indistinguishable from a wrong code:
+
+- `index.html` now carries a small **ES5** watchdog ahead of the module. If
+  `app.js` never loads or never parses — a browser too old for its syntax, a
+  blocked script, a proxy serving something else — no handler is ever attached,
+  so the page looks fine and the Enter button simply does nothing. It now says
+  so. Deliberately ES5, because it has to run on the browsers that can't parse
+  the app; `app.js` sets `window.__edReady` and the watchdog speaks up at 8s.
+- A `pointer: coarse` / `max-width:640px` block lifts text-link buttons from
+  19–23px to ~39px and the info badge from 16px to 22px. The negative margins
+  cancel the padding exactly, so the layout is pixel-identical. Keyed on pointer
+  as well as width because a tablet is a touch device at 768px and was getting
+  mouse-sized targets (verified: 40px with touch, unchanged with a mouse).
+
+**iOS zoomed the page whenever anyone typed.** The responsive block sets
+`body { font-size:15.5px }` and every control takes `font:inherit`, so all of
+them sat under the 16px threshold at which iOS Safari zooms the whole page on
+focus — including the access-code box, which shoved the Enter button off-screen
+as you typed. A final `@media (max-width:640px)` block lifts controls back to
+16px while density stays. It **must remain last** in the stylesheet: the rules it
+overrides (`.overlay-box input`, `.tform input`) have identical specificity and
+appear later, so order is what decides it. The collision test asserts that too.
+
+After all of it, every width from 320px to 1440px is clean: no horizontal scroll,
+no element escaping the viewport, no sub-16px fields, no undersized tap targets,
+and header, banner and content share one left edge.
+
+---
+
+## Panels share the work out, and a sign-in failure says what's wrong (Sept 25 2026)
+
+**Fair panels.** `buildPanel` filled seats in roster order. Stable, and maximally
+unfair: with a fully available 13-person committee *every* panel came out as
+chair + the first woman + the first man on the list, so three people sat all day
+and ten never interviewed anyone.
+
+It now takes `{ loads, lastUsed, size }` and prefers fewest-panels-so-far, then
+least-recently-used (so equal loads rotate instead of the tie always going to the
+same name), then alphabetical — panels are rebuilt on every render, so the result
+has to be deterministic or the UI jitters and the exported schedule stops matching
+the screen. `autoPanels` builds scarcest-slot-first, so a slot with four people
+free picks before the well-staffed slots take the people it needed.
+
+The reason this is safe to do greedily: a panel can form **iff** the eligible
+pool holds the chair, at least one person of each gender, and three people. All
+three are properties of the pool, not of the order we consider people in — so
+ordering cannot turn a feasible panel infeasible, and cannot change which
+candidates get scheduled. [`tests/panels.fairness.test.mjs`](tests/panels.fairness.test.mjs)
+asserts that rather than trusting it: it keeps a verbatim copy of the old
+algorithm and checks feasibility agrees for every (candidate, slot) pair across
+400 randomised rosters, plus every panel invariant across another 400.
+
+On the real roster, 10 interviews now use **all 13** members — and the split is
+provably optimal, not merely better: 3,3,2,2 for the four women and 2,2,1,1,1,1,1,1
+for the eight non-chair men. It cannot be flatter than that, and the reason is
+arithmetic rather than a defect: every panel needs at least one woman, so 4 women
+carry 10 of the 20 non-chair seats at 2.5 each while 8 men share the other 10 at
+1.25. The tests assert balance *within* each group at the arithmetic minimum, so
+nobody later "flattens" it by breaking the balance rule.
+
+`fairSize()` handles the other way of leaving people out: 4 interviews × 2
+non-chair seats cannot seat 12 people however evenly you share them. Panels grow
+past the minimum of 3, up to the permitted 5, only far enough to give everyone one
+interview — so a 4-interview round uses panels of 4 and still seats all 13. The
+common case stays at 3, the lightest load on everyone. Availability still caps it.
+
+The Panels tab now shows **Interviewer load**, counted from the panels on screen
+(auto *and* manual, since a hand edit re-skews the share) and flagging anyone on
+no panel at all.
+
+**Sign-in diagnosis.** Kyle couldn't get in as admin and the app could not say
+why, because every failure — wrong code, missing Firebase account, wrong account
+password, provider disabled, throttled device, blocked CDN — came out as
+`"Incorrect code."`
+
+That one message was the bug. A code that **decrypts** is cryptographically proven
+to be a genuine staff or admin code, since nothing else unwraps the content key.
+So if Firebase then rejects it, the code is right and the *account* is wrong. The
+two halves are independent by design and nothing keeps them in step: `data.js`
+decides staff-vs-admin, the Firebase console decides whether that string is the
+account password. Telling the holder of a correct code to retype it is the one
+action that cannot help, and it hides the console from the person who needs it.
+
+Now: `signInError(e, { codeVerified })` names the actual fault and what to do
+about it — including `operation-not-allowed` (Email/Password switched off),
+`user-disabled`, a tagged `app/sdk-unreachable` for when the Firebase SDK never
+loaded (a hospital network or content blocker, which used to read as a bad code),
+and `too-many-requests`, where it says **not** to retry, because Firebase
+throttles the device and every attempt extends the block. The detail is safe to
+print: it only appears after a valid code has decrypted, so the reader already has
+access.
+
+Three smaller fixes on the same path:
+
+- A stored code that fails is now **cleared** from `sessionStorage`. It used to be
+  replayed on every page load, so a stale code quietly burned the device's
+  rate-limit budget and could lock someone out by itself — while looking like the
+  code was at fault.
+- The member-pick screen now says which access you got: **Leadership** or
+  **Committee**, with a line pointing at the separate admin code. The staff code
+  signs in perfectly well, just without Panels, Ranking and Setup — someone who
+  reaches for the wrong one gets in, finds the leadership view missing, and
+  reports "I can't log in as admin". Nothing on screen had told them.
+- After two failures the gate explains that three different codes exist.
+
+[`scripts/diagnose-login.mjs`](scripts/diagnose-login.mjs) tests both halves for a
+given code and names the fault, so this needs no more guessing:
+`ED_IV_CODE='…' node diagnose-login.mjs` (code via env var, so it stays out of
+shell history; `--offline` for the decrypt half alone; it never prints the code).
+The decrypt path is browser code, so the script lends `js/data.js` a `window`;
+Node's WebCrypto was checked to run the full PBKDF2 → HKDF(20192-bit) → XOR
+pipeline, so a "does not decrypt" from the tool is a real answer and not a Node
+limitation.
+
+---
+
+## The name check was erasing the answers it was meant to protect (Sept 25 2026)
+
+An audit of the applicant pipeline — submit → save → return visit → admin view →
+auto-scheduling — found one bug that silently deleted real data, and it was in
+the one write nobody thought of as a write.
+
+`store.checkName()` asks the rules "is this surname on the roster?" the only way
+an applicant can: by attempting a write and seeing whether it is refused. It sent
+`setDoc(ref, { slots: {} }, { merge: true })`, described in its own comment as
+"a no-op for a name that IS on the roster".
+
+It is not a no-op. `merge` builds its field mask from the **leaf** paths of the
+data, and an empty map has none of its own — so `slots` is itself the leaf, and
+the write **replaces the whole map**. Every time the applicant had picked was
+deleted.
+
+Three things made it invisible:
+
+- It fires on the way **in**, not on save, so it never looked like a data write.
+- The applicant's surname lives in `sessionStorage`, so it re-fired on **every
+  visit after the browser tab was closed** — the return visit the page invites
+  with "you can come back and update them".
+- The applicant's own screen replays from the per-device `localStorage` echo
+  (they cannot read their document back — write-without-read). So they still saw
+  their times ticked, on a page that had just emptied them on the server, while
+  the committee saw them in "waiting on". Indistinguishable from an applicant who
+  ignored the email, right up until nobody schedules them.
+
+The probe now sends `{}` — no field paths at all, so the rules still evaluate it
+(an unknown surname is still refused, which is the whole point) and an existing
+document is left untouched. Pinned by
+[`tests/applicant-availability.test.mjs`](tests/applicant-availability.test.mjs),
+which drives the **real** `FirestoreStore` against the emulator under the real
+rules; reverting the one-line fix fails 2 of its 15 tests.
+
+Every other `merge` write in `js/` and `scripts/` was checked for the same shape.
+`setAvail` always writes exactly one key; `rename-candidate.mjs` and
+`migrate-candidate.mjs` both guard their availability moves on
+`picks(from) > 0`, so neither can send an empty map. This was the only instance.
+
+`report-data.mjs --issues` now flags an availability document that exists but
+holds no times. That document is only ever created by the name check, so it means
+"they opened the link and nothing is recorded" — which is not the same fact as no
+reply, and is the fingerprint this bug left. The stored data cannot say whether
+such an applicant picked times and lost them or picked none, so **ask them
+directly rather than assuming**.
+
+Two smaller scheduling bugs found in the same pass, both on the manual-override
+path (the auto-matcher cannot produce either):
+
+- `validatePanel` warned when a panellist had answered with the **wrong
+  modality**, but said nothing when `avail[slot]` was `undefined` — a panellist
+  who never said they could make that time at all. The more serious case was the
+  silent one. Both now warn.
+- Nothing checked whether two applicants were booked into the **same time**.
+  `validatePanel` only ever sees one panel, so a manual override could quietly
+  double-book an hour. `computePanels` now returns `doubleBooked` and the Panels
+  tab lists it under "Needs attention" with a link to edit either side.
+
+---
+
 ## A failed write must not look like a saved one (Sept 21 2026)
 
 Chasing the missing rating to its end: it was never stranded and never on the

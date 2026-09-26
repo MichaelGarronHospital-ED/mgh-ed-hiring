@@ -29,6 +29,7 @@
     <div class="logo" aria-hidden="true">ED</div>
     <h2>Who are you?</h2>
     <p class="muted">Pick your name so your input is saved to you.</p>
+    <div id="roleLine" class="note" style="text-align:left"></div>
     <select id="memberSel" aria-label="Your name"></select>
     <button id="memberBtn" class="primary">Continue</button>
   </div>
@@ -94,6 +95,38 @@
 </div>
 
 <div id="toast" class="toast hide" role="status" aria-live="polite"></div>
+
+<!-- Last-resort net, before the module so it is already listening.
+     If js/app.js never loads or never parses — a browser too old for the
+     syntax, a blocked or corrupted script, a proxy serving something else —
+     no handler is ever attached, so the page looks fine and the Enter button
+     simply does nothing. That is indistinguishable from "my code is wrong",
+     and it is what someone reports as "I can't log in on my phone".
+     Deliberately ES5: it has to run on the browsers that can't parse the app. -->
+<script>
+(function () {
+  var shown = false;
+  function fatal(msg) {
+    if (shown) return;
+    shown = true;
+    var e = document.getElementById("gerr");
+    if (e) e.innerHTML = '<div style="text-align:left">' + msg + "</div>";
+  }
+  window.addEventListener("error", function (ev) {
+    var m = (ev && ev.message) || "";
+    if (/SyntaxError|Unexpected token|Unexpected identifier|is not a function|is not a constructor/.test(m))
+      fatal("This browser can’t run the sign-in page — it is most likely too old. " +
+            "Update iOS or Android, or try Safari or Chrome on another device.");
+  });
+  window.addEventListener("DOMContentLoaded", function () {
+    setTimeout(function () {
+      if (!window.__edReady)
+        fatal("The page didn’t finish loading, so signing in won’t work yet. Reload. " +
+              "If you are on a hospital network or using a content blocker, try mobile data.");
+    }, 8000);
+  });
+})();
+</script>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>

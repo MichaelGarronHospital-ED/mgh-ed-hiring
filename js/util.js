@@ -2,6 +2,48 @@
 //  Shared helpers for the interviews tool.
 // ============================================================================
 
+// ---- storage that cannot take the app down ---------------------------------
+// iOS Safari with Settings → Safari → "Block All Cookies", Private Browsing on
+// older iOS, and several locked-down in-app browsers make localStorage and
+// sessionStorage THROW — and not only on write: the property getter itself can
+// throw a SecurityError, so this has to be wrapped rather than feature-detected
+// (`"localStorage" in window` throws too).
+//
+// This is not hypothetical politeness. The gate did `sessionStorage.setItem`
+// straight after a successful sign-in, unguarded, so on such a phone the right
+// code signed in, the write threw, the gate never closed, and the person saw a
+// toast reading "The operation is insecure." — i.e. "it works on my desktop but
+// I can't log in on my phone".
+//
+// A browser that blocks storage simply forgets between visits. That is a real
+// but survivable loss (the UI says so); being unable to sign in is not.
+const safeGet = (kind, k) => { try { return window[kind].getItem(k); } catch { return null; } };
+const safeSet = (kind, k, v) => { try { window[kind].setItem(k, v); return true; } catch { return false; } };
+const safeDel = (kind, k) => { try { window[kind].removeItem(k); } catch { /* blocked — nothing to remove */ } };
+
+export const ss = {
+  get: (k) => safeGet("sessionStorage", k),
+  set: (k, v) => safeSet("sessionStorage", k, v),
+  del: (k) => safeDel("sessionStorage", k),
+};
+export const ls = {
+  get: (k) => safeGet("localStorage", k),
+  set: (k, v) => safeSet("localStorage", k, v),
+  del: (k) => safeDel("localStorage", k),
+};
+
+// Does this browser let us remember anything at all? Used to warn people whose
+// own answers will not replay on a later visit, rather than letting it look
+// like the app lost them.
+export function storageWorks() {
+  try {
+    const k = "__ed_probe__";
+    window.localStorage.setItem(k, "1");
+    window.localStorage.removeItem(k);
+    return true;
+  } catch { return false; }
+}
+
 export function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g,
     (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
