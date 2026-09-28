@@ -233,3 +233,41 @@ clearing the flag.
 The standing limitation: all reviewers share one Firebase account, so the rules
 cannot tell reviewer A from reviewer B. Written up in `firestore.rules` and
 README. Everything else in the privacy model is belt-and-braces around it.
+
+### 3. A coordinator role for the admin staff  ← raised Sept 28 2026
+
+**The problem.** Amanda sends the calendar invites but has no way into the
+tool. The schedule she needs (Panels → Export CSV) is admin-only, and admin also
+means screening, scores and the ranking, which she has no reason to see. In 2026
+this went by email: an admin exported the CSV and forwarded it to her.
+
+**What to build.** A fourth role account, `coordinator@ed-hiring.app`, enforced
+in `firestore.rules` and not just hidden in the UI:
+- **read/write:** candidates, interviewer + applicant availability,
+  `interviews_meta/config` (committee, times, panel overrides) and `allowed`,
+  `interviews_public`,
+- **no access:** `interviews_screening` (neither `get` nor `list`),
+  `interviews_scores`, the questions, and `interviews_meta/state` (the ranking
+  reveal),
+- **UI:** Availability, Panels (edit + export) and Setup, with no Screen, Score
+  or Ranking tabs.
+
+**Two things that make it more than a rules edit:**
+- **The shortlist is computed live from screening.** `isIn` (app.js) drops an
+  applicant with ≥2 flags, and a coordinator can't read flags, so her Panels
+  tab would schedule excluded applicants. Once the screening cut is final,
+  record the outcome on the candidate document (e.g. `shortlisted: true`) and
+  have `isIn` use that. She needs to know in/out anyway, and it leaks nothing more.
+- **The gate tells roles apart by which code decrypts the questions**
+  (`data.js`). A coordinator shouldn't decrypt the questions, so she needs her
+  own sign-in path, like the applicant/guest one, not a third wrapped key.
+
+Pin both halves with tests: a coordinator-scoped store reads no screening or
+scores (like `tests/store.own-screening.test.mjs`), and the rules refuse her
+those collections.
+
+**Related, and worth doing even without the role: lock the schedule.** Auto
+panels are recomputed on every render, so any change to availability after
+invites go out silently reshuffles the Panels tab away from the calendar. A
+"lock schedule" action that saves every auto panel as a manual override would
+freeze it. Until that exists, save each panel by hand before exporting.
