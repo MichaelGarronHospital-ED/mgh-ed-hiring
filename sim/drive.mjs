@@ -84,6 +84,13 @@ export async function pickMember(page, name) {
   await page.waitForSelector("#app:not(.hidden)");
 }
 
+// The admin code skips the name picker and lands in the app as "Admin".
+export async function landAsAdmin(page) {
+  await page.waitForSelector("#app:not(.hidden)", { timeout: 10000 });
+  const who = await page.$eval("#whoLine", (el) => el.textContent.trim());
+  if (who !== "Admin") throw new Error(`admin sign-in landed as "${who}", expected "Admin" with no name`);
+}
+
 export async function changeMember(page, name) {
   await page.click("#changeMember");
   await pickMember(page, name);

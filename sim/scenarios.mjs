@@ -1,7 +1,7 @@
 // Targeted scenarios around the scheduling pipeline: the applicant flow, time
 // edits after people have answered, manual panels, removals and chair changes.
 // Each scenario is a named check that returns a list of problems.
-import { serve, browser, openPage, signIn, pickMember, changeMember, tab, setSlot, dumpState, seedState, sleep } from "./drive.mjs";
+import { serve, browser, openPage, signIn, pickMember, landAsAdmin, changeMember, tab, setSlot, dumpState, seedState, sleep } from "./drive.mjs";
 import { readPanels, readCandGrid } from "./scrape.mjs";
 
 const COMMITTEE = [
@@ -33,7 +33,7 @@ const base = (over = {}) => ({
 
 const ok = (cond, msg) => (cond ? [] : [msg]);
 
-async function asAdmin(page, url, state, { member = "Abara" } = {}) {
+async function asAdmin(page, url, state, { member = null } = {}) {
   await page.evaluate((s) => {
     localStorage.setItem("ed_interviews_v1", JSON.stringify(s));
     sessionStorage.setItem("ed_iv_code", "adminpw");
@@ -41,7 +41,8 @@ async function asAdmin(page, url, state, { member = "Abara" } = {}) {
   }, state);
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.waitForFunction("window.__edReady === true", { timeout: 15000 });
-  await pickMember(page, member);
+  await landAsAdmin(page);
+  if (member) await changeMember(page, member);
 }
 
 async function asApplicant(page, url, state) {
@@ -434,6 +435,47 @@ const scenarios = {
       problems.push(...ok(!!row && p.members.every((m) => row.includes(m)),
         `CSV row for ${p.name} doesn't match the panel on screen: ${row}`));
     }
+    return problems;
+  },
+
+  // The admin code goes straight in as "Admin" — no name to pick, nothing of
+  // "yours" on screen, no Score tab. Picking a name is still one tap away for
+  // an admin who also reviews, and the staff code still asks who you are.
+  async adminHasNoName(page, url) {
+    const problems = [];
+    await asAdmin(page, url, base());
+    const tabs = () => page.$$eval("#tabs button", (bs) => bs.map((b) => b.dataset.tab));
+    const t0 = await tabs();
+    problems.push(...ok(!t0.includes("score"), `plain admin has a Score tab: ${t0}`));
+    problems.push(...ok(t0.includes("panels") && t0.includes("ranking"), `plain admin is missing leadership tabs: ${t0}`));
+    const screen = await page.$eval("#screen", (el) => el.innerHTML);
+    problems.push(...ok(!/Your review/.test(screen) && !/IV\.toggleFlag/.test(screen),
+      "plain admin is shown a personal screening list to file flags under"));
+    await tab(page, "availability");
+    const av = await page.$eval("#availability", (el) => el.innerHTML);
+    problems.push(...ok(!/IV\.avail\(/.test(av), "plain admin is shown a personal availability picker"));
+    problems.push(...ok(/avgrid/.test(av), "plain admin can't see the availability grids"));
+
+    await changeMember(page, "Abara");
+    const who = await page.$eval("#whoLine", (el) => el.textContent.trim());
+    problems.push(...ok(who === "Abara", `picking a name as admin didn't take (header says ${who})`));
+    problems.push(...ok((await tabs()).includes("score"), "admin reviewing as a member has no Score tab"));
+
+    await page.click("#changeMember");
+    await page.waitForSelector("#adminOnlyBtn:not(.hidden)");
+    await page.click("#adminOnlyBtn");
+    await page.waitForSelector("#app:not(.hidden)");
+    const back = await page.$eval("#whoLine", (el) => el.textContent.trim());
+    problems.push(...ok(back === "Admin", `"continue as admin" didn't drop the name (header says ${back})`));
+
+    // the staff code is unchanged: it asks who you are, and has no admin escape
+    await page.evaluate(() => document.querySelector("#logout").click());
+    await page.waitForFunction("window.__edReady === true", { timeout: 15000 });
+    await signIn(page, "staffpw");
+    await page.waitForSelector("#memberpick:not(.hidden)");
+    const escape = await page.$eval("#adminOnlyBtn", (el) => !el.classList.contains("hidden"));
+    problems.push(...ok(!escape, "the staff code is offered 'continue as admin'"));
+    await pickMember(page, "Abara");
     return problems;
   },
 };

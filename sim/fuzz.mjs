@@ -1,7 +1,7 @@
 // Randomised rounds through the real app: seed a committee, times, interviewer
 // availability and applicant availability, then read the Panels tab back and
 // check it against the independently-stated rules.
-import { serve, browser, openPage, pickMember, tab } from "./drive.mjs";
+import { serve, browser, openPage, landAsAdmin, tab } from "./drive.mjs";
 import { readPanels, readLoad } from "./scrape.mjs";
 import { checkSchedule, activeCandidates } from "./check.mjs";
 
@@ -69,8 +69,8 @@ async function round(page, url, sc) {
   }, sc.state);
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.waitForFunction("window.__edReady === true", { timeout: 15000 });
-  // auto-unlocked from the saved code; pick a name and go to Panels
-  await pickMember(page, sc.committee[0].name);
+  // auto-unlocked from the saved code; admin lands with no name — go to Panels
+  await landAsAdmin(page);
   await tab(page, "panels");
   const shown = await readPanels(page);
   const load = await readLoad(page);

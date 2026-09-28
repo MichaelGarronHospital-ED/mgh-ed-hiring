@@ -3,7 +3,7 @@
 // their own availability through the applicant link -> admin builds panels.
 //
 // Every applicant goes through the real applicant flow (surname check included).
-import { serve, browser, openPage, signIn, pickMember, changeMember, tab, setSlot, dumpState, sleep } from "./drive.mjs";
+import { serve, browser, openPage, signIn, landAsAdmin, changeMember, tab, setSlot, dumpState, sleep } from "./drive.mjs";
 import { readPanels, readLoad } from "./scrape.mjs";
 import { checkSchedule, activeCandidates, roster } from "./check.mjs";
 
@@ -105,7 +105,7 @@ async function backAsAdmin(page) {
   await page.evaluate(() => window.CAND.logout());
   await page.waitForFunction("window.__edReady === true", { timeout: 15000 });
   await signIn(page, "adminpw");
-  await pickMember(page, "Vojdani");
+  await landAsAdmin(page);
 }
 
 export async function run({ keepOpen = false } = {}) {
@@ -116,7 +116,7 @@ export async function run({ keepOpen = false } = {}) {
   const out = { log, problems: [], notes: [] };
   try {
     await signIn(page, "adminpw");
-    await pickMember(page, "Vojdani");
+    await landAsAdmin(page);
     await addApplicants(page, APPLICANTS);
     await interviewerAvailability(page, IV_AVAIL);
     await applicantsSubmit(page, CAND_AVAIL, APPLICANTS);

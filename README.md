@@ -112,7 +112,10 @@ hiring round.**
 ## One link, three audiences
 The same `index.html` serves everyone; what you can do depends on the code you type:
 - **ED physician / committee** — the staff code → Screen · Availability · Score.
-- **Admin** — the (independent) admin code → the above plus Panels · Ranking · Setup.
+- **Admin** — the (independent) admin code → signed in as "Admin" with no name to
+  pick: the collation, both availability grids, Panels · Ranking · Setup. An admin who
+  also reviews taps **review as a member** in the header to pick their name, which
+  adds their own screening, availability and the Score tab.
 - **Applicant** — a **different applicant code** → taken straight to their own
   scheduling (enter last name, pick times). They never see the roster, questions,
   scores, or other applicants. (`book.html` now just forwards here.)

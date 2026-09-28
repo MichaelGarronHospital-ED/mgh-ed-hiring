@@ -11,6 +11,11 @@ Full design and reference data (committee, candidates, questions, rules) live in
 - **Two audiences, two identity models.** Committee = trust-based name-pick +
   passcode admin (like Motion Voting). Candidates = **private tokenized links**,
   **no public candidate list**.
+- **Admin signs in with no name; `ui.member` can be `null`.** The admin code
+  lands as "Admin" (coordinators hold it, not just physicians). Every view that
+  files input under `ui.member` — own screening, own availability, the Score
+  tab — must be hidden when it's null, or it writes under `"null"`. An admin
+  picks a name via "review as a member". Pinned by `sim` → `adminHasNoName`.
 - **All asset paths relative** so GitHub Pages serves it at `…/tools/interviews/`.
 - **Panel rules** (Phase 2): 3–5 members, Kyle present if available, ≥1 male +
   ≥1 female. Genders are in DESIGN.md; treat hard-vs-soft as pending Kyle's confirm.

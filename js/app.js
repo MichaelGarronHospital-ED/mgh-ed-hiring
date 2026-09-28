@@ -71,7 +71,13 @@ async function unlock(typed, silent) {
     }
     ss.set("ed_iv_code", typed);
     $("#gate").classList.add("hidden");
-    proceedToMemberPick();
+    // Admin goes straight in as "Admin", with no name — the admin code is held
+    // by coordinators as well as committee members, and making them pick a
+    // physician's name to see the schedule filed nothing useful and invited
+    // input under someone else's name. An admin who also reviews picks their
+    // name from the header ("review as a member").
+    if (ui.isAdmin) { ui.member = null; showApp(); }
+    else proceedToMemberPick();
     return;
   }
   // 2) applicant — a different code; goes straight to their own scheduling
@@ -295,10 +301,11 @@ function proceedToMemberPick() {
   if (rl) {
     rl.className = ui.isAdmin ? "note tip" : "note";
     rl.innerHTML = ui.isAdmin
-      ? `<b>Leadership access</b> — you'll have Panels, Ranking and Setup.`
+      ? `<b>Leadership access.</b> Pick your name to screen, give availability and score as yourself.`
       : `<b>Committee access</b> — Screen, Availability and Score. Expecting Panels, Ranking and Setup?
          That's the separate <b>admin</b> code, not this one.`;
   }
+  $("#adminOnlyBtn").classList.toggle("hidden", !ui.isAdmin);
   $("#memberpick").classList.remove("hidden");
 }
 
@@ -346,10 +353,12 @@ function showApp() {
   if (store) store.setMember(ui.member);
   $("#memberpick").classList.add("hidden");
   $("#orgName").textContent = ORG_NAME;
-  $("#whoLine").textContent = ui.member;
-  $("#adminTag").classList.toggle("hidden", !ui.isAdmin);
+  $("#whoLine").textContent = ui.member || "Admin";
+  $("#changeMember").textContent = ui.member ? "change" : "review as a member";
+  $("#adminTag").classList.toggle("hidden", !ui.isAdmin || !ui.member);
   $("#setupBtn").classList.toggle("hidden", !ui.isAdmin);
   if (!ui.isAdmin && ui.tab === "settings") ui.tab = "screen";
+  if (!ui.member && ui.tab === "score") ui.tab = "screen";
   ["#appHeader", "#tabs", "#app"].forEach((s) => $(s).classList.remove("hidden"));
   buildTabs();
   renderBanner();
@@ -361,7 +370,9 @@ function buildTabs() {
   // not the tab row, so the tabs read as one clean sequence.
   const tabs = [["screen", "Screen"], ["availability", "Availability"]];
   if (ui.isAdmin) tabs.push(["panels", "Panels"]);
-  tabs.push(["score", "Score"]);
+  // Score is nothing but your own notes and rating, so without a name it has
+  // nothing to show and nowhere to file anything.
+  if (ui.member) tabs.push(["score", "Score"]);
   if (ui.isAdmin) tabs.push(["ranking", "Ranking"]);
   $("#tabs").innerHTML = tabs.map(([t, label], i) =>
     `<button id="tab-${t}" data-tab="${t}" role="tab" aria-controls="${t}" aria-selected="${t === ui.tab}"
@@ -598,7 +609,7 @@ function myInputNotice(list, get, deviceOnly) {
 function renderScreen() {
   const me = ui.member;
   const { committee, oneDrive } = EFF();
-  let html = hint("Flag anyone you feel isn't qualified. Priority is optional.");
+  let html = me ? hint("Flag anyone you feel isn't qualified. Priority is optional.") : "";
 
   if (ui.isAdmin) {
     const submitted = new Set();
@@ -720,13 +731,15 @@ function renderScreen() {
       <div style="margin-top:.5rem"><button class="btn tinted small" onclick="IV.addCands(this)">Add candidates</button></div>`;
 
     html += section("collation", "Collation & shortlist", `${activeCands().length} of ${S.candidates.length} still in`, collation,
-        { open: false, info: "Everyone's flags and priority ratings, collated. A candidate drops off the interview list at 2 or more flags. Reasons are visible to leadership only. Export the shortlist as a CSV here." })
+        { open: !me, info: "Everyone's flags and priority ratings, collated. A candidate drops off the interview list at 2 or more flags. Reasons are visible to leadership only. Export the shortlist as a CSV here." })
       + section("dash", "Coordinator dashboard", `${submitted.size}/${committee.length} submitted`, dash,
         { open: false, info: "Track who has and hasn't submitted their screening, so you can chase people before the deadline.", count: hidden.entries.length ? "⚠" : null })
       + section("adder", "Add candidates", "", adder,
         { open: false, info: "Paste applicant names to add them to the interview list. Stored securely in your database — never in the app's code. You can add or remove people any time." })
-      + `<h3>Your review</h3>`;
+      + (me ? `<h3>Your review</h3>` : "");
   }
+  // Signed in as plain admin: there is no "your" review to show or file.
+  if (!me) { $("#screen").innerHTML = html; return; }
 
   // Alphabetical, like the "Who are you?" list: with a dozen-plus names the
   // only ordering a reviewer can navigate is the one they can predict.
@@ -946,9 +959,9 @@ function candGrid() {
 function renderAvailability() {
   const map = S.availIv[ui.member] || {};
   const slots = EFF().slots;
-  let html = hint("Tap how you can do each time you're free. Tap again to clear.");
+  let html = ui.member ? hint("Tap how you can do each time you're free. Tap again to clear.") : "";
   html += slots.length
-    ? `<div class="card"><div class="slotgrid">${slotRows(slots, map, "IV.avail")}</div></div>`
+    ? (ui.member ? `<div class="card"><div class="slotgrid">${slotRows(slots, map, "IV.avail")}</div></div>` : "")
     : empty("🗓️", "No interview times yet", ui.isAdmin ? "Add interview times in Setup (the gear icon)." : "Leadership hasn't published the interview times yet — check back soon.");
 
   // There used to be three sections here — both grids and a separate
@@ -967,7 +980,7 @@ function renderAvailability() {
     const ivNot = committee.filter((m) => !liveAnswers(S.availIv[m.name]).length).map((m) => m.name);
     html += section("avgrid", "Who's available when", `${ivIn} of ${committee.length} interviewers`,
       grid + waiting(ivNot),
-      { open: !ui.isAdmin,
+      { open: !ui.isAdmin || !ui.member,
         info: "Every interviewer against every interview time. The Panel column says whether a balanced panel could actually run then — it uses the same rules as the Panels tab, so a ✓ there means a panel really is possible." });
   }
 
@@ -1929,6 +1942,7 @@ $("#memberBtn").onclick = () => {
   if (!v) { toast("Pick your name from the list first", "err"); return; }
   ui.member = v; showApp();
 };
+$("#adminOnlyBtn").onclick = () => { if (ui.isAdmin) { ui.member = null; showApp(); } };
 $("#changeMember").onclick = backToMemberPick;
 $("#setupBtn").onclick = () => (setupOpen() ? closeSetup() : openSetup());
 $("#setupClose").onclick = closeSetup;
