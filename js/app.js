@@ -1017,6 +1017,14 @@ function renderScore() {
   // full 1–5 scale is on the ⓘ; the label for the score you actually gave is
   // printed under the buttons, which is the only one that matters at the time.
   const scaleText = SCALE.map((s, i) => `${i + 1} — ${s}`).join(" · ");
+  // Every store emit (a note's own save, any snapshot) redraws this tab. Carry
+  // the field being typed in across the redraw — value, caret and focus — so a
+  // half-typed "4." or the last keystrokes of a note aren't swapped out for the
+  // saved copy mid-sentence.
+  const act = document.activeElement;
+  const keep = act && $("#score").contains(act) && act.id
+    ? { id: act.id, val: act.value, sel: [act.selectionStart, act.selectionEnd] } : null;
+  const ov = rec.overall ? fmtScore(rec.overall) : "";
   $("#score").innerHTML = head
     + myInputNotice(list, (c) => S.scores[key(me, c.id)], true)
     + `<div class="card flush list">
@@ -1029,13 +1037,28 @@ function renderScore() {
         // numbered from 1 for the human reading it; the note itself is still
         // keyed by the array index, so nothing saved moves.
         return `<div class="prow qrow ${filled ? "done" : ""}"><div class="q">${escapeHtml(q)}</div>
-          <textarea oninput="IV.note(${i},this.value)" placeholder="Notes" aria-label="Notes for question ${i + 1}">${escapeHtml((rec.notes || {})[i] || "")}</textarea></div>`;
+          <textarea id="note-${i}" oninput="IV.note(${i},this.value)" placeholder="Notes" aria-label="Notes for question ${i + 1}">${escapeHtml((rec.notes || {})[i] || "")}</textarea></div>`;
       }).join("")}
-      <div class="prow"><div class="row center"><div class="grow name">Overall rating${infoIcon(scaleText)}</div>
-        <div class="rate" role="group" aria-label="Overall rating">${[1, 2, 3, 4, 5].map((n) => `<button class="${rec.overall === n ? "on" : ""}" aria-pressed="${rec.overall === n}" onclick="IV.score(${n})">${n}</button>`).join("")}</div></div>
-        ${rec.overall ? `<div class="small muted" style="margin-top:.45rem">${rec.overall} — ${escapeHtml(SCALE[rec.overall - 1] || "")}</div>` : ""}</div>
+      <div class="prow"><div class="row center"><label class="grow name" for="overallIn">Overall rating${infoIcon(scaleText)}</label>
+        <span class="overall"><input id="overallIn" type="text" inputmode="decimal" autocomplete="off" placeholder="1.0–5.0" value="${ov}"
+          aria-describedby="overallMsg" onchange="IV.score(this.value)" onkeydown="if(event.key==='Enter')this.blur()"/><span class="muted">/ 5</span></span></div>
+        <div id="overallMsg" class="small muted" style="margin-top:.45rem">${ov && Number.isInteger(rec.overall) ? `${ov} — ${escapeHtml(SCALE[rec.overall - 1] || "")}` : ""}</div></div>
     </div>
     ${GUIDE.length ? section("guide", "Guidance for panelists", "", `<ul class="small">${GUIDE.map((g) => `<li>${escapeHtml(g)}</li>`).join("")}</ul>`) : ""}`;
+  const el = keep && document.getElementById(keep.id);
+  if (el) { el.value = keep.val; el.focus(); try { el.setSelectionRange(keep.sel[0], keep.sel[1]); } catch { /* not a text field */ } }
+}
+
+// Interview scores are 1–5 to one decimal (4.7). Older scores are whole numbers
+// and stay valid as they are — no migration; they just print as "4.0".
+function fmtScore(v) { return Number(v).toFixed(1); }
+// "" → 0 (clears, same as un-tapping the old buttons); null → not a valid score.
+function parseScore(raw) {
+  const t = String(raw || "").trim().replace(",", ".");
+  if (!t) return 0;
+  if (!/^\d(\.\d)?$/.test(t)) return null;
+  const v = Number(t);
+  return v >= 1 && v <= 5 ? v : null;
 }
 
 // ------------------------------------------------------ 4 · Panels (admin)
@@ -1404,8 +1427,8 @@ function renderRanking() {
     const shift = r.shift > 0 ? `<span class="shift up" data-tip="Ranks ${r.shift} place${r.shift === 1 ? "" : "s"} higher once rater tendency is taken out">▲${r.shift}</span>`
       : r.shift < 0 ? `<span class="shift down" data-tip="Ranks ${-r.shift} place${r.shift === -1 ? "" : "s"} lower once rater tendency is taken out">▼${-r.shift}</span>` : "";
     return `<tr><td class="rankn">${i + 1}</td><td class="name">${escapeHtml(r.name)}</td>
-      <td data-tip="${escapeHtml(`Mean of ${r.n} submitted score${r.n === 1 ? "" : "s"}: ${r.raters.join(", ")}`)}"><b>${r.raw.toFixed(1)}</b></td>
-      <td class="adj" data-tip="${escapeHtml(adjInfo)}">${r.adj.toFixed(1)}${shift}</td>
+      <td data-tip="${escapeHtml(`Mean of ${r.n} submitted score${r.n === 1 ? "" : "s"}: ${r.raters.join(", ")}`)}"><b>${r.raw.toFixed(2)}</b></td>
+      <td class="adj" data-tip="${escapeHtml(adjInfo)}">${r.adj.toFixed(2)}${shift}</td>
       <td class="${thin ? "thinscore" : ""}" data-tip="${thin ? escapeHtml(`Only ${r.n} of the ${r.expected} panellists have scored this candidate.`) : "Every panellist on record has scored this candidate."}">${r.n}${r.expected ? ` of ${r.expected}` : ""}</td></tr>`;
   }).join("");
   $("#ranking").innerHTML = hint("Average interview scores — decision support, not a decision.")
@@ -1664,7 +1687,17 @@ window.IV = {
     renderScreen(); wireSections();
   },
   note: (qi, val) => saveNoteKeyed(ui.member, ui.scoreCand, qi, val),
-  score: (n) => { const cur = (S.scores[key(ui.member, ui.scoreCand)] || {}).overall; saved(store.setScore(ui.member, ui.scoreCand, { overall: cur === n ? 0 : n })); },
+  score: (raw) => {
+    const v = parseScore(raw);
+    if (v === null) {
+      const m = $("#overallMsg"); if (m) m.textContent = "Not saved — enter 1 to 5 with at most one decimal, e.g. 4.7";
+      toast("Score not saved — use 1 to 5, e.g. 4.7", "err");
+      return;
+    }
+    const cur = (S.scores[key(ui.member, ui.scoreCand)] || {}).overall || 0;
+    if (v === cur) { render(); return; }   // "4.70" → tidy back to "4.7"
+    saved(store.setScore(ui.member, ui.scoreCand, { overall: v }));
+  },
   setComplete: async (v, btn) => {
     if (v) { const ok = await confirmDialog("Mark all interviews complete and reveal the ranking to admins?", { title: "Reveal ranking", yes: "Reveal", danger: false }); if (!ok) return; }
     return withBusy(btn, () => store.setMeta({ interviewsComplete: v }));

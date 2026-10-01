@@ -193,6 +193,13 @@ Full design and reference data (committee, candidates, questions, rules) live in
   the file in the repo does nothing on its own, and the tool will silently keep
   the old behaviour. Run `scripts/sync-allowed.mjs --apply` first where the
   allowed-name list is involved.
+- **Interview scores are typed, 1.0–5.0 to one decimal** (requested Oct 1 2026). Older
+  scores are whole numbers and were left as they are — no migration; they
+  display as "4.0". `parseScore` refuses anything else rather than rounding it.
+  The Score tab redraws on every store emit, so `renderScore` carries the
+  focused field's value/caret across the redraw — don't drop that, or a
+  half-typed "4." (or a note's last keystrokes) gets swapped mid-typing.
+  Screening priority ratings are still 1–5 buttons; only interview scores changed.
 - **No average is normalized, deliberately.** Screening and ranking means are
   over whoever answered; a non-answer is never imputed. Always print the count
   beside the mean. Ranking's `Adj` column is the only adjustment — rater-centred
