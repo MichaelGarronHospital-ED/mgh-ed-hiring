@@ -31,6 +31,8 @@ the usual system paths is used.
 | `npm run e2e` | One scripted round, clicked through end to end. Prints the schedule, the interviewer load and anything that breaks a rule. |
 | `npm run scenarios` | The awkward paths: returning applicants, unknown/removed surnames, editing a time people have answered for, manual panels, double-booking, removals, chair changes, the CSV export. |
 | `npm run fuzz -- 100 1` | 100 random rounds (committee, times, availability, flags) from seed 1. A seed replays exactly. |
+| `npm run score` | The Score tab's typed score: 16 scripted cases (wrong-candidate filing, eaten taps, lost-on-lock, clearing). |
+| `npm run stress` | Random panellist behaviour on the Score tab, checked against a model after every pause: plain, with write latency, and with 15% failed writes. `node score-stress.mjs 1 <seed>` replays one; `FULL=1` prints its whole trail. |
 
 `make-site.sh` builds `site/` — a copy of the tool with `config.js`'s
 `firebaseConfig` blanked (so it runs on `LocalStore`) and `data.js` replaced by a

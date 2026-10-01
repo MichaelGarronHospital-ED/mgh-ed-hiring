@@ -196,7 +196,7 @@ Full design and reference data (committee, candidates, questions, rules) live in
 - **Interview scores are typed, 1.0–5.0 to one decimal** (requested Oct 1 2026). Older
   scores are whole numbers and were left as they are — no migration; they
   display as "4.0". `parseScore` refuses anything else rather than rounding it.
-  Three rules keep a typed box as safe as the buttons were — `sim/score.mjs`
+  These rules keep a typed box as safe as the buttons were — `sim/score.mjs`
   pins each: (1) **`renderScore` patches in place** while member+candidate are
   unchanged and rebuilds only when they change. A rebuild per save ate taps on
   ‹ ›, dropped focus, and an attempt to carry typing across rebuilds put one
@@ -204,8 +204,16 @@ Full design and reference data (committee, candidates, questions, rules) live in
   `data-me`/`data-cid`** and both handlers use those, never `ui.scoreCand` —
   Chrome fires `change` on a focused box as a rebuild removes it, after the
   candidate has switched, which filed one score under two candidates.
-  (3) **A valid score saves after a 600ms pause**, not only on blur, so a phone
-  locked mid-interview doesn't lose it.
+  (3) **A valid score saves after a 600ms pause**, and commits on **blur**, not
+  `change` (change doesn't fire when the text is back to what it was at focus,
+  so a deleted score stayed saved). (4) **Before a rebuild, `flushPending()`
+  saves anything still pausing** — a rebuild draws from saved state, so a note
+  typed <0.5s before a switch came back blank and the next keystroke cancelled
+  its save. (5) **The tab draws from `myScore()`** (saved + this page's
+  unconfirmed writes), never raw `S.scores`, so a lagging snapshot (admin
+  reviewing as a member) can't show or compare against an older value; a
+  failed note stays on screen and retries, a failed score reverts.
+  `sim/score-stress.mjs` (`npm run stress`) found 3–5; run it after any change here.
   Screening priority ratings are still 1–5 buttons; only interview scores changed.
 - **No average is normalized, deliberately.** Screening and ranking means are
   over whoever answered; a non-answer is never imputed. Always print the count

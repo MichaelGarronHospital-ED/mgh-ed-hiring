@@ -10,7 +10,8 @@
     "e2e": "bash make-site.sh && node e2e.mjs",
     "scenarios": "bash make-site.sh && node scenarios.mjs",
     "fuzz": "bash make-site.sh && node fuzz.mjs",
-    "score": "bash make-site.sh && node score.mjs"
+    "score": "bash make-site.sh && node score.mjs",
+    "stress": "bash make-site.sh && node score-stress.mjs 60 1 && node score-stress.mjs 30 1000 --latency && node score-stress.mjs 30 2000 --flaky"
   },
   "devDependencies": {
     "puppeteer-core": "^23.0.0"

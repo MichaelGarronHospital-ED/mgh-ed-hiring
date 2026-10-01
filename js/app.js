@@ -1004,8 +1004,8 @@ function renderScore() {
   if (!list.length) { delete $("#score").dataset.sig; $("#score").innerHTML = head + empty("⭐️", "No candidates to score", "Candidates on the interview list will appear here."); return; }
   if (!ui.scoreCand || !list.some((c) => c.id === ui.scoreCand)) ui.scoreCand = list[0].id;
   const me = ui.member, cid = ui.scoreCand;
-  const rec = S.scores[key(me, cid)] || { notes: {} };
-  const scored = (c) => !!(S.scores[key(me, c.id)] || {}).overall;
+  const rec = myScore(me, cid);
+  const scored = (c) => !!myScore(me, c.id).overall;
   const at = list.findIndex((c) => c.id === cid);
   const jump = (d) => { const t = list[at + d]; return t
     ? `<button class="btn ghost small" onclick="IV.pickScore('${t.id}')" aria-label="${d < 0 ? "Previous" : "Next"} candidate: ${escapeHtml(t.name)}">${d < 0 ? "‹" : "›"}</button>`
@@ -1028,9 +1028,12 @@ function renderScore() {
   // rebuilds, so nothing typed for one can ever appear under another.
   const root = $("#score");
   const sig = [me, cid, list.map((c) => c.id).join(","), QUESTIONS.length, SCALE.length].join("|");
+  // About to rebuild: land anything still pausing first, then start over so
+  // `rec` is read after it (the saves may already have re-entered here).
+  if (root.dataset.sig !== sig && flushPending()) return renderScore();
   if (root.dataset.sig === sig && $("#overallIn")) {
     const act = document.activeElement;
-    $("#scoreNotice").innerHTML = myInputNotice(list, (c) => S.scores[key(me, c.id)], true);
+    $("#scoreNotice").innerHTML = myInputNotice(list, (c) => myScore(me, c.id), true);
     root.querySelectorAll(".scorebar option").forEach((o) => {
       const c = list.find((x) => x.id === o.value);
       if (c) o.textContent = c.name + (scored(c) ? " ✓" : "");
@@ -1048,7 +1051,7 @@ function renderScore() {
   }
   root.dataset.sig = sig;
   root.innerHTML = head
-    + `<div id="scoreNotice">${myInputNotice(list, (c) => S.scores[key(me, c.id)], true)}</div>`
+    + `<div id="scoreNotice">${myInputNotice(list, (c) => myScore(me, c.id), true)}</div>`
     + `<div class="card flush list">
       <div class="prow scorebar"><div class="row center">
         <select class="grow" onchange="IV.pickScore(this.value)" aria-label="Candidate to score">${list.map((c) =>
@@ -1064,7 +1067,7 @@ function renderScore() {
       <div class="prow"><div class="row center"><label class="grow name" for="overallIn">Overall rating${infoIcon(scaleText)}</label>
         <span class="overall"><input id="overallIn" type="text" inputmode="decimal" autocomplete="off" placeholder="1.0–5.0" value="${ov}"
           data-me="${escapeHtml(me)}" data-cid="${escapeHtml(cid)}" aria-describedby="overallMsg"
-          oninput="IV.scoreTyped(this.value,this.dataset)" onchange="IV.score(this.value,this.dataset)" onkeydown="if(event.key==='Enter')this.blur()"/><span class="muted">/ 5</span></span></div>
+          oninput="IV.scoreTyped(this.value,this.dataset)" onblur="IV.score(this.value,this.dataset)" onkeydown="if(event.key==='Enter')this.blur()"/><span class="muted">/ 5</span></span></div>
         <div id="overallMsg" class="small muted" style="margin-top:.45rem">${escapeHtml(label)}</div></div>
     </div>
     ${GUIDE.length ? section("guide", "Guidance for panelists", "", `<ul class="small">${GUIDE.map((g) => `<li>${escapeHtml(g)}</li>`).join("")}</ul>`) : ""}`;
@@ -1660,13 +1663,67 @@ function renderCandidate() {
 }
 
 // ---------------------------------------------------------- handlers (window)
+// Saves waiting out their pause: "<cid>:<qi>" → { t, run } for notes, and the
+// overall score's one slot. `run` saves now and is safe to call once only.
 const noteTimers = {};
-let scoreTimer = null;   // the overall score's save-after-a-pause (IV.scoreTyped)
+let scoreTimer = null;
 function saveNoteKeyed(me, cid, qi, val) {
   const k = cid + ":" + qi;
-  clearTimeout(noteTimers[k]);
+  clearTimeout((noteTimers[k] || {}).t);
   markSaving();
-  noteTimers[k] = setTimeout(async () => { delete noteTimers[k]; await store.setScore(me, cid, { notes: { [qi]: val } }); markSaved(); }, 500);
+  const run = () => { delete noteTimers[k]; return writeScore(me, cid, { notes: { [qi]: val } }); };
+  noteTimers[k] = { t: setTimeout(run, 500), run };
+}
+// What this page has asked the store to save and the store hasn't confirmed:
+// "<me>~<cid>" → { overall?, notes: {qi: text} }. The Score tab draws from
+// this over S.scores, so it never shows (or compares against) a value older
+// than what was just typed. A reviewer's own write reaches S synchronously, so
+// for them this is empty almost always; an admin reviewing as a member reads
+// scores back through a snapshot, which lags a write by a moment — in that
+// moment a redraw showed the old note (and the next keystroke saved it short),
+// and retyping the score you'd had before was skipped as "already saved".
+const inflight = {};
+function myScore(me, cid) {
+  const rec = S.scores[key(me, cid)] || {}, f = inflight[key(me, cid)];
+  if (!f) return { ...rec, notes: rec.notes || {} };
+  return { ...rec, ...("overall" in f ? { overall: f.overall } : {}), notes: { ...(rec.notes || {}), ...f.notes } };
+}
+function writeScore(me, cid, patch, tries = 0) {
+  const k = key(me, cid), f = inflight[k] = inflight[k] || { notes: {} };
+  if ("overall" in patch) f.overall = patch.overall;
+  Object.assign(f.notes, patch.notes || {});
+  // Settled: drop what THIS write put there (unless a later write has replaced
+  // it), then redraw from the store.
+  const drop = (keepNotes) => {
+    if ("overall" in patch && f.overall === patch.overall) delete f.overall;
+    if (!keepNotes) Object.entries(patch.notes || {}).forEach(([q, t]) => { if (f.notes[q] === t) delete f.notes[q]; });
+    if (!("overall" in f) && !Object.keys(f.notes).length && inflight[k] === f) delete inflight[k];
+    if (ui.tab === "score" && ui.member) renderScore();
+  };
+  return saved(store.setScore(me, cid, patch).then(() => drop(false), (e) => {
+    // A failed NOTE stays on screen — the box is the only copy of what was
+    // typed, and redrawing from the store wiped it — and is tried again with
+    // a growing gap; typing in it again also retries. A failed SCORE goes back
+    // to the saved one: quick to retype, and showing it would claim it counted.
+    drop(true);
+    const notes = patch.notes || {};
+    if (Object.keys(notes).length && tries < 3) setTimeout(() => {
+      const still = Object.fromEntries(Object.entries(notes).filter(([q, t]) => f.notes[q] === t));
+      if (Object.keys(still).length) writeScore(me, cid, { notes: still }, tries + 1);
+    }, 2000 * (tries + 1));
+    throw e;   // saved() shows "Couldn't save"
+  }));
+}
+// Save everything still waiting out its pause, NOW. Called before the Score tab
+// is rebuilt for another candidate: a rebuild draws from what's saved, so a
+// note typed under half a second before the switch came back blank, and the
+// next keystroke there cancelled its pending save — losing that text for good.
+// Returns whether anything was waiting.
+function flushPending() {
+  let any = false;
+  Object.keys(noteTimers).forEach((k) => { const n = noteTimers[k]; if (n) { clearTimeout(n.t); n.run(); any = true; } });
+  if (scoreTimer) { const n = scoreTimer; clearTimeout(n.t); n.run(); any = true; }
+  return any;
 }
 // header auto-save indicator so people can SEE their input is saved
 function markSaving() {
@@ -1726,25 +1783,29 @@ window.IV = {
   // emptying the box mid-retype doesn't clear the saved score either.
   //
   // Both handlers take the person+candidate the box was DRAWN for (its data-
-  // attributes), never ui.scoreCand: Chrome fires `change` on a focused box as
-  // a rebuild removes it — after ui.scoreCand has already moved on — which
+  // attributes), never ui.scoreCand: Chrome fires blur/change on a focused box
+  // as a rebuild removes it — after ui.scoreCand has already moved on — which
   // filed one score under two candidates.
   scoreTyped: (raw, { me, cid } = {}) => {
-    clearTimeout(scoreTimer);
+    clearTimeout((scoreTimer || {}).t); scoreTimer = null;
     const m = $("#overallMsg"); if (m) m.textContent = "";
     const v = parseScore(raw);
     if (!v) return;
-    scoreTimer = setTimeout(() => {   // saved() shows Saving…/✓ itself — not shown earlier, or
-      scoreTimer = null;              // typing on into "4.75" would leave "Saving…" stuck
-      if (v === ((S.scores[key(me, cid)] || {}).overall || 0)) return;
-      saved(store.setScore(me, cid, { overall: v }));
-    }, 600);
+    const run = () => {   // saved() shows Saving…/✓ itself — not shown earlier, or
+      scoreTimer = null;  // typing on into "4.75" would leave "Saving…" stuck
+      if (v === (myScore(me, cid).overall || 0)) return;
+      writeScore(me, cid, { overall: v });
+    };
+    scoreTimer = { t: setTimeout(run, 600), run };
   },
-  // On leaving the box (blur/Enter/Tab): the final word. Invalid → said so, not
+  // On leaving the box (blur/Enter/Tab/app switch): the final word. Blur, not
+  // `change`: change only fires if the text differs from when the box was
+  // focused, so focus an empty box, type 4.2, let it save, delete it, leave —
+  // no change event, and 4.2 stayed saved under an empty box. Invalid → said so, not
   // saved. Empty → clears, like un-tapping the old button. Returns false only
   // when the value was refused.
   score: (raw, { me, cid } = {}) => {
-    clearTimeout(scoreTimer); scoreTimer = null;
+    clearTimeout((scoreTimer || {}).t); scoreTimer = null;
     if (!me || !cid) return false;
     const here = me === ui.member && cid === ui.scoreCand;   // box still on screen
     const v = parseScore(raw);
@@ -1753,9 +1814,9 @@ window.IV = {
       toast("Score not saved — use 1 to 5, e.g. 4.7", "err");
       return false;
     }
-    const cur = (S.scores[key(me, cid)] || {}).overall || 0;
+    const cur = myScore(me, cid).overall || 0;
     if (v === cur) { if (here) renderScore(); return true; }   // "4.50" → tidy back to "4.5"
-    saved(store.setScore(me, cid, { overall: v }));
+    writeScore(me, cid, { overall: v });
     return true;
   },
   setComplete: async (v, btn) => {
