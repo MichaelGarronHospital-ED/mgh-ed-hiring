@@ -196,9 +196,16 @@ Full design and reference data (committee, candidates, questions, rules) live in
 - **Interview scores are typed, 1.0–5.0 to one decimal** (requested Oct 1 2026). Older
   scores are whole numbers and were left as they are — no migration; they
   display as "4.0". `parseScore` refuses anything else rather than rounding it.
-  The Score tab redraws on every store emit, so `renderScore` carries the
-  focused field's value/caret across the redraw — don't drop that, or a
-  half-typed "4." (or a note's last keystrokes) gets swapped mid-typing.
+  Three rules keep a typed box as safe as the buttons were — `sim/score.mjs`
+  pins each: (1) **`renderScore` patches in place** while member+candidate are
+  unchanged and rebuilds only when they change. A rebuild per save ate taps on
+  ‹ ›, dropped focus, and an attempt to carry typing across rebuilds put one
+  candidate's note into the next one's box. (2) **The score box carries its own
+  `data-me`/`data-cid`** and both handlers use those, never `ui.scoreCand` —
+  Chrome fires `change` on a focused box as a rebuild removes it, after the
+  candidate has switched, which filed one score under two candidates.
+  (3) **A valid score saves after a 600ms pause**, not only on blur, so a phone
+  locked mid-interview doesn't lose it.
   Screening priority ratings are still 1–5 buttons; only interview scores changed.
 - **No average is normalized, deliberately.** Screening and ranking means are
   over whoever answered; a non-answer is never imputed. Always print the count

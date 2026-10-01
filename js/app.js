@@ -1001,7 +1001,7 @@ function renderAvailability() {
 function renderScore() {
   const list = activeCands().slice().sort((a, b) => a.name.localeCompare(b.name));
   const head = hint("Notes per question, then one overall rating.");
-  if (!list.length) { $("#score").innerHTML = head + empty("⭐️", "No candidates to score", "Candidates on the interview list will appear here."); return; }
+  if (!list.length) { delete $("#score").dataset.sig; $("#score").innerHTML = head + empty("⭐️", "No candidates to score", "Candidates on the interview list will appear here."); return; }
   if (!ui.scoreCand || !list.some((c) => c.id === ui.scoreCand)) ui.scoreCand = list[0].id;
   const me = ui.member, cid = ui.scoreCand;
   const rec = S.scores[key(me, cid)] || { notes: {} };
@@ -1017,16 +1017,38 @@ function renderScore() {
   // full 1–5 scale is on the ⓘ; the label for the score you actually gave is
   // printed under the buttons, which is the only one that matters at the time.
   const scaleText = SCALE.map((s, i) => `${i + 1} — ${s}`).join(" · ");
-  // Every store emit (a note's own save, any snapshot) redraws this tab. Carry
-  // the field being typed in across the redraw — value, caret and focus — so a
-  // half-typed "4." or the last keystrokes of a note aren't swapped out for the
-  // saved copy mid-sentence.
-  const act = document.activeElement;
-  const keep = act && $("#score").contains(act) && act.id
-    ? { id: act.id, val: act.value, sel: [act.selectionStart, act.selectionEnd] } : null;
   const ov = rec.overall ? fmtScore(rec.overall) : "";
-  $("#score").innerHTML = head
-    + myInputNotice(list, (c) => S.scores[key(me, c.id)], true)
+  const label = ov && Number.isInteger(rec.overall) ? `${ov} — ${SCALE[rec.overall - 1] || ""}` : "";
+  // Every store emit (a note's own save, any snapshot) lands here. While it's
+  // still the same person scoring the same candidate, UPDATE the page in place
+  // instead of rebuilding it: a rebuild throws away the field being typed in,
+  // eats the tap on ‹ › that triggered a save (the button is replaced between
+  // press and release), and — when it tried to carry typing across — carried a
+  // note into the NEXT candidate's box. A change of candidate or person always
+  // rebuilds, so nothing typed for one can ever appear under another.
+  const root = $("#score");
+  const sig = [me, cid, list.map((c) => c.id).join(","), QUESTIONS.length, SCALE.length].join("|");
+  if (root.dataset.sig === sig && $("#overallIn")) {
+    const act = document.activeElement;
+    $("#scoreNotice").innerHTML = myInputNotice(list, (c) => S.scores[key(me, c.id)], true);
+    root.querySelectorAll(".scorebar option").forEach((o) => {
+      const c = list.find((x) => x.id === o.value);
+      if (c) o.textContent = c.name + (scored(c) ? " ✓" : "");
+    });
+    QUESTIONS.forEach((q, i) => {
+      const t = $("#note-" + i), saved = (rec.notes || {})[i] || "";
+      // not one whose save is still waiting out its pause: its box is NEWER
+      // than the saved copy, and typing into a reverted box would save it short
+      if (t !== act && !noteTimers[cid + ":" + i] && t.value !== saved) t.value = saved;
+      t.closest(".qrow").classList.toggle("done", !!String(t.value).trim());
+    });
+    const box = $("#overallIn");
+    if (box !== act) { box.value = ov; $("#overallMsg").textContent = label; }
+    return;
+  }
+  root.dataset.sig = sig;
+  root.innerHTML = head
+    + `<div id="scoreNotice">${myInputNotice(list, (c) => S.scores[key(me, c.id)], true)}</div>`
     + `<div class="card flush list">
       <div class="prow scorebar"><div class="row center">
         <select class="grow" onchange="IV.pickScore(this.value)" aria-label="Candidate to score">${list.map((c) =>
@@ -1041,12 +1063,11 @@ function renderScore() {
       }).join("")}
       <div class="prow"><div class="row center"><label class="grow name" for="overallIn">Overall rating${infoIcon(scaleText)}</label>
         <span class="overall"><input id="overallIn" type="text" inputmode="decimal" autocomplete="off" placeholder="1.0–5.0" value="${ov}"
-          aria-describedby="overallMsg" onchange="IV.score(this.value)" onkeydown="if(event.key==='Enter')this.blur()"/><span class="muted">/ 5</span></span></div>
-        <div id="overallMsg" class="small muted" style="margin-top:.45rem">${ov && Number.isInteger(rec.overall) ? `${ov} — ${escapeHtml(SCALE[rec.overall - 1] || "")}` : ""}</div></div>
+          data-me="${escapeHtml(me)}" data-cid="${escapeHtml(cid)}" aria-describedby="overallMsg"
+          oninput="IV.scoreTyped(this.value,this.dataset)" onchange="IV.score(this.value,this.dataset)" onkeydown="if(event.key==='Enter')this.blur()"/><span class="muted">/ 5</span></span></div>
+        <div id="overallMsg" class="small muted" style="margin-top:.45rem">${escapeHtml(label)}</div></div>
     </div>
     ${GUIDE.length ? section("guide", "Guidance for panelists", "", `<ul class="small">${GUIDE.map((g) => `<li>${escapeHtml(g)}</li>`).join("")}</ul>`) : ""}`;
-  const el = keep && document.getElementById(keep.id);
-  if (el) { el.value = keep.val; el.focus(); try { el.setSelectionRange(keep.sel[0], keep.sel[1]); } catch { /* not a text field */ } }
 }
 
 // Interview scores are 1–5 to one decimal (4.7). Older scores are whole numbers
@@ -1056,7 +1077,7 @@ function fmtScore(v) { return Number(v).toFixed(1); }
 function parseScore(raw) {
   const t = String(raw || "").trim().replace(",", ".");
   if (!t) return 0;
-  if (!/^\d(\.\d)?$/.test(t)) return null;
+  if (!/^\d(\.(\d0*)?)?$/.test(t)) return null;   // "4." is 4, "4.50" is 4.5; "4.75" is refused
   const v = Number(t);
   return v >= 1 && v <= 5 ? v : null;
 }
@@ -1640,11 +1661,12 @@ function renderCandidate() {
 
 // ---------------------------------------------------------- handlers (window)
 const noteTimers = {};
+let scoreTimer = null;   // the overall score's save-after-a-pause (IV.scoreTyped)
 function saveNoteKeyed(me, cid, qi, val) {
   const k = cid + ":" + qi;
   clearTimeout(noteTimers[k]);
   markSaving();
-  noteTimers[k] = setTimeout(async () => { await store.setScore(me, cid, { notes: { [qi]: val } }); markSaved(); }, 500);
+  noteTimers[k] = setTimeout(async () => { delete noteTimers[k]; await store.setScore(me, cid, { notes: { [qi]: val } }); markSaved(); }, 500);
 }
 // header auto-save indicator so people can SEE their input is saved
 function markSaving() {
@@ -1680,23 +1702,61 @@ window.IV = {
     await store.setCandidateRemoved(id, v); toast(v ? "Removed" : "Restored", "ok");
   },
   avail: (id, v) => { const cur = (S.availIv[ui.member] || {})[id]; saved(store.setAvail("iv", ui.member, id, cur === v ? null : v)); },
-  pickScore: (id) => { ui.scoreCand = id; renderScore(); wireSections(); window.scrollTo({ top: 0, behavior: "smooth" }); },
+  pickScore: (id) => {
+    // A tap on ‹ › doesn't always take focus off the score box (iOS), so its
+    // change event would never fire once the page is rebuilt. Settle it for
+    // THIS candidate first; if it's not a valid score, stay put and say so.
+    const box = $("#overallIn");
+    if (box && document.activeElement === box && !IV.score(box.value, box.dataset)) {
+      const sel = $(".scorebar select"); if (sel) sel.value = ui.scoreCand;
+      box.focus(); return;
+    }
+    ui.scoreCand = id; renderScore(); wireSections(); window.scrollTo({ top: 0, behavior: "smooth" }); },
   sortColl: (k) => {
     ui.collSort = k;
     ls.set(COLL_SORT_KEY, k);
     renderScreen(); wireSections();
   },
   note: (qi, val) => saveNoteKeyed(ui.member, ui.scoreCand, qi, val),
-  score: (raw) => {
+  // Typing saves a valid score after a pause, like notes do — the old buttons
+  // saved on tap, and a box that only saved on blur would lose a score typed
+  // just before the phone was locked. Who/which candidate is captured NOW, so
+  // a switch during the pause still files it under the one it was typed for.
+  // A half-typed or invalid value is never saved and never nagged about here;
+  // emptying the box mid-retype doesn't clear the saved score either.
+  //
+  // Both handlers take the person+candidate the box was DRAWN for (its data-
+  // attributes), never ui.scoreCand: Chrome fires `change` on a focused box as
+  // a rebuild removes it — after ui.scoreCand has already moved on — which
+  // filed one score under two candidates.
+  scoreTyped: (raw, { me, cid } = {}) => {
+    clearTimeout(scoreTimer);
+    const m = $("#overallMsg"); if (m) m.textContent = "";
+    const v = parseScore(raw);
+    if (!v) return;
+    scoreTimer = setTimeout(() => {   // saved() shows Saving…/✓ itself — not shown earlier, or
+      scoreTimer = null;              // typing on into "4.75" would leave "Saving…" stuck
+      if (v === ((S.scores[key(me, cid)] || {}).overall || 0)) return;
+      saved(store.setScore(me, cid, { overall: v }));
+    }, 600);
+  },
+  // On leaving the box (blur/Enter/Tab): the final word. Invalid → said so, not
+  // saved. Empty → clears, like un-tapping the old button. Returns false only
+  // when the value was refused.
+  score: (raw, { me, cid } = {}) => {
+    clearTimeout(scoreTimer); scoreTimer = null;
+    if (!me || !cid) return false;
+    const here = me === ui.member && cid === ui.scoreCand;   // box still on screen
     const v = parseScore(raw);
     if (v === null) {
-      const m = $("#overallMsg"); if (m) m.textContent = "Not saved — enter 1 to 5 with at most one decimal, e.g. 4.7";
+      const m = $("#overallMsg"); if (m && here) m.textContent = "Not saved — enter 1 to 5 with at most one decimal, e.g. 4.7";
       toast("Score not saved — use 1 to 5, e.g. 4.7", "err");
-      return;
+      return false;
     }
-    const cur = (S.scores[key(ui.member, ui.scoreCand)] || {}).overall || 0;
-    if (v === cur) { render(); return; }   // "4.70" → tidy back to "4.7"
-    saved(store.setScore(ui.member, ui.scoreCand, { overall: v }));
+    const cur = (S.scores[key(me, cid)] || {}).overall || 0;
+    if (v === cur) { if (here) renderScore(); return true; }   // "4.50" → tidy back to "4.5"
+    saved(store.setScore(me, cid, { overall: v }));
+    return true;
   },
   setComplete: async (v, btn) => {
     if (v) { const ok = await confirmDialog("Mark all interviews complete and reveal the ranking to admins?", { title: "Reveal ranking", yes: "Reveal", danger: false }); if (!ok) return; }
