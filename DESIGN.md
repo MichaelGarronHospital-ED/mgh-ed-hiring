@@ -271,3 +271,61 @@ panels are recomputed on every render, so any change to availability after
 invites go out silently reshuffles the Panels tab away from the calendar. A
 "lock schedule" action that saves every auto panel as a manual override would
 freeze it. Until that exists, save each panel by hand before exporting.
+
+### 4. Make the interviewer confirm the candidate before scoring  ← Oct 7 2026
+
+**The problem.** The Score tab opens on whichever candidate sorts first
+(`list[0]` in `renderScore`), not on anyone the reviewer interviewed. In the
+live round two interviewers each left a cleared (`overall: 0`) score record
+on the alphabetically-first candidate, whose panel neither of them sat on, then
+scored their actual candidate. Both caught it; someone who doesn't leaves a
+score on the wrong applicant. The same day the chair's score for one candidate
+was saved as 4.3 when he was sure he'd entered 4.0 — he thinks he changed
+candidates mid-entry. The stress suite (`npm run stress`, ~8,700 random actions
+including slow and failing writes) found no way for the app to file a score
+other than as typed, so this is a UI trap, not a save bug.
+
+**Rejected: guessing the candidate from the schedule.** Opening on the
+reviewer's most recent unscored panel was considered and dropped (Alvin,
+Oct 7): admin may move a candidate's interview outside the tool, so the
+tool's times can't be trusted to say who was just interviewed. A wrong guess
+is worse than the alphabet, because it looks deliberate.
+
+**To brainstorm: an explicit confirm step.** The tab should never present a
+score box until the reviewer has chosen who it's for. Starting idea: on
+entering the Score tab, show only the candidate picker (no pre-selection,
+no notes or score fields), and draw the fields once a candidate is picked.
+Open questions:
+- Does it reset to "pick a candidate" every time the tab is opened, or only
+  per session? (Every time is safest; the cost is one tap.)
+- Does switching with ‹ › count as choosing, or does that also need a confirm?
+- Keep the candidate's name visibly beside the score box either way, so the
+  number and the person are read together.
+- Must keep the `renderScore` rules in CLAUDE.md intact (flush pending saves
+  before rebuild, `data-me`/`data-cid` on the box); re-run `npm run stress`.
+- Consider refusing `"4.30"`-style input: tapping back into a displayed "4.0"
+  between the "." and "0" and typing 3 yields 4.3 silently (`parseScore`
+  accepts trailing zeros on purpose).
+- Note scores replay only from the per-device echo, so "everyone check your
+  score" checks only the device it was typed on.
+
+### 5. One-click full export as a backup after each cycle  ← Oct 7 2026 (Alvin)
+
+Firestore keeps no history and the site is not an archive. After each
+interview cycle, admin exports everything — roster, screening (ratings, flags,
+reasons), scores and notes, panels — in one click as an Excel workbook, one
+sheet per collection. Admin-only, like every other path carrying ratings.
+Today there are separate CSVs (shortlist, schedule, scores); fold them in
+rather than adding a parallel set.
+
+### 6. Offer outcomes on the Ranking tab  ← Oct 7 2026 (Kyle, "not urgent")
+
+A row per candidate on the last tab: offer made (y/n), accepted / declined,
+and a free-text note. Admin-only. Include it in the export (#5).
+
+### 7. Decide: is the site the record, or is the export?  ← Oct 7 2026 (Kyle)
+
+Kyle asked whether the site can serve as the committee's memory or whether it
+should be printed/exported. Recommendation: the export is the record (#5); the
+site is the working copy and can be wiped between rounds. Confirm with Kyle
+and write down the retention/storage location (OneDrive, alongside the CVs).
