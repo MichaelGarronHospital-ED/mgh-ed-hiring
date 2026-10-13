@@ -16,6 +16,27 @@ the stale copy would still open under the old code.
 Design + decisions live in [`DESIGN.md`](DESIGN.md); the paneling algorithm is in
 [`js/panels.js`](js/panels.js) (validated in a Python prototype before porting).
 
+## Where it lives
+
+| | |
+|---|---|
+| Committee | https://michaelgarronhospital-ed.github.io/mgh-ed-hiring/ |
+| Applicants | https://michaelgarronhospital-ed.github.io/mgh-ed-hiring/book.html |
+| Repo | https://github.com/MichaelGarronHospital-ED/mgh-ed-hiring |
+| Owner | Alvin Yang |
+| Firebase project | `mgh-ed-hiring` (config in [`js/config.js`](js/config.js), public by design) |
+
+- **Deploys:** GitHub Pages, from `main`, root folder, no build step. A push to
+  `main` is live about a minute later.
+- **Secrets:** none in the repo and none in GitHub Actions. The staff, admin and
+  guest codes are shared by word of mouth; the role-account passwords live only
+  in the Firebase console (see "Real access control" below).
+- **Old address:** this tool used to live at
+  `https://dralvinyang.github.io/ED-motion-voting/tools/interviews/`. That old
+  repo now only redirects here, keeping the path, query string and #hash, so
+  links already sent to applicants and the committee still work. The voting tool
+  that shared that repo is now `mgh-ed-motion-voting`.
+
 ## Access codes — three independent codes
 There are **three codes**, none written in the source (they're shared out-of-band):
 

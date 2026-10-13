@@ -27,7 +27,7 @@ Needs Node 18+ (for the built-in `node --test` runner) and Java, which the
 Firestore emulator requires.
 
 ```bash
-cd tools/interviews/tests
+cd tests
 npm install
 npm test
 ```
@@ -117,7 +117,7 @@ test. So the suite is testing the real file.
 ## If the emulator won't start
 
 - **"Cannot start the Firestore emulator without firestore config"** — you're not
-  in this directory. `cd tools/interviews/tests` first.
+  in this directory. `cd tests` first.
 - **Port 8080 in use** — change it in both `firebase.json` and the `port` in
   `firestore.rules.test.mjs`; they must match.
 - **Java missing** — the Firestore emulator needs it. `java -version` to check,

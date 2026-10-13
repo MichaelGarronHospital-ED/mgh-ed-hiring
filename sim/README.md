@@ -17,7 +17,7 @@ no build step and no dependencies.
 ## Run it
 
 ```bash
-cd tools/interviews/sim
+cd sim
 npm install
 npx puppeteer browsers install chrome     # once, if you have no Chrome
 npm test                                  # scenarios + one full round + 40 random rounds

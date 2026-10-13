@@ -715,7 +715,7 @@ function renderScreen() {
           ${cmd ? `<pre class="cmd">${escapeHtml(cmd)}</pre>` : ""}
         </div>`;
       }).join("")}
-      <div class="small" style="margin-top:.5rem">Run that from <code>tools/interviews/scripts/</code> on a
+      <div class="small" style="margin-top:.5rem">Run that from <code>scripts/</code> on a
       computer (it needs the admin password, is a dry run without <code>--apply</code>, and never overwrites
       input already given under the new entry). To fix a spelling in future use
       <code>scripts/rename-candidate.mjs</code>, which keeps the id, instead of removing and re-adding.</div>

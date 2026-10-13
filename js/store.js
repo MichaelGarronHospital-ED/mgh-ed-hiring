@@ -146,7 +146,7 @@ export class LocalStore extends BaseStore {
 
 // ---------------------------------------------------------------- firestore
 // Faithful mirror of the local API using the Firebase modular SDK, following
-// the same patterns as tools/motion-voting/js/db.js.
+// the same patterns as js/db.js in the mgh-ed-motion-voting repo.
 //
 // Role-aware (for the hardened "roles" security model): `opts.scopes` limits
 // which collections we subscribe to, because the rules deny reads a role isn't

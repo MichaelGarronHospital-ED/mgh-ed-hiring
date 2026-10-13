@@ -1,11 +1,11 @@
 # Maintenance scripts
 
 One-off admin tooling for the interviews tool. **Not part of the deployed site**
-— GitHub Pages serves `tools/interviews/`, and nothing here is loaded by
+— GitHub Pages serves the repo root, and nothing here is loaded by
 `index.html`. These are run by hand from a terminal.
 
 ```bash
-cd tools/interviews/scripts
+cd scripts
 npm install
 read -rsp "Admin password: " ED_IV_ADMIN_PASSWORD; echo; export ED_IV_ADMIN_PASSWORD
 ```

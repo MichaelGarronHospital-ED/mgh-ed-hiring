@@ -4,6 +4,23 @@ Three-phase hiring tool: **Screen → Schedule → Score**. Static site + Fireba
 Full design and reference data (committee, candidates, questions, rules) live in
 [`DESIGN.md`](DESIGN.md); open confirmations in [`QUESTIONS-FOR-KYLE.md`](QUESTIONS-FOR-KYLE.md).
 
+## This repo
+
+- **Lives in the `MichaelGarronHospital-ED` org as `mgh-ed-hiring`**, served by GitHub
+  Pages from `main` (root folder, no build step) at
+  `https://michaelgarronhospital-ed.github.io/mgh-ed-hiring/`. The repo name is part of
+  every shared link and QR code: renaming it breaks them all, because GitHub
+  does not redirect Pages sites.
+- **Split out of the old `DrAlvinYang/ED-motion-voting` repo in Oct 2026.**
+  That repo now holds only redirect pages pointing here. Its history was
+  filtered to this tool, so paths in old commits and in `CHANGES.md` may still
+  say `tools/...`; that is history, not a bug.
+- **Firebase project id `mgh-ed-hiring` is immutable.** It does not track the repo name;
+  don't "fix" it to match.
+- **Relative paths only.** Nothing in the code should hardcode the repo name.
+- **Org rules:** public repo (free-plan Pages), GitHub-authored Actions only,
+  feature branches merge to `main`, merged branches auto-delete.
+
 ## Non-negotiables
 
 - **Applicant PII never lives in this app.** CVs/cover letters stay in OneDrive;
@@ -16,7 +33,7 @@ Full design and reference data (committee, candidates, questions, rules) live in
   files input under `ui.member` — own screening, own availability, the Score
   tab — must be hidden when it's null, or it writes under `"null"`. An admin
   picks a name via "review as a member". Pinned by `sim` → `adminHasNoName`.
-- **All asset paths relative** so GitHub Pages serves it at `…/tools/interviews/`.
+- **All asset paths relative** so GitHub Pages serves it at `…/mgh-ed-hiring/`.
 - **Panel rules** (Phase 2): 3–5 members, Kyle present if available, ≥1 male +
   ≥1 female. Genders are in DESIGN.md; treat hard-vs-soft as pending Kyle's confirm.
 - **`CHAIR` must exactly match a `COMMITTEE` name** (`js/config.js`). `buildPanel`
