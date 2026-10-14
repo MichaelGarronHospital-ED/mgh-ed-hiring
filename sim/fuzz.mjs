@@ -1,6 +1,7 @@
 // Randomised rounds through the real app: seed a committee, times, interviewer
 // availability and applicant availability, then read the Panels tab back and
 // check it against the independently-stated rules.
+import { pathToFileURL } from "node:url";
 import { serve, browser, openPage, landAsAdmin, tab } from "./drive.mjs";
 import { readPanels, readLoad } from "./scrape.mjs";
 import { checkSchedule, activeCandidates } from "./check.mjs";
@@ -129,7 +130,10 @@ export async function main(n = 40, startSeed = 1) {
   return { failures, idle, misdiag, log };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// pathToFileURL, not a hand-built "file://" string: the URL form escapes spaces
+// and other characters, so a hand-built one never matches in a folder like
+// "Documents - Alvin's Macbook" and the script silently ran nothing.
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const n = +(process.argv[2] || 40), start = +(process.argv[3] || 1);
   const { failures, idle, misdiag } = await main(n, start);
   console.log(`${n} rounds from seed ${start}: ${failures.length} with rule violations, ${idle.length} with an idle-but-available interviewer, ${misdiag.length} where the "unschedulable" reason shown is wrong`);

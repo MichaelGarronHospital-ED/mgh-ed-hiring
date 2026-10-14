@@ -1,6 +1,7 @@
 // Targeted scenarios around the scheduling pipeline: the applicant flow, time
 // edits after people have answered, manual panels, removals and chair changes.
 // Each scenario is a named check that returns a list of problems.
+import { pathToFileURL } from "node:url";
 import { serve, browser, openPage, signIn, pickMember, landAsAdmin, changeMember, tab, setSlot, dumpState, seedState, sleep } from "./drive.mjs";
 import { readPanels, readCandGrid } from "./scrape.mjs";
 
@@ -499,7 +500,10 @@ export async function main(only) {
   return results;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// pathToFileURL, not a hand-built "file://" string: the URL form escapes spaces
+// and other characters, so a hand-built one never matches in a folder like
+// "Documents - Alvin's Macbook" and the script silently ran nothing.
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const results = await main(process.argv[2]);
   let bad = 0;
   for (const [name, problems] of Object.entries(results)) {

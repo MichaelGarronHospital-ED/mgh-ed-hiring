@@ -21,6 +21,25 @@ Full design and reference data (committee, candidates, questions, rules) live in
 - **Org rules:** public repo (free-plan Pages), GitHub-authored Actions only,
   feature branches merge to `main`, merged branches auto-delete.
 
+## Commands, deploy and accounts
+
+- **Local folder:** `MGH-ED-Tools/hiring-tool` (short name; the repo name stays
+  `mgh-ed-hiring`). `../README.md` maps every ED tool.
+- **Run locally:** `python3 -m http.server 8000`, then open http://localhost:8000.
+  This talks to the **live** Firebase project and real applicant data: look, don't edit.
+  For a safe copy with Firebase switched off, use `sim/make-site.sh` (builds `sim/site/`).
+- **Rules tests:** `cd tests && npm install && npm test` (Firestore emulator; needs Java). 90 tests.
+- **UI simulations:** `cd sim && npm install && npm test`. Any Chrome works; set `$CHROME`
+  to pick one. Known on Alvin's Mac (2026-10-14): 13/15 scenarios pass; `editAnsweredTimeKeep`
+  and `editAnsweredTimeReask` fail in the test driver ("not clickable"), also on the
+  2026-09-28 version, so not caused by later changes. e2e, score and fuzz pass.
+- **Deploy the site:** push to `main`; GitHub Pages is live about a minute later.
+  Firestore rules are separate: see README (run `scripts/sync-allowed.mjs --apply` first).
+- **Accounts:** repo owned by the `MichaelGarronHospital-ED` org (department login
+  `MGH-ED-Admin`). Firebase project `mgh-ed-hiring` is owned by the Google account on
+  MGHEmergencyDepartmentAdministration@tehn.ca. Applicant files (CVs) are NOT in this
+  public repo; they stay in Alvin's "ED Interviews" folder.
+
 ## Non-negotiables
 
 - **Applicant PII never lives in this app.** CVs/cover letters stay in OneDrive;
