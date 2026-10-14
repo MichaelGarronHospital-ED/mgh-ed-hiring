@@ -67,6 +67,15 @@ export async function openPage(b, url, { width = 1280, height = 900, log = [] } 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export { sleep };
 
+// A YYYY-MM-DD date `days` after today (local). Fixture times must stay in the
+// future: a past date makes the tool add a "this date is in the past" dialog
+// before the one a scenario expects, and the fixed Oct 1/2 2026 dates broke
+// the time-edit scenarios once those days had passed.
+export function daysAhead(days) {
+  const d = new Date(); d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 // ---- app-level actions ------------------------------------------------------
 export async function signIn(page, code) {
   await page.waitForSelector("#gate:not(.hidden)");
