@@ -24,10 +24,11 @@ export const firebaseConfig = {
 // questions, scores, or other applicants). To change the staff/admin codes or the
 // questions, re-run the re-keying recipe in README → "Re-keying".
 
-// Applicant/guest code for local mode (no Firebase). Low-value tier (guests only
-// pick their own interview times and see nothing else). In the real (roles) model
-// this same word is the applicant Firebase account password (set in the console).
-export const CANDIDATE_CODE_LOCAL = "guest2026";
+// Guest password for LOCAL mode only (no Firebase; the sim copy sets its own).
+// Deliberately blank here: this repo is public, and in the live (roles) model the
+// Guest password is only the applicant Firebase account's password, checked by
+// Firebase at sign-in. Never write a real password into this file.
+export const CANDIDATE_CODE_LOCAL = "";
 
 // ---- 2b. Auth / security model -------------------------------------------
 // mode "anon"  → every client signs in anonymously (baseline; matches the

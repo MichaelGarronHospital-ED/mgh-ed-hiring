@@ -82,9 +82,9 @@ async function unlock(typed, silent) {
     return;
   }
   // 2) applicant — a different code; goes straight to their own scheduling
-  const localCandOk = typed === CANDIDATE_CODE_LOCAL;
+  const localCandOk = !!CANDIDATE_CODE_LOCAL && typed === CANDIDATE_CODE_LOCAL;
   if (AUTH.mode !== "roles" && !localCandOk) {
-    if (!silent) gateFail("Incorrect code.");
+    if (!silent) gateFail("Incorrect password.");
     return;
   }
   try {
@@ -140,13 +140,13 @@ function signInError(e, opts = {}) {
   // password and a missing account once email-enumeration protection is on, so
   // these three cannot be told apart from here — the message covers both.
   if (c.includes("wrong-password") || c.includes("invalid-credential") || c.includes("user-not-found")) {
-    if (!known) return "Incorrect code.";
-    return `This is a valid ${opts.isAdmin ? "admin" : "staff"} code — it unlocked the questions — but `
-      + `${who} rejected it. That account either doesn't exist or its password isn't this code. `
-      + `${console_} → Users → ${who}, and set its password to this exact code.`;
+    if (!known) return "Incorrect password.";
+    return `This is the correct ${opts.isAdmin ? "Leadership" : "ED"} password (it unlocked the questions), but `
+      + `${who} rejected it. That account either doesn't exist or its password was not updated. `
+      + `${console_} → Users → ${who}, and set its password to this exact password.`;
   }
   if (!known) return "Couldn't sign in. Please try again.";
-  return `The code is recognised but sign-in failed${c ? ` (${c})` : ""}. ${console_} → Users, and check ${who}.`;
+  return `The password is recognised but sign-in failed${c ? ` (${c})` : ""}. ${console_} → Users, and check ${who}.`;
 }
 
 // One place that paints a gate failure, so every path gets the same treatment
@@ -161,15 +161,15 @@ function gateFail(msg) {
     + gateHint(gateAttempts);
 }
 
-// Three separate codes reach this one box, so "it doesn't work" is ambiguous by
-// construction. After a couple of failures, say what the three are.
+// Three separate passwords reach this one box, so "it doesn't work" is ambiguous
+// by construction. After a couple of failures, say what the three are.
 function gateHint(n) {
   if (n < 2) return "";
-  return `<div class="note tip" style="text-align:left; margin-top:.7rem">There are three different codes:
-    the <b>staff</b> code (reviewers), the <b>admin</b> code (leadership — Panels, Ranking and Setup)
-    and the <b>applicant</b> code. They are not interchangeable: the staff code will sign you in, but
-    without the leadership view. If you are sure you have the right one, leadership should check the
-    matching account in the Firebase console.</div>`;
+  return `<div class="note tip" style="text-align:left; margin-top:.7rem">The ED tools use three passwords:
+    the <b>ED</b> password (committee: Screen, Availability, Score), the <b>Leadership</b> password
+    (adds Panels, Ranking, Offers and Setup) and the <b>Guest</b> password (applicants booking times).
+    The ED password signs you in without the leadership view. If you are sure you have the right one,
+    leadership should check the matching account in the Firebase console.</div>`;
 }
 
 async function initStore(role, typed) {
@@ -304,7 +304,7 @@ function proceedToMemberPick() {
     rl.innerHTML = ui.isAdmin
       ? `<b>Leadership access.</b> Pick your name to screen, give availability and score as yourself.`
       : `<b>Committee access</b> — Screen, Availability and Score. Expecting Panels, Ranking and Setup?
-         That's the separate <b>admin</b> code, not this one.`;
+         Those need the <b>Leadership</b> password, not the ED password.`;
   }
   $("#adminOnlyBtn").classList.toggle("hidden", !ui.isAdmin);
   $("#memberpick").classList.remove("hidden");

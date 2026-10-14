@@ -37,25 +37,29 @@ Design + decisions live in [`DESIGN.md`](DESIGN.md); the paneling algorithm is i
   links already sent to applicants and the committee still work. The voting tool
   that shared that repo is now `mgh-ed-motion-voting`.
 
-## Access codes — three independent codes
-There are **three codes**, none written in the source (they're shared out-of-band):
+## Passwords: the ED tools' three shared passwords
 
-- **Staff code** (ED physicians / committee) — decrypts the interview questions and
+Since Oct 14 2026 every ED tool uses the same three passwords (shared out of band,
+never written in this repo):
+
+- **ED password** (ED physicians / the committee): unlocks the interview questions and
   opens Screen · Availability · Score.
-- **Admin code** (leadership) — a **separate, independent** code that also decrypts the
-  questions and additionally opens Panels · Ranking · Setup. Because it's independent,
-  a reviewer who knows the staff code **cannot** become admin.
-- **Guest code** (applicants) — a different code that goes straight to the applicant's
-  own scheduling; it decrypts nothing and sees no committee data.
+- **Leadership password**: also unlocks the questions, and adds Panels · Ranking ·
+  Offers · Setup. It is independent of the ED password, so knowing the ED password
+  does not make anyone leadership.
+- **Guest password** (applicants): goes straight to the applicant's own scheduling; it
+  unlocks nothing and sees no committee data.
 
-The staff and admin codes each independently "unwrap" the question key (a random content
-key wrapped under each — see "Re-keying" below), so both decrypt without either revealing
-the other. Regular members never see the Ranking — it's admin-only and hidden until all
-interviews are marked complete.
+The ED and Leadership passwords each independently "unwrap" the question key (a random
+content key wrapped under each; see "Re-keying" below), so both unlock the questions
+without either revealing the other. In the live (roles) model each password is also the
+password of one Firebase account: `committee@` (ED), `admin@` (Leadership), `applicant@`
+(Guest).
 
-> **Security:** the staff/admin codes decrypt the confidential questions, so treat them
-> like the questions themselves. Prefer codes that aren't trivially guessable (a short
-> dictionary word can be brute-forced) — never a code that appears anywhere public.
+**To change them:** edit `~/mgh-ed-passwords.txt` and run `python3 set-passwords.py --apply`
+from the `MGH-ED-Tools` folder (see the README there). It re-locks the questions, sets all
+the Firebase account passwords for hiring and voting, and verifies each one; then commit
+and push `js/data.js`.
 
 ## Run it now (local mode)
 Open `index.html` over **https** (or `http://localhost`, not a `file://` path — the
