@@ -24,6 +24,48 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## Offers on the Ranking tab; one-click backup of the whole cycle (Oct 14 2026)
+
+Both were on the deferred list (DESIGN.md #5 and #6, Oct 7 2026).
+
+### Added: Offers (admin only)
+
+Under the ranking table, one row per candidate in ranking order (then anyone not
+yet scored, then anyone with a recorded outcome who has since left the list, so
+nothing recorded disappears):
+
+- A segmented status: Not offered / Offered / Accepted / Declined. Choosing one
+  stamps today's date (offered, then answered); both dates stay editable.
+- A note per candidate (start date, conditions, why someone declined). The Save
+  button appears only once something is typed. A live update arriving mid-note
+  keeps the draft, the focus and the caret (`keepFocus`, `ui.offerNotes`).
+- A summary line: offers made, accepted, declined, awaiting reply.
+- Stored in a new collection, `interviews_offers` (one document per candidate),
+  readable and writable by the admin account ONLY. Reviewers cannot see who was
+  offered or who declined. The rules also check the shape (status is one of the
+  four, known fields only, note up to 4,000 characters). 4 new emulator tests.
+
+### Added: Back up this hiring cycle
+
+A card at the bottom of the Ranking tab (also shown before the ranking is
+revealed): **Download Excel** writes one workbook with a sheet each for Summary,
+Candidates, Screening, Availability (committee and applicants), Panels, Scores
+(with per-question notes), Ranking, Offers, Committee and Interview times.
+**Print or save as PDF** prints a clean summary (summary, ranking, offers,
+candidates, panels); the browser's print dialog saves it as a PDF.
+
+- `js/xlsx.js` writes the .xlsx with no library and no network (the tool still
+  loads nothing but Firebase). Checked by opening the files with openpyxl.
+- Not exported: the interview questions (encrypted) and committee members'
+  gender (used only to balance panels).
+- The separate CSVs (shortlist, schedule, scores) are unchanged.
+
+Checked: rules 94/94; sim e2e, score and fuzz (40 rounds) pass, scenarios 13/15
+(the two known driver failures); offers and backup driven end to end at 390 and
+1280 px, axe-core clean; the "Export scores" link darkened to AA contrast.
+
+---
+
 ## Taking out everything that wasn't the work (Sept 26 2026)
 
 "All the pages look so cluttered with different cards and instructions." They

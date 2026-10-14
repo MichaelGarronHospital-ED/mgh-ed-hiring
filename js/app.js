@@ -9,6 +9,7 @@
 import { firebaseConfig, ORG_NAME, CHAIR, COMMITTEE, SLOTS, ONEDRIVE,
          CANDIDATE_CODE_LOCAL, AUTH, SCREENING_DEADLINE } from "./config.js";
 import { decryptContent } from "./data.js";
+import { buildXlsx, XLSX_MIME } from "./xlsx.js";
 import { LocalStore, FirestoreStore, key } from "./store.js";
 import { autoPanels, buildPanel } from "./panels.js";
 import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell, lastKey,
@@ -22,7 +23,7 @@ const ui = { role: "committee", isAdmin: false, member: null, tab: "screen", sco
              candLast: null, editPanel: null, openSections: {} };
 const $ = (s) => document.querySelector(s);
 const isConfigured = () => firebaseConfig && Object.keys(firebaseConfig).length > 0 && firebaseConfig.apiKey;
-const ADMIN_SCOPES = ["candidates", "screening", "availIv", "availCand", "scores", "meta"];
+const ADMIN_SCOPES = ["candidates", "screening", "availIv", "availCand", "scores", "meta", "offers"];
 
 // lastKey (the applicant's availability document id) now lives in util.js, so
 // store.js and the rules' allowed-name list share one definition with this file.
@@ -1436,10 +1437,30 @@ function rankingRows() {
   return { rows, adjusted };
 }
 
+// Live snapshots re-render the whole tab; put focus, caret and note heights back
+// so an admin typing an offer note is never interrupted (the draft itself is kept
+// in ui.offerNotes and rendered back by offersSection).
+function keepFocus(scopeSel) {
+  const act = document.activeElement, id = act && act.id;
+  const scope = document.querySelector(scopeSel);
+  const inScope = !!(id && scope && scope.contains(act));
+  const sel = inScope && typeof act.selectionStart === "number" ? [act.selectionStart, act.selectionEnd] : null;
+  return () => {
+    document.querySelectorAll(`${scopeSel} .ofnote textarea`).forEach((t) => { t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; });
+    if (!inScope) return;
+    const el = document.getElementById(id);
+    if (el) { el.focus({ preventScroll: true }); if (sel) try { el.setSelectionRange(sel[0], sel[1]); } catch { /* date inputs */ } }
+  };
+}
+
 function renderRanking() {
+  const restore = keepFocus("#ranking");
+  try { renderRankingInner(); } finally { restore(); }
+}
+function renderRankingInner() {
   if (!S.meta.interviewsComplete) {
     $("#ranking").innerHTML = `<div class="card">${empty("🏆", "Ranking is hidden", "Reveal it once all interviews are done.")}
-      <div style="text-align:center"><button class="btn filled" onclick="IV.setComplete(true,this)">Mark interviews complete &amp; reveal ranking</button></div></div>`;
+      <div style="text-align:center"><button class="btn filled" onclick="IV.setComplete(true,this)">Mark interviews complete &amp; reveal ranking</button></div></div>` + backupCard();
     return;
   }
   const { rows, adjusted } = rankingRows();
@@ -1460,8 +1481,161 @@ function renderRanking() {
       <button class="linky" onclick="IV.setComplete(false,this)">Re-hide ranking</button></p>
     <div class="card flush"><div class="tablewrap"><table><thead><tr><th>#</th><th>Candidate</th><th>Avg</th>
       <th>Adj${infoIcon(adjInfo)}</th><th>Scored by</th></tr></thead>
-      <tbody>${body || `<tr><td colspan="5">${empty("⭐️", "No scores yet", "Scores will appear as interviewers submit them.")}</td></tr>`}</tbody></table></div></div>`;
+      <tbody>${body || `<tr><td colspan="5">${empty("⭐️", "No scores yet", "Scores will appear as interviewers submit them.")}</td></tr>`}</tbody></table></div></div>`
+    + offersSection(rows) + backupCard();
 }
+
+// ------------------------------------------------ 5b · Offers (admin, Ranking)
+// After the ranking: who was made an offer, who accepted, who declined, when,
+// and a note (DESIGN.md "Offer outcomes", Kyle, Oct 7 2026). One row per
+// candidate in ranking order, then anyone not yet scored, then anyone who has an
+// outcome on record but has since left the list, so nothing recorded vanishes.
+const OFFER_STATES = [["", "Not offered"], ["offered", "Offered"], ["accepted", "Accepted"], ["declined", "Declined"]];
+const OFFER_WORD = { offered: "Offered", accepted: "Accepted", declined: "Declined" };
+const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const fmtDay = (iso) => iso ? new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "";
+const offerOf = (id) => (S.offers || {})[id] || {};
+
+function offerRows(rows) {
+  const seen = new Set(), out = [];
+  (rows || rankingRows().rows).forEach((r, i) => { seen.add(r.id); out.push({ id: r.id, name: r.name, rank: i + 1, avg: r.raw }); });
+  activeCands().filter((c) => !seen.has(c.id)).sort((a, b) => a.name.localeCompare(b.name))
+    .forEach((c) => { seen.add(c.id); out.push({ id: c.id, name: c.name, rank: null, avg: null }); });
+  S.candidates.filter((c) => !seen.has(c.id) && offerOf(c.id).status)
+    .forEach((c) => out.push({ id: c.id, name: c.name, rank: null, avg: null, gone: true }));
+  return out;
+}
+
+function offerCounts() {
+  const n = { offered: 0, accepted: 0, declined: 0 };
+  Object.values(S.offers || {}).forEach((o) => { if (n[o.status] != null) n[o.status]++; });
+  return { ...n, made: n.offered + n.accepted + n.declined };
+}
+
+function offersSection(rows) {
+  const list = offerRows(rows);
+  const n = offerCounts();
+  const summary = n.made
+    ? `<span class="pill neutral">${n.made} offer${n.made === 1 ? "" : "s"} made</span>
+       ${n.accepted ? `<span class="pill in">${n.accepted} accepted</span>` : ""}
+       ${n.declined ? `<span class="pill out">${n.declined} declined</span>` : ""}
+       ${n.offered ? `<span class="pill zoom">${n.offered} awaiting reply</span>` : ""}`
+    : `<span class="muted">No offers recorded yet. Choose <b>Offered</b> when you make one.</span>`;
+  const body = list.map((r) => {
+    const o = offerOf(r.id), st = o.status || "";
+    const seg = OFFER_STATES.map(([v, label]) =>
+      `<button type="button" class="${st === v ? `on ${v || "none"}` : ""}" aria-pressed="${st === v}"
+        onclick="IV.offerStatus('${r.id}','${v}',this)">${label}</button>`).join("");
+    const draft = (ui.offerNotes || {})[r.id];
+    const note = draft != null ? draft : (o.note || "");
+    const dirty = draft != null && draft !== (o.note || "");
+    const dates = st ? `<div class="ofdates">
+        <label>Offered <input type="date" id="ofo-${r.id}" value="${escapeHtml(o.offeredAt || "")}" max="${todayIso()}"
+          onchange="IV.offerDate('${r.id}','offeredAt',this.value)"></label>
+        ${st === "accepted" || st === "declined" ? `<label>${OFFER_WORD[st]} <input type="date" id="ofr-${r.id}" value="${escapeHtml(o.respondedAt || "")}" max="${todayIso()}"
+          onchange="IV.offerDate('${r.id}','respondedAt',this.value)"></label>` : ""}
+      </div>` : "";
+    return `<div class="rrow offer ${st || "none"}" id="ofrow-${r.id}">
+      <div class="row center">
+        <span class="rankn">${r.rank ? r.rank : "–"}</span>
+        <div class="grow"><div class="name">${escapeHtml(r.name)}</div>
+          <div class="small muted">${r.gone ? "No longer on the interview list" : r.avg != null ? `Avg ${r.avg.toFixed(2)}` : "Not scored yet"}</div></div>
+        <div class="seg ofseg" role="group" aria-label="Offer status for ${escapeHtml(r.name)}">${seg}</div>
+      </div>
+      ${dates}
+      <div class="ofnote">
+        <textarea id="ofn-${r.id}" rows="1" maxlength="4000" placeholder="Add a note"
+          aria-label="Offer note for ${escapeHtml(r.name)}" oninput="IV.offerNoteInput('${r.id}',this)">${escapeHtml(note)}</textarea>
+        <button type="button" class="savebtn" id="ofs-${r.id}" ${dirty ? "" : "hidden"} onclick="IV.offerNoteSave('${r.id}',this)">Save note</button>
+      </div>
+    </div>`;
+  }).join("");
+  return `<h3 class="sechead">Offers</h3>
+    <p class="hint">Record each offer as you make it, then the answer. Only admins can see this.</p>
+    <div class="ofsummary">${summary}</div>
+    <div class="card flush list">${body || empty("🤝", "No candidates yet", "Candidates appear here once they are on the list.")}</div>`;
+}
+
+// ------------------------------------------------ 5c · Back up the cycle
+// Firestore keeps no history and the site is the working copy, not the record
+// (DESIGN.md #5/#7): after each cycle an admin downloads everything as one Excel
+// workbook and files it with the CVs. Print gives the same summary on paper, or
+// as a PDF through the browser's "Save as PDF".
+function backupCard() {
+  return `<div class="card backup">
+    <div class="row center">
+      <div class="grow"><h3 style="margin:0 0 .2rem">Back up this hiring cycle</h3>
+        <p class="small muted" style="margin:0">Everything in this round, in one Excel file: candidates, screening, availability,
+          panels, scores, ranking and offers. Save it with the CVs on OneDrive; the site is the working copy, not the record.</p></div>
+    </div>
+    <div class="row backup-actions">
+      <button class="btn filled" onclick="IV.exportCycle(this)">Download Excel</button>
+      <button class="btn ghost" onclick="IV.printCycle()">Print or save as PDF</button>
+    </div>
+  </div>`;
+}
+
+// One place builds every table, so the workbook and the printout cannot drift.
+const MOD_WORD = { ip: "In person", zoom: "Zoom", either: "Either" };
+function cycleTables() {
+  const { committee, chair, slots } = EFF();
+  const status = (c) => c.removed ? "Removed" : flagsCount(c.id) >= 2 ? "Excluded (2+ flags)" : "Interview list";
+  const rank = rankingRows();
+  const rankPos = {}; rank.rows.forEach((r, i) => { rankPos[r.id] = i + 1; });
+  const sortedCands = [...S.candidates].sort((a, b) => a.name.localeCompare(b.name));
+  const t = {};
+  t.candidates = [["Candidate", "Status", "Flags", "Avg priority", "Rated by", "Rank", "Offer"]];
+  sortedCands.forEach((c) => {
+    const st = screenStats(c.id), o = offerOf(c.id);
+    t.candidates.push([c.name, status(c), st.flags.length, st.avg == null ? null : Number(st.avg.toFixed(1)), st.n,
+      rankPos[c.id] || null, OFFER_WORD[o.status] || ""]);
+  });
+  t.screening = [["Reviewer", "Candidate", "Priority rating (1-5)", "Flagged", "Flag reason"]];
+  committee.forEach((m) => sortedCands.forEach((c) => {
+    const s = S.screening[key(m.name, c.id)];
+    if (s && (s.rating || s.flag || s.reason)) t.screening.push([m.name, c.name, s.rating || null, s.flag ? "Yes" : "", String(s.reason || "").trim()]);
+  }));
+  const slotCols = slots.map((x) => slotLabel(x));
+  t.availCommittee = [["Committee member", ...slotCols]];
+  committee.forEach((m) => { const a = S.availIv[m.name] || {}; t.availCommittee.push([m.name, ...slots.map((x) => MOD_WORD[a[x.id]] || "")]); });
+  t.availApplicants = [["Candidate", ...slotCols]];
+  sortedCands.filter((c) => !c.removed).forEach((c) => { const a = availForCand(c); t.availApplicants.push([c.name, ...slots.map((x) => MOD_WORD[a[x.id]] || "")]); });
+  let res = { panels: [], unschedulable: [] };
+  try { res = computePanels(); } catch { /* no times yet */ }
+  t.panels = [["Candidate", "Time", "Format", "Panel", "Set by hand"]];
+  res.panels.forEach((p) => t.panels.push([(cand(p.cand) || {}).name || p.cand, slotName(p.slot), MOD_WORD[p.modality] || p.modality, p.members.join(", "), EFF().overrides[p.cand] ? "Yes" : ""]));
+  (res.unschedulable || []).forEach((id) => t.panels.push([(cand(id) || {}).name || id, "Not scheduled", "", "", ""]));
+  const qis = new Set();
+  Object.values(S.scores).forEach((s) => Object.keys((s && s.notes) || {}).forEach((q) => qis.add(Number(q))));
+  const qList = [...qis].filter((q) => Number.isFinite(q)).sort((a, b) => a - b);
+  t.scores = [["Reviewer", "Candidate", "Overall score", ...qList.map((q) => `Q${q + 1} notes`)]];
+  committee.forEach((m) => sortedCands.forEach((c) => {
+    const s = S.scores[key(m.name, c.id)];
+    if (s && (s.overall || Object.values(s.notes || {}).some(Boolean))) t.scores.push([m.name, c.name, s.overall || null, ...qList.map((q) => (s.notes || {})[q] || "")]);
+  }));
+  t.ranking = [["Rank", "Candidate", "Average score", "Rater-adjusted", "Scored by", "Panel size"]];
+  rank.rows.forEach((r, i) => t.ranking.push([i + 1, r.name, Number(r.raw.toFixed(2)), Number(r.adj.toFixed(2)), r.n, r.expected || null]));
+  t.offers = [["Candidate", "Rank", "Status", "Offered on", "Answered on", "Note"]];
+  offerRows(rank.rows).forEach((r) => { const o = offerOf(r.id); t.offers.push([r.name, r.rank, OFFER_WORD[o.status] || "Not offered", o.offeredAt || "", o.respondedAt || "", o.note || ""]); });
+  t.committee = [["Committee member", "Role"]];
+  committee.forEach((m) => t.committee.push([m.name, m.name === chair ? "Chair" : "Member"]));
+  t.times = [["Interview time"]]; slots.forEach((x) => t.times.push([slotLabel(x)]));
+  const n = offerCounts();
+  t.summary = [["Item", "Value"],
+    ["Exported", new Date().toLocaleString()],
+    ["Tool", ORG_NAME],
+    ["Candidates", S.candidates.length],
+    ["On the interview list", activeCands().length],
+    ["Committee members", committee.length],
+    ["Interview times", slots.length],
+    ["Panels scheduled", res.panels.length],
+    ["Scores submitted", t.scores.length - 1],
+    ["Ranking revealed", S.meta.interviewsComplete ? "Yes" : "No"],
+    ["Offers made", n.made], ["Accepted", n.accepted], ["Declined", n.declined], ["Awaiting reply", n.offered],
+    ["Not included", "Interview questions (encrypted) and committee members' gender (used only to balance panels)."]];
+  return t;
+}
+
 
 // ------------------------------------------------------------ 6 · Setup (admin)
 function renderSettings() {
@@ -1871,6 +2045,70 @@ window.IV = {
     if (!ok) return; await store.setSettings({ panelOverrides: {} }); renderPanels();
   }),
   printSchedule: () => window.print(),
+  // offers
+  offerStatus: (id, status, btn) => {
+    const o = offerOf(id), today = todayIso();
+    if ((o.status || "") === status) return;
+    const patch = { status, updatedAt: new Date().toISOString() };
+    if (!status) { patch.offeredAt = ""; patch.respondedAt = ""; }
+    else {
+      if (!o.offeredAt) patch.offeredAt = today;
+      if (status === "offered") patch.respondedAt = "";
+      else if (!o.respondedAt || !(o.status === "accepted" || o.status === "declined")) patch.respondedAt = today;
+    }
+    const name = (cand(id) || {}).name || "Candidate";
+    store.setOffer(id, patch).then(() => toast(status ? `${name}: ${OFFER_WORD[status].toLowerCase()}` : `${name}: offer cleared`, "ok"))
+      .catch(() => toast("Couldn't save — check your connection", "err"));
+  },
+  offerDate: (id, field, value) => {
+    store.setOffer(id, { [field]: value || "", updatedAt: new Date().toISOString() })
+      .then(() => toast("Date saved", "ok")).catch(() => toast("Couldn't save — check your connection", "err"));
+  },
+  offerNoteInput: (id, el) => {
+    ui.offerNotes = ui.offerNotes || {}; ui.offerNotes[id] = el.value;
+    el.style.height = "auto"; el.style.height = el.scrollHeight + "px";
+    const b = document.getElementById("ofs-" + id);
+    const dirty = el.value !== (offerOf(id).note || "");
+    if (b) b.hidden = !dirty;
+  },
+  offerNoteSave: (id, btn) => withBusy(btn, async () => {
+    const v = ((ui.offerNotes || {})[id] ?? offerOf(id).note ?? "").slice(0, 4000);
+    await store.setOffer(id, { note: v, updatedAt: new Date().toISOString() });
+    if (ui.offerNotes) delete ui.offerNotes[id];
+    renderRanking();
+  }, "Note saved"),
+  // back up the whole cycle
+  exportCycle: (btn) => withBusy(btn, async () => {
+    const t = cycleTables();
+    const bytes = buildXlsx([
+      { name: "Summary", rows: t.summary, widths: [26, 70] },
+      { name: "Candidates", rows: t.candidates }, { name: "Screening", rows: t.screening },
+      { name: "Availability - committee", rows: t.availCommittee }, { name: "Availability - applicants", rows: t.availApplicants },
+      { name: "Panels", rows: t.panels }, { name: "Scores", rows: t.scores }, { name: "Ranking", rows: t.ranking },
+      { name: "Offers", rows: t.offers }, { name: "Committee", rows: t.committee }, { name: "Interview times", rows: t.times },
+    ]);
+    downloadFile(`ed-hiring-backup-${todayIso()}.xlsx`, bytes, XLSX_MIME);
+  }, "Backup downloaded"),
+  printCycle: () => {
+    const t = cycleTables();
+    const tbl = (rows, opts = {}) => rows.length < 2 ? `<p class="pr-empty">None recorded.</p>`
+      : `<table><thead><tr>${rows[0].map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead><tbody>${rows.slice(1)
+        .map((r) => `<tr>${r.map((v, i) => `<td${opts.wrap && opts.wrap.includes(i) ? ' class="wrap"' : ""}>${escapeHtml(v == null ? "" : String(v))}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+    let el = document.getElementById("printReport");
+    if (!el) { el = document.createElement("div"); el.id = "printReport"; document.body.appendChild(el); }
+    el.innerHTML = `<h1>${escapeHtml(ORG_NAME)}</h1><p class="pr-sub">Hiring cycle summary · printed ${escapeHtml(new Date().toLocaleString())}</p>
+      <h2>Summary</h2>${tbl(t.summary)}
+      <h2>Ranking</h2>${tbl(t.ranking)}
+      <h2>Offers</h2>${tbl(t.offers.map((r, i) => i ? [r[0], r[1], r[2], fmtDay(r[3]), fmtDay(r[4]), r[5]] : r), { wrap: [5] })}
+      <h2>Candidates</h2>${tbl(t.candidates)}
+      <h2>Panels</h2>${tbl(t.panels)}
+      <p class="pr-foot">Screening detail, availability and individual scores are in the Excel backup.</p>`;
+    document.body.classList.add("printing-report");
+    const done = () => { document.body.classList.remove("printing-report"); window.removeEventListener("afterprint", done); };
+    window.addEventListener("afterprint", done);
+    window.print();
+    setTimeout(done, 1000);
+  },
   // exports
   exportShortlist: () => {
     // "Rated by / of" travels with the average so the spreadsheet can't be read

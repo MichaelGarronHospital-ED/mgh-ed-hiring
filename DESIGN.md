@@ -309,7 +309,7 @@ Open questions:
 - Note scores replay only from the per-device echo, so "everyone check your
   score" checks only the device it was typed on.
 
-### 5. One-click full export as a backup after each cycle  ← Oct 7 2026 (Alvin)
+### 5. One-click full export as a backup after each cycle  ← Oct 7 2026 (Alvin) · DONE Oct 14 2026 (Ranking tab → Back up this hiring cycle; see CHANGES.md)
 
 Firestore keeps no history and the site is not an archive. After each
 interview cycle, admin exports everything — roster, screening (ratings, flags,
@@ -318,7 +318,7 @@ sheet per collection. Admin-only, like every other path carrying ratings.
 Today there are separate CSVs (shortlist, schedule, scores); fold them in
 rather than adding a parallel set.
 
-### 6. Offer outcomes on the Ranking tab  ← Oct 7 2026 (Kyle, "not urgent")
+### 6. Offer outcomes on the Ranking tab  ← Oct 7 2026 (Kyle, "not urgent") · DONE Oct 14 2026 (interviews_offers, admin only; see CHANGES.md)
 
 A row per candidate on the last tab: offer made (y/n), accepted / declined,
 and a free-text note. Admin-only. Include it in the export (#5).
