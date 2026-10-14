@@ -37,7 +37,10 @@ Full design and reference data (committee, candidates, questions, rules) live in
   Firestore rules are separate: see README (run `scripts/sync-allowed.mjs --apply` first).
 - **Accounts:** repo owned by the `MichaelGarronHospital-ED` org (department login
   `MGH-ED-Admin`). Firebase project `mgh-ed-hiring` is owned by the Google account on
-  MGHEmergencyDepartmentAdministration@tehn.ca. Applicant files (CVs) are NOT in this
+  MGHEmergencyDepartmentAdministration@tehn.ca (second Owner: dralvinyang@gmail.com,
+  until another ED person is added). Free Spark plan. Publish rules with
+  `npx firebase-tools deploy --only firestore:rules` (department login); live rules matched
+  the repo on 2026-10-14. Applicant files (CVs) are NOT in this
   public repo; they stay in Alvin's "ED Interviews" folder.
 
 ## Non-negotiables
