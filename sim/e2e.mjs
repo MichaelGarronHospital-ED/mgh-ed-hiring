@@ -3,6 +3,7 @@
 // their own availability through the applicant link -> admin builds panels.
 //
 // Every applicant goes through the real applicant flow (surname check included).
+import { pathToFileURL } from "node:url";
 import { serve, browser, openPage, signIn, landAsAdmin, changeMember, tab, setSlot, dumpState, sleep } from "./drive.mjs";
 import { readPanels, readLoad } from "./scrape.mjs";
 import { checkSchedule, activeCandidates, roster } from "./check.mjs";
@@ -166,7 +167,10 @@ export async function run({ keepOpen = false } = {}) {
   return out;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// pathToFileURL, not a hand-built "file://" string: the URL form escapes spaces
+// and other characters, so a hand-built one never matches in a folder like
+// "Documents - Alvin's Macbook" and the script silently ran nothing.
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const r = await run();
   console.log("availability dashboard:", r.availDash);
   console.log("\nstored applicant availability:", JSON.stringify(r.candAvail));
