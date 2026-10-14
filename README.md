@@ -195,6 +195,20 @@ account, so per-**member** write-isolation isn't rule-enforceable (needs per-mem
 accounts or custom claims). And an applicant could overwrite another's availability
 by typing their last name. Both are low-impact and documented.
 
+### Publishing the rules from the command line
+
+`firebase.json` and `.firebaserc` point the Firebase CLI at this project
+(`mgh-ed-hiring`) and at `firestore.rules`, so the console paste above can be replaced by:
+
+```bash
+npx firebase-tools login                    # once, as the department Google account
+node scripts/sync-allowed.mjs --apply       # first, as above
+npx firebase-tools deploy --only firestore:rules
+```
+
+`--only firestore:rules` publishes the rules and nothing else (no hosting, no data).
+The tests in `tests/` keep their own emulator-only `firebase.json` and are unaffected.
+
 ## Security notes
 - The **questions/scale/guidance** are encrypted and only decrypt with the correct
   committee code — not readable in the page source.
