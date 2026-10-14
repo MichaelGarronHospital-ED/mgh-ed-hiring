@@ -2,7 +2,7 @@
 // availability and applicant availability, then read the Panels tab back and
 // check it against the independently-stated rules.
 import { pathToFileURL } from "node:url";
-import { serve, browser, openPage, landAsAdmin, tab } from "./drive.mjs";
+import { serve, browser, openPage, landAsAdmin, tab, daysAhead } from "./drive.mjs";
 import { readPanels, readLoad } from "./scrape.mjs";
 import { checkSchedule, activeCandidates } from "./check.mjs";
 
@@ -32,7 +32,7 @@ export function scenario(seed) {
 
   const nSlots = int(r, 1, 10);
   const times = Array.from({ length: nSlots }, (_, i) => ({
-    id: "t" + i, date: "2026-10-0" + (1 + (i % 3)),
+    id: "t" + i, date: daysAhead(30 + (i % 3)),
     start: String(8 + (i % 8)).padStart(2, "0") + ":00", end: String(9 + (i % 8)).padStart(2, "0") + ":00",
   }));
   const slotIds = times.map((t) => t.id);
