@@ -587,3 +587,54 @@ td.adj { font-variant-numeric:tabular-nums; color:var(--ink-2); }
   .overlay-box input, .overlay-box select,
   .tform input, .tform select { font-size:16px; }
 }
+
+/* ---- Ranking → Offers ----------------------------------------------------
+   One ruled list (same shape as the screening list): rank, name, a segmented
+   status control, then the dates and a note. The chosen status is the only
+   coloured thing on the row, so a glance down the list reads the outcomes. */
+.sechead { margin:1.6rem 0 .2rem; font-size:1.08rem; }
+.ofsummary { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; margin:.2rem 0 .6rem; font-size:.88rem; }
+.ofsummary .pill { font-size:.8rem; padding:.2rem .7rem; }
+.rrow.offer .rankn { min-width:1.6rem; text-align:center; }
+.rrow.offer .ofseg { margin-left:auto; }
+.ofseg button.on.none { color:var(--ink-2); }
+.ofseg button.on.offered { color:var(--accent-press); }
+.ofseg button.on.accepted { color:var(--green); }
+.ofseg button.on.declined { color:var(--red); }
+.rrow.offer.accepted { background:#fbfefc; }
+.rrow.offer.declined { background:#fffbfb; }
+.ofdates { display:flex; flex-wrap:wrap; gap:.4rem 1rem; margin:.55rem 0 0 2.3rem; font-size:.84rem; color:var(--mut); }
+.ofdates label { display:inline-flex; align-items:center; gap:.4rem; }
+.ofdates input[type=date] { font:inherit; color:var(--ink); border:1px solid var(--line); border-radius:9px;
+  padding:.25rem .45rem; background:#fbfbfd; min-height:2rem; }
+.ofnote { display:flex; gap:.5rem; align-items:flex-start; margin:.55rem 0 0 2.3rem; }
+.ofnote textarea { margin-top:0; min-height:2.4rem; resize:none; overflow:hidden; font-size:.9rem; }
+.ofnote .savebtn { flex:none; min-height:2.4rem; }
+/* the toolline links sit on the grey page: the darker accent keeps them at AA contrast */
+.toolline .linky { color:var(--accent-press); }
+@media (max-width:640px) {
+  .rrow.offer .ofseg { margin-left:2.3rem; width:calc(100% - 2.3rem); }
+  .rrow.offer .ofseg button { flex:1; padding:.4rem .3rem; }
+  .ofnote { flex-direction:column; align-items:stretch; }
+}
+
+/* ---- Back up this cycle --------------------------------------------------- */
+.card.backup { margin-top:1.6rem; }
+.backup-actions { gap:.6rem; margin-top:.85rem; flex-wrap:wrap; }
+.backup-actions .btn { min-height:2.6rem; }
+
+/* ---- Printed cycle summary (IV.printCycle) --------------------------------
+   Built on demand into #printReport; while printing, only it is shown. */
+#printReport { display:none; }
+@media print {
+  body.printing-report > *:not(#printReport) { display:none !important; }
+  body.printing-report #printReport { display:block; font-size:10.5pt; color:#000; }
+  #printReport h1 { font-size:16pt; margin:0 0 2pt; }
+  #printReport .pr-sub, #printReport .pr-foot { color:#444; font-size:9pt; margin:0 0 10pt; }
+  #printReport h2 { font-size:12pt; margin:14pt 0 4pt; break-after:avoid; }
+  #printReport table { width:100%; border-collapse:collapse; font-size:9.5pt; }
+  #printReport th, #printReport td { border:1px solid #bbb; padding:3pt 5pt; text-align:left; vertical-align:top; }
+  #printReport th { background:#f2f2f2; text-transform:none; letter-spacing:0; color:#000; }
+  #printReport td.wrap { white-space:pre-wrap; }
+  #printReport tr { break-inside:avoid; }
+}

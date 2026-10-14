@@ -209,6 +209,18 @@ npx firebase-tools deploy --only firestore:rules
 `--only firestore:rules` publishes the rules and nothing else (no hosting, no data).
 The tests in `tests/` keep their own emulator-only `firebase.json` and are unaffected.
 
+## After the interviews: offers and the backup
+
+On the **Ranking** tab (admin):
+
+- **Offers**: for each candidate choose Not offered / Offered / Accepted / Declined;
+  the dates fill in themselves and can be changed; add a note. Only the admin
+  account can see or change offers (`interviews_offers` in `firestore.rules`).
+- **Back up this hiring cycle**: *Download Excel* saves everything in the round
+  (candidates, screening, availability, panels, scores, ranking, offers) as one
+  workbook; *Print or save as PDF* prints a summary. Save the Excel file with the
+  CVs on OneDrive after each cycle: the site is the working copy, not the record.
+
 ## Security notes
 - The **questions/scale/guidance** are encrypted and only decrypt with the correct
   committee code — not readable in the page source.

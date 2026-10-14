@@ -274,6 +274,43 @@ describe("reviewers can do their own job", () => {
   });
 });
 
+describe("offers: who was offered, who accepted, who declined — admin only", () => {
+  const OFFER = "interviews_offers/c-1";
+  const ok = { status: "offered", note: "Called Tue; answer by Fri", offeredAt: "2026-10-14", updatedAt: "2026-10-14T12:00:00Z" };
+
+  it("admin can record, read, change and clear an offer", async () => {
+    await assertSucceeds(setDoc(doc(admin(), OFFER), ok));
+    await assertSucceeds(getDoc(doc(admin(), OFFER)));
+    await assertSucceeds(getDocs(collection(admin(), "interviews_offers")));
+    await assertSucceeds(setDoc(doc(admin(), OFFER), { status: "accepted", respondedAt: "2026-10-16" }, { merge: true }));
+    await assertSucceeds(setDoc(doc(admin(), OFFER), { status: "", note: "" }));
+    await assertSucceeds(deleteDoc(doc(admin(), OFFER)));
+  });
+
+  it("reviewers can neither see nor write offers", async () => {
+    await seed(OFFER, ok);
+    await assertFails(getDoc(doc(committee(), OFFER)));
+    await assertFails(getDocs(collection(committee(), "interviews_offers")));
+    await assertFails(setDoc(doc(committee(), OFFER), ok));
+  });
+
+  it("applicants and strangers get nothing", async () => {
+    await seed(OFFER, ok);
+    for (const db of [applicant(), stranger(), signedOut()]) {
+      await assertFails(getDoc(doc(db, OFFER)));
+      await assertFails(setDoc(doc(db, OFFER), ok));
+    }
+  });
+
+  it("refuses a status outside the four, an unknown field, or an oversized note", async () => {
+    await assertFails(setDoc(doc(admin(), OFFER), { status: "maybe" }));
+    await assertFails(setDoc(doc(admin(), OFFER), { status: "offered", salary: 1 }));
+    await assertFails(setDoc(doc(admin(), OFFER), { status: "offered", note: 42 }));
+    await assertFails(setDoc(doc(admin(), OFFER), { status: "offered", note: "x".repeat(4001) }));
+    await assertSucceeds(setDoc(doc(admin(), OFFER), { status: "declined", note: "x".repeat(4000) }));
+  });
+});
+
 describe("accounts the rules do not know get nothing", () => {
   const everything = [SCORE, SCREEN, CAND, AVAIL_C, AVAIL_I, CONFIG, PUBLIC];
 

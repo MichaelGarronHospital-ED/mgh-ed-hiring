@@ -14,6 +14,7 @@
 //    availCand  : { "<candId>": { <slotId>: "ip"|"zoom"|"either" } }
 //    scores     : { "<member>~<candId>": { overall, notes:{<qi>:text} } }
 //    meta       : { interviewsComplete }
+//    offers     : { "<candId>": { status:""|"offered"|"accepted"|"declined", note, offeredAt, respondedAt, updatedAt } }  (admin only)
 // ============================================================================
 
 import { effectiveSlots, toStored } from "./slots.js";
@@ -24,6 +25,7 @@ export const key = (member, candId) => `${member}~${candId}`;
 const EMPTY = () => ({
   candidates: [], screening: {}, availIv: {}, availCand: {}, scores: {},
   meta: { interviewsComplete: false },
+  offers: {},
   // admin-managed setup, stored in the DB (not in the repo): real committee
   // roster (+self-identified gender), chair, interview slots, OneDrive link,
   // and any manual panel overrides { candId: { slot, members:[...] } }.
@@ -131,6 +133,10 @@ export class LocalStore extends BaseStore {
     this._save();
   }
   async setMeta(patch) { this.state.meta = { ...this.state.meta, ...patch }; this._save(); }
+  async setOffer(candId, patch) {
+    this.state.offers = { ...(this.state.offers || {}), [candId]: { ...((this.state.offers || {})[candId] || {}), ...patch } };
+    this._save();
+  }
   async setSettings(patch) { this.state.settings = { ...this.state.settings, ...patch }; this._save(); }
   async updateConfig(mutate) {
     this._load();
@@ -153,9 +159,9 @@ export class LocalStore extends BaseStore {
 // allowed to see (e.g. a reviewer cannot read scores/screening → the ranking).
 // For those write-only-for-me collections we keep a per-device "echo" mirror in
 // localStorage so a reviewer still sees their OWN input without a server read.
-//   scopes: subset of ["candidates","screening","availIv","availCand","scores","meta","public"]
+//   scopes: subset of ["candidates","screening","availIv","availCand","scores","meta","offers","public"]
 //   echo:   true → seed/merge this member's own screening+scores from localStorage
-const ALL_SCOPES = ["candidates", "screening", "availIv", "availCand", "scores", "meta"];
+const ALL_SCOPES = ["candidates", "screening", "availIv", "availCand", "scores", "meta", "offers"];
 const ECHO_KEY = "ed_iv_echo_v1";
 const CAND_ECHO_KEY = "ed_iv_cand_echo_v1";
 
@@ -205,6 +211,10 @@ export class FirestoreStore extends BaseStore {
     });
     if (on("scores")) watch("scores", collection(db, "interviews_scores"), (snap) => {
       this.state.scores = { ...(this._echoScores || {}), ...Object.fromEntries(snap.docs.map((d) => [d.id, d.data()])) };
+    });
+    // Offer outcomes (admin only; firestore.rules refuses everyone else).
+    if (on("offers")) watch("offers", collection(db, "interviews_offers"), (snap) => {
+      this.state.offers = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]));
     });
     if (on("meta")) watch("meta", collection(db, "interviews_meta"), (snap) => {
       const m = snap.docs.find((d) => d.id === "state");
@@ -385,6 +395,23 @@ export class FirestoreStore extends BaseStore {
   async setMeta(patch) {
     const { setDoc } = this._fb;
     await setDoc(this._doc("interviews_meta", "state"), patch, { merge: true });
+  }
+  // Admin only. One document per candidate; merge so changing the status never
+  // drops the note (and vice versa). Shown optimistically, rolled back on a
+  // refusal so the screen never claims an outcome the server did not keep.
+  async setOffer(candId, patch) {
+    const { setDoc } = this._fb;
+    const prev = this.state.offers[candId];
+    this.state.offers = { ...this.state.offers, [candId]: { ...(prev || {}), ...patch } };
+    this._emit();
+    try {
+      await setDoc(this._doc("interviews_offers", candId), patch, { merge: true });
+    } catch (e) {
+      const next = { ...this.state.offers };
+      if (prev === undefined) delete next[candId]; else next[candId] = prev;
+      this.state.offers = next; this._emit();
+      throw e;
+    }
   }
   // Admin only. The surname keys applicants may submit availability under; the
   // rules get() this document on every applicant write, so a name missing here

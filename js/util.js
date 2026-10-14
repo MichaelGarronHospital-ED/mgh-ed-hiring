@@ -101,9 +101,9 @@ export function confirmDialog(msg, opts = {}) {
   });
 }
 
-// Trigger a client-side file download (used for CSV exports).
-export function downloadFile(filename, text, mime = "text/csv;charset=utf-8") {
-  const blob = new Blob([text], { type: mime });
+// Trigger a client-side file download (CSV text, or the bytes of an .xlsx).
+export function downloadFile(filename, data, mime = "text/csv;charset=utf-8") {
+  const blob = new Blob([data], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url; a.download = filename;
