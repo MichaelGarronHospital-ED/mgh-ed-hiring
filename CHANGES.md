@@ -24,6 +24,27 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## Three shared passwords: ED, Leadership, Guest (Oct 14 2026)
+
+The ED tools now share three passwords (MGH-ED-Tools/README.md). For hiring they replace
+the three codes one for one: **ED** = the old staff code (committee), **Leadership** = the
+old admin code, **Guest** = the old applicant code. The interview questions were re-locked
+under the new ED and Leadership passwords (`js/data.js`, the two `ENC_WRAP_*` values; the
+encrypted questions themselves are unchanged), and the three Firebase accounts' passwords
+were set to match, by `set-passwords.py` in MGH-ED-Tools, which verified each sign-in.
+
+- The applicant code is no longer written in this public repo: `CANDIDATE_CODE_LOCAL` is
+  blank (it only ever mattered in local mode; live, the Guest password is checked by
+  Firebase), and a blank value can never match.
+- Every screen says "password" and names which one: the gate, the error messages, the
+  "three passwords" hint after two failed tries, and the committee/leadership note.
+
+Checked: rules 94/94; sim e2e, score and fuzz pass, scenarios 13/15 (the two known); the
+re-lock was proven against this tool's own `decryptContent` on fixture data (new ED and
+Leadership unlock, old codes and Guest refused).
+
+---
+
 ## Offers on the Ranking tab; one-click backup of the whole cycle (Oct 14 2026)
 
 Both were on the deferred list (DESIGN.md #5 and #6, Oct 7 2026).
