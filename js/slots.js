@@ -107,7 +107,7 @@ export function checkSlot(t, others, today = new Date()) {
   if (same.some((o) => o.start === t.start && o.end === t.end)) errors.push(`${slotLabel(t)} already exists.`);
   if (errors.length) return { errors, warnings };
   const clash = same.filter((o) => mins(o.start) < mins(t.end) && mins(t.start) < mins(o.end));
-  if (clash.length) warnings.push(`It overlaps ${clash.map(slotTimeLabel).join(", ")} on the same day — the chair can't be on two panels at once.`);
+  if (clash.length) warnings.push(`It overlaps ${clash.map(slotTimeLabel).join(", ")} on the same day. The chair can't be on two panels at once.`);
   const d0 = new Date(today); d0.setHours(0, 0, 0, 0);
   const [y, m, d] = t.date.split("-").map(Number);
   if (new Date(y, m - 1, d) < d0) warnings.push(`${fmtDate(t.date, true)} is in the past.`);

@@ -57,6 +57,9 @@ code, pre { font-size:.88em; }
 .overlay-box form input { margin-top:0; }
 .overlay-box input:focus, .overlay-box select:focus { outline:none; border-color:var(--ed-accent); box-shadow:var(--ed-ring); }
 .overlay-box .note { text-align:left; margin-top:14px; }
+/* The gate's visible field label (shared .ed-label: 15px semibold, field below).
+   The field must not inherit the label's weight and size. */
+.gatelabel input { font-weight:400; font-size:var(--ed-text); }
 
 /* ---- buttons: one family, pill-shaped, 44px tall ------------------------ */
 /* filled = the one main action, tinted = other actions, ghost = plain text
@@ -555,6 +558,15 @@ pre.cmd { background:var(--ed-surface); color:var(--ed-ink); border-radius:var(-
 .shift.up { color:var(--ed-green); } .shift.down { color:var(--ed-red); }
 td.adj { font-variant-numeric:tabular-nums; color:var(--ed-ink-2); }
 .thinscore { color:var(--ed-amber); font-weight:600; }
+/* Phone: keep #, Candidate and Avg as columns; Adj and Scored by drop to a
+   second line under the name so the table fits 390px without sideways scroll. */
+.ranktable .rk-sub { display:none; }
+@media (max-width:640px) {
+  .ranktable .rk-opt { display:none; }
+  .ranktable td.name { min-width:0; }
+  .ranktable .rk-sub { display:block; margin-top:2px; font-size:var(--ed-text-xs); font-weight:400;
+    color:var(--ed-ink-2); font-variant-numeric:tabular-nums; }
+}
 
 /* ---- score tab: candidate picker stays in reach ------------------------- */
 /* The candidate picker sits at the top of the scoring list. As a sticky bar of
