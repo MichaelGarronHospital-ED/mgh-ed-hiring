@@ -182,12 +182,17 @@ Full design and reference data (committee, candidates, questions, rules) live in
   broke by itself the next morning. Modifiers are now `urgent`/`past`, `.banner`
   pins its own box, and `tests/css-collisions.test.mjs` fails if any banner
   modifier is also a standalone rule.
+- **The look comes from `css/ed-ui.css`, an exact copy of the shared master**
+  (`../dashboard/shared/ed-ui.css`), loaded before `css/styles.css` in both
+  pages. Never edit the copy: change the master and `cp` it. `styles.css` uses
+  only its `--ed-*` tokens, so dark mode (follows the device) and light print
+  come from there; don't add hex colours.
 - **Form controls stay ≥16px on a phone, and that rule must stay LAST in
-  `styles.css`.** `body` drops to 15.5px under `max-width:640px` and controls
-  are `font:inherit`, so every field fell under the threshold at which iOS
-  zooms the page on focus — the access-code box zoomed the Enter button
+  `styles.css`.** Some fields are set smaller for density (times form, offer
+  notes and dates), and controls are `font:inherit`, so fields fell under the
+  threshold at which iOS zooms the page on focus — the access-code box zoomed the Enter button
   off-screen mid-typing. The fixing block is last because `.overlay-box input`
-  and `.tform input` have equal specificity and appear later; anything appended
+  and `.tform input` have equal specificity, so order decides; anything appended
   after it silently undoes it.
 - **Verify the pipeline by playing a round, not by reading the scheduler.**
   `sim/` drives a whole round through the real UI (leadership adds applicants,

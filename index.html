@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="color-scheme" content="light" />
-<title>ED Physician Hiring</title>
+<meta name="color-scheme" content="light dark" />
+<title>Physician Hiring</title>
+<link rel="stylesheet" href="css/ed-ui.css" />
 <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
@@ -12,7 +13,7 @@
 <div id="gate" class="overlay" role="dialog" aria-modal="true" aria-labelledby="gateTitle">
   <div class="overlay-box">
     <div class="logo" aria-hidden="true">ED</div>
-    <h2 id="gateTitle">ED Physician Hiring</h2>
+    <h2 id="gateTitle">Physician Hiring</h2>
     <p class="muted">Enter your password to continue.</p>
     <form id="gateForm" autocomplete="off">
       <input id="gpw" type="password" placeholder="Password" autocomplete="off"
@@ -29,10 +30,10 @@
     <div class="logo" aria-hidden="true">ED</div>
     <h2>Who are you?</h2>
     <p class="muted">Pick your name so your input is saved to you.</p>
-    <div id="roleLine" class="note" style="text-align:left"></div>
+    <div id="roleLine" class="note"></div>
     <select id="memberSel" aria-label="Your name"></select>
     <button id="memberBtn" class="primary">Continue</button>
-    <button id="adminOnlyBtn" class="linky hidden" style="margin-top:.4rem; min-height:40px">Continue as admin, without a name</button>
+    <button id="adminOnlyBtn" class="linky hidden" style="margin-top:16px">Continue as admin, without a name</button>
   </div>
 </div>
 
@@ -42,16 +43,16 @@
 <header id="appHeader" class="hidden">
   <div class="brandrow">
     <div class="brandmark" aria-hidden="true">ED</div>
-    <div class="grow"><h1 id="orgName">ED Physician Hiring</h1></div>
-    <button id="setupBtn" class="iconbtn hidden" title="Setup — committee, chair, times, applications folder" aria-label="Setup">
+    <div class="grow"><h1 id="orgName">Physician Hiring</h1></div>
+    <button id="setupBtn" class="iconbtn hidden" title="Setup: committee, chair, times, applications folder" aria-label="Setup">
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     </button>
     <button id="logout" class="linky">Log out</button>
   </div>
   <div class="who">
     <span>Signed in as <b id="whoLine"></b></span>
-    <button id="changeMember" class="linky">change</button>
-    <span id="adminTag" class="tag hidden">admin</span>
+    <button id="changeMember" class="linky">Change</button>
+    <span id="adminTag" class="tag hidden">Admin</span>
     <span id="saveStatus" class="saveflag hidden" aria-live="polite"></span>
   </div>
 </header>
@@ -82,12 +83,12 @@
 </div>
 
 <!-- lightweight confirm dialog -->
-<div id="confirmWrap" class="overlay hidden" style="background:rgba(0,0,0,.28); backdrop-filter:blur(3px)"
+<div id="confirmWrap" class="overlay hidden"
      role="dialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMsg">
-  <div class="overlay-box" style="text-align:left; max-width:420px">
-    <h2 id="confirmTitle" style="font-size:1.15rem">Are you sure?</h2>
-    <p id="confirmMsg" class="muted" style="text-align:left; white-space:pre-line"></p>
-    <div class="row" style="justify-content:flex-end; gap:.5rem; margin-top:1rem; flex-wrap:wrap">
+  <div class="overlay-box">
+    <h2 id="confirmTitle">Are you sure?</h2>
+    <p id="confirmMsg" class="muted"></p>
+    <div class="row" style="justify-content:flex-end; gap:8px; margin-top:20px; flex-wrap:wrap">
       <button id="confirmNo" class="btn ghost">Cancel</button>
       <button id="confirmAlt" class="btn tinted" hidden></button>
       <button id="confirmYes" class="btn danger">Confirm</button>
@@ -98,8 +99,8 @@
 <div id="toast" class="toast hide" role="status" aria-live="polite"></div>
 
 <!-- Last-resort net, before the module so it is already listening.
-     If js/app.js never loads or never parses — a browser too old for the
-     syntax, a blocked or corrupted script, a proxy serving something else —
+     If js/app.js never loads or never parses (a browser too old for the
+     syntax, a blocked or corrupted script, a proxy serving something else),
      no handler is ever attached, so the page looks fine and the Enter button
      simply does nothing. That is indistinguishable from "my code is wrong",
      and it is what someone reports as "I can't log in on my phone".
@@ -116,7 +117,7 @@
   window.addEventListener("error", function (ev) {
     var m = (ev && ev.message) || "";
     if (/SyntaxError|Unexpected token|Unexpected identifier|is not a function|is not a constructor/.test(m))
-      fatal("This browser can’t run the sign-in page — it is most likely too old. " +
+      fatal("This browser can’t run the sign-in page. It is most likely too old. " +
             "Update iOS or Android, or try Safari or Chrome on another device.");
   });
   window.addEventListener("DOMContentLoaded", function () {
