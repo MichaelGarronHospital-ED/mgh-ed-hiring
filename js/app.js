@@ -128,10 +128,10 @@ function signInError(e, opts = {}) {
   // Firebase throttles the DEVICE, not the account, and every retry extends it.
   // Saying "try again" here is actively harmful, so say the opposite.
   if (c.includes("too-many-requests"))
-    return "Too many sign-in attempts — the server has temporarily blocked this device. "
+    return "Too many sign-in attempts. The server has temporarily blocked this device. "
       + "Wait about 15 minutes, then try ONCE. Retrying now makes the block last longer.";
   if (c.includes("network-request-failed") || c.includes("network"))
-    return "Network problem — check your connection and try again.";
+    return "Network problem. Check your connection and try again.";
   if (c.includes("operation-not-allowed"))
     return `Email/Password sign-in is switched off for this project. ${console_} → Sign-in method.`;
   if (c.includes("user-disabled"))
@@ -211,7 +211,7 @@ async function initStore(role, typed) {
       // name we're filing input under — everything typed from here would be
       // saved to a name nobody reads. Send them back to the picker instead.
       if (ui.member && !EFF().committee.some((m) => m.name === ui.member)) {
-        toast(`“${ui.member}” is no longer on the committee list — please pick your name again`, "err");
+        toast(`“${ui.member}” is no longer on the committee list. Please pick your name again`, "err");
         backToMemberPick();
         return;
       }
@@ -303,7 +303,7 @@ function proceedToMemberPick() {
     rl.className = ui.isAdmin ? "note tip" : "note";
     rl.innerHTML = ui.isAdmin
       ? `<b>Leadership access.</b> Pick your name to screen, give availability and score as yourself.`
-      : `<b>Committee access</b> — Screen, Availability and Score. Expecting Panels, Ranking and Setup?
+      : `<b>Committee access:</b> Screen, Availability and Score. Expecting Panels, Ranking and Setup?
          Those need the <b>Leadership</b> password, not the ED password.`;
   }
   $("#adminOnlyBtn").classList.toggle("hidden", !ui.isAdmin);
@@ -322,7 +322,7 @@ function fillMemberSel() {
   // building reads that order, so sorting it in place would reorder the roster
   // everywhere.
   const names = [...EFF().committee].sort((a, b) => a.name.localeCompare(b.name));
-  sel.innerHTML = `<option value="" disabled selected>— Select your name —</option>`
+  sel.innerHTML = `<option value="" disabled selected>Select your name</option>`
     + names.map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("");
   // Don't let anyone commit to a name off the config fallback list before the
   // saved roster lands — input filed under the wrong spelling is invisible
@@ -499,7 +499,7 @@ function renderBanner() {
   if (hide) { el.classList.add("hidden"); el.innerHTML = ""; return; }
   let cls = "banner", txt;
   const date = new Date(SCREENING_DEADLINE + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  if (d > 0) { txt = `<b>Screening closes in ${d} day${d === 1 ? "" : "s"}</b> — due ${date}.`; if (d <= 3) cls += " urgent"; }
+  if (d > 0) { txt = `<b>Screening closes in ${d} day${d === 1 ? "" : "s"}</b>, due ${date}.`; if (d <= 3) cls += " urgent"; }
   else { txt = `<b>Screening closes today</b> (${date}).`; cls += " urgent"; }
   el.className = cls;
   el.innerHTML = `<div class="inner">${ICON.cal}<span>${txt}</span></div>`;
@@ -634,9 +634,9 @@ function myInputNotice(list, get, deviceOnly) {
   // the app can't do is worse than saying nothing.
   const anywhere = !store || store.screeningReadBack !== false;
   const why = deviceOnly
-    ? "Everything you tap is saved to leadership immediately. Scores are deliberately write-only — "
+    ? "Everything you tap is saved to leadership immediately. Scores are deliberately write-only: "
       + "nobody on the committee can read anyone's back, which is what stops the ranking leaking "
-      + "mid-process — so this page replays your answers from this browser. On another device they "
+      + "mid-process. So this page replays your answers from this browser. On another device they "
       + "will look blank; that is the privacy model, not lost work."
     : anywhere
       ? "Saved to leadership as you tap. Your own flags and ratings follow you: sign in on any device, "
@@ -705,7 +705,7 @@ function renderScreen() {
         + `</ul>` : "";
       const rateTip = st.n
         ? `Mean of the ${st.n} priority rating${st.n === 1 ? "" : "s"} actually submitted. `
-          + `${st.of - st.n} member${st.of - st.n === 1 ? "" : "s"} didn't rate — non-answers are left out, not counted as a middling score.`
+          + `${st.of - st.n} member${st.of - st.n === 1 ? "" : "s"} didn't rate. Non-answers are left out, not counted as a middling score.`
         : "Nobody has given this applicant a priority rating yet.";
       const thin = st.n > 0 && st.n < 3;
       // Who rated, and what. Flags have always been attributed here; ratings
@@ -739,7 +739,7 @@ function renderScreen() {
       <b class="warn">${ICON.warn} ${hidden.total} saved entr${hidden.total === 1 ? "y is" : "ies are"} attached to
       ${hidden.entries.length} applicant${hidden.entries.length === 1 ? "" : "s"} nobody can see.</b>
       That is the footprint of a remove-and-re-add: the new entry gets a new id, and the flags, ratings and
-      scores already given stay on the old one. <b>Nothing is lost</b> — it is in the database, just attached
+      scores already given stay on the old one. <b>Nothing is lost</b>: it is in the database, just attached
       to an entry the Screen tab doesn't show reviewers.
       ${hidden.entries.map((e) => {
         const bits = [part(e.flags, "flag"), part(e.ratings, "rating"), part(e.scores, "interview score")].filter(Boolean).join(", ");
@@ -751,7 +751,7 @@ function renderScreen() {
         return `<div class="hidrow">
           <div><b>${escapeHtml(e.name || e.id)}</b>
             <span class="pill out">${e.kind === "removed" ? "Removed" : "No longer on the roster"}</span></div>
-          <div class="muted small">${escapeHtml(bits)} — from ${who}</div>
+          <div class="muted small">${escapeHtml(bits)}, from ${who}</div>
           ${target ? `<div class="small">Looks like the same person as <b>${escapeHtml(target.name)}</b>, who is still on the list.</div>` : ""}
           ${cmd ? `<pre class="cmd">${escapeHtml(cmd)}</pre>` : ""}
         </div>`;
@@ -767,7 +767,7 @@ function renderScreen() {
       ${hiddenBlock}`;
 
     const adder = `<div class="note">Paste applicant names, one per line, then Add. Stored in your database, never in the app's code.
-      To fix a spelling, use <code>scripts/rename-candidate.mjs</code> — removing and re-adding strands every rating.</div>
+      To fix a spelling, use <code>scripts/rename-candidate.mjs</code>. Removing and re-adding strands every rating.</div>
       <textarea id="bulkAdd" rows="4" placeholder="Dr Jane Doe&#10;Dr John Smith" aria-label="New candidate names"></textarea>
       <div style="margin-top:.5rem"><button class="btn tinted small" onclick="IV.addCands(this)">Add candidates</button></div>`;
 
@@ -776,7 +776,7 @@ function renderScreen() {
       + section("dash", "Coordinator dashboard", `${submitted.size}/${committee.length} submitted`, dash,
         { open: false, info: "Track who has and hasn't submitted their screening, so you can chase people before the deadline.", count: hidden.entries.length ? ICON.warn : null })
       + section("adder", "Add candidates", "", adder,
-        { open: false, info: "Paste applicant names to add them to the interview list. Stored securely in your database — never in the app's code. You can add or remove people any time." })
+        { open: false, info: "Paste applicant names to add them to the interview list. Stored securely in your database, never in the app's code. You can add or remove people any time." })
       + (me ? `<h3>Your review</h3>` : "");
   }
   // Signed in as plain admin: there is no "your" review to show or file.
@@ -931,7 +931,7 @@ function candGrid() {
       return `<th class="ivcol"><span data-tip="${escapeHtml(c.name)}${n ? ` · free for ${n} time${n === 1 ? "" : "s"}` : " · hasn't sent availability"}">` +
         `${escapeHtml(surnameOf(c.name))}</span></th>`;
     }).join("") +
-    `<th class="sum" data-tip="How many applicants can do this time, and whether a balanced panel could run then. Green means both — an hour that can actually hold an interview.">Usable</th>` +
+    `<th class="sum" data-tip="How many applicants can do this time, and whether a balanced panel could run then. Green means both: an hour that can actually hold an interview.">Usable</th>` +
     `<th class="pad" aria-hidden="true"></th></tr>`;
 
   const body = groupByDate(slots).map((g) =>
@@ -953,9 +953,9 @@ function candGrid() {
       // them red would make the whole grid cry wolf.
       const tone = n === 0 ? "idle" : panelOk ? "yes" : "nope";
       const note = n === 0
-        ? `Nobody has offered this time yet${panelOk ? " — a panel could run here if someone does" : ", and no balanced panel could run here as things stand"}`
-        : !panelOk ? `${n} applicant${n === 1 ? "" : "s"} could come, but no balanced panel can run then — this hour is unusable until more interviewers are free`
-        : `${n} applicant${n === 1 ? "" : "s"} could come and a panel can run — one of them gets it`;
+        ? `Nobody has offered this time yet${panelOk ? ", but a panel could run here if someone does" : ", and no balanced panel could run here as things stand"}`
+        : !panelOk ? `${n} applicant${n === 1 ? "" : "s"} could come, but no balanced panel can run then, so this hour is unusable until more interviewers are free`
+        : `${n} applicant${n === 1 ? "" : "s"} could come and a panel can run. One of them gets it`;
       return `<tr><th class="tlab">${escapeHtml(slotTimeLabel(t))}</th>${cells}` +
         `<td class="sum ${tone}" data-tip="${escapeHtml(note)}">${n}${panelOk ? " ✓" : " ✗"}</td>` +
         `<td class="pad"></td></tr>`;
@@ -965,7 +965,7 @@ function candGrid() {
   // fastest way to see who still has to be chased.
   const foot = `<tr class="footrow"><th class="tlab">Times offered</th>` +
     people.map((c) => { const n = answers(c);
-      return `<td class="tot ${n ? "" : "none"}" data-tip="${escapeHtml(c.name)}">${n || "—"}</td>`; }).join("") +
+      return `<td class="tot ${n ? "" : "none"}" data-tip="${escapeHtml(c.name)}">${n || "-"}</td>`; }).join("") +
     `<td class="sum idle"></td><td class="pad"></td></tr>`;
 
   // Who can't be scheduled, and why — one line per cause, because the three
@@ -976,8 +976,8 @@ function candGrid() {
   const count = (r) => missed.filter((c) => (why[c.id] || {}).reason === r).length;
   const nAnswer = count("no-answer"), nPanel = count("no-panel"), nTaken = count("contested");
   const causes = [
-    nAnswer && `<li><b>${nAnswer}</b> ${nAnswer === 1 ? "hasn't" : "haven't"} sent any availability yet — chase ${nAnswer === 1 ? "them" : "those"} first (they're the dashes below).</li>`,
-    nPanel && `<li><b>${nPanel}</b> offered only times where no balanced panel can run — the ✗ rows. More interviewers free at those hours is what fixes it.</li>`,
+    nAnswer && `<li><b>${nAnswer}</b> ${nAnswer === 1 ? "hasn't" : "haven't"} sent any availability yet. Chase ${nAnswer === 1 ? "them" : "those"} first (they're the dashes below).</li>`,
+    nPanel && `<li><b>${nPanel}</b> offered only times where no balanced panel can run (the ✗ rows). More interviewers free at those hours is what fixes it.</li>`,
     nTaken && `<li><b>${nTaken}</b> want times that are already taken. <b>This is the one more interview times would fix.</b></li>`,
   ].filter(Boolean).join("");
   const capacity = missed.length && causes     // no causes at all = panel building failed; say nothing
@@ -1022,7 +1022,7 @@ function renderAvailability() {
     html += section("avgrid", "Who's available when", `${ivIn} of ${committee.length} interviewers`,
       grid + waiting(ivNot),
       { open: !ui.isAdmin || !ui.member,
-        info: "Every interviewer against every interview time. The Panel column says whether a balanced panel could actually run then — it uses the same rules as the Panels tab, so a ✓ there means a panel really is possible." });
+        info: "Every interviewer against every interview time. The Panel column says whether a balanced panel could actually run then. It uses the same rules as the Panels tab, so a ✓ there means a panel really is possible." });
   }
 
   if (ui.isAdmin) {
@@ -1033,7 +1033,7 @@ function renderAvailability() {
     if (cg) html += section("candgrid", "When can the applicants come", `${candIn} of ${cands.length} applicants`,
       cg + waiting(candNot),
       { open: true,
-        info: "Every applicant against every interview time, with the interview each one is currently scheduled for ringed. The Usable column shows how many applicants offered that hour and whether a balanced panel could run then — which is where to add times." });
+        info: "Every applicant against every interview time, with the interview each one is currently scheduled for ringed. The Usable column shows how many applicants offered that hour and whether a balanced panel could run then, which shows where to add times." });
   }
   $("#availability").innerHTML = html;
 }
@@ -1057,9 +1057,9 @@ function renderScore() {
   // between the parts instead of five separate boxes with five borders. The
   // full 1–5 scale is on the ⓘ; the label for the score you actually gave is
   // printed under the buttons, which is the only one that matters at the time.
-  const scaleText = SCALE.map((s, i) => `${i + 1} — ${s}`).join(" · ");
+  const scaleText = SCALE.map((s, i) => `${i + 1}: ${s}`).join(" · ");
   const ov = rec.overall ? fmtScore(rec.overall) : "";
-  const label = ov && Number.isInteger(rec.overall) ? `${ov} — ${SCALE[rec.overall - 1] || ""}` : "";
+  const label = ov && Number.isInteger(rec.overall) ? `${ov}: ${SCALE[rec.overall - 1] || ""}` : "";
   // Every store emit (a note's own save, any snapshot) lands here. While it's
   // still the same person scoring the same candidate, UPDATE the page in place
   // instead of rebuilding it: a rebuild throws away the field being typed in,
@@ -1233,13 +1233,13 @@ function idleInterviewers(unused, res) {
   // clause with no subject and no number of its own.
   const chips = (list) => list.map((x) => `<span class="chip">${escapeHtml(x)}</span>`).join("");
   const line = (list, tail) => list.length
-    ? `<p class="small" style="margin-top:.45rem">${chips(list)} — ${tail}</p>` : "";
+    ? `<p class="small" style="margin-top:.45rem">${chips(list)}: ${tail}</p>` : "";
   return `<p class="small" style="margin-top:.55rem"><b class="warn">${ICON.warn} Not on any panel:</b></p>
     ${line(group.silent, "no availability sent yet.")}
     ${line(group.wrongTimes, `free only at times nobody is being interviewed in, or only in a format
       (in person / Zoom) the interviews booked then aren't running in.`)}
     ${line(group.squeezed, `free while interviews are running, but every panel they could have joined
-      is full — and taking a seat there would either unbalance that panel or leave somebody else with
+      is full, and taking a seat there would either unbalance that panel or leave somebody else with
       nothing. Another interview time at a time they are free is what fixes this.`)}`;
 }
 
@@ -1257,18 +1257,18 @@ function unschedulableLine(id, res) {
   const who = `<b>${escapeHtml(nameOf(id))}</b>`;
   const w = res.why[id] || { reason: "no-panel", slots: [] };
   if (w.reason === "no-answer")
-    return `${who} — hasn't picked any interview times yet. Chase them, or set a time by hand.`;
+    return `${who} hasn't picked any interview times yet. Chase them, or set a time by hand.`;
   if (w.reason === "contested") {
     // name the applicants holding those times: the admin can only fix this by
     // moving one of them or adding a time, and both need to know which.
     const holders = [...new Set(res.panels.filter((p) => w.slots.includes(String(p.slot)))
       .map((p) => nameOf(p.cand)))];
     const times = w.slots.map((s) => escapeHtml(slotName(s))).join(", ");
-    return `${who} — ${w.slots.length === 1 ? "the one time" : "every time"} that could host their
+    return `${who}: ${w.slots.length === 1 ? "the one time" : "every time"} that could host their
       interview (${times}) is already taken${holders.length ? ` by ${holders.map(escapeHtml).join(", ")}` : ""}.
       Add another interview time, or move someone.`;
   }
-  return `${who} — no time they can do yields a balanced panel.`;
+  return `${who}: no time they can do yields a balanced panel.`;
 }
 
 // Everything that still needs a decision, in as few lines as it takes.
@@ -1286,16 +1286,16 @@ function needsAttention(res) {
 
   const items = [];
   res.doubleBooked.forEach((d) => items.push(
-    `<b>${escapeHtml(slotName(d.slot))}</b> has ${d.cands.length} applicants at once —
+    `<b>${escapeHtml(slotName(d.slot))}</b> has ${d.cands.length} applicants at once:
      ${d.cands.map((id) => editLink(id, shortName(id))).join(", ")}. Move one.`));
   res.lostTime.forEach((id) => items.push(
-    `<b>${escapeHtml(nameOf(id))}</b>'s hand-picked time no longer exists — showing the suggestion instead.
+    `<b>${escapeHtml(nameOf(id))}</b>'s hand-picked time no longer exists, so the suggestion is shown instead.
      <button class="linky" onclick="IV.clearOverride('${id}')">Dismiss</button>`));
 
   // the common bulk case: people who simply haven't answered yet
   const silent = by("no-answer");
   if (silent.length) items.push(
-    `<b>${silent.length} applicant${silent.length === 1 ? " hasn't" : "s haven't"} picked any times yet</b> —
+    `<b>${silent.length} applicant${silent.length === 1 ? " hasn't" : "s haven't"} picked any times yet:</b>
      ${silent.map((id) => editLink(id, shortName(id))).join(", ")}`);
 
   // the two specific cases keep their own line, because the fix differs per person
@@ -1303,7 +1303,7 @@ function needsAttention(res) {
   by("contested").forEach((id) => items.push(`${unschedulableLine(id, res)} ${editLink(id, "Set a time")}`));
 
   if (res.understaffed.length) items.push(
-    `<b>${res.understaffed.length} time${res.understaffed.length === 1 ? "" : "s"}</b> nobody can staff a balanced panel for —
+    `<b>${res.understaffed.length} time${res.understaffed.length === 1 ? "" : "s"}</b> nobody can staff a balanced panel for:
      ${res.understaffed.map((s) => `<span class="tm">${escapeHtml(slotName(s))}</span>`).join(", ")}`);
 
   if (!items.length) return "";
@@ -1340,7 +1340,7 @@ function renderPanels() {
     const unused = others.filter(([, v]) => !v).map(([n]) => n);
     const lo = counts.length ? Math.min(...counts) : 0, hi = counts.length ? Math.max(...counts) : 0;
     const chips = others.slice().sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([n, v]) => `<span class="chip">${escapeHtml(n)} <b>${v ? "×" + v : "—"}</b></span>`).join("");
+      .map(([n, v]) => `<span class="chip">${escapeHtml(n)} <b>${v ? "×" + v : "×0"}</b></span>`).join("");
     const n = res.panels.length;
     const loadBody = `<div class="note">${escapeHtml(chair)} chairs every panel, so the share that can be
         spread is the <b>other</b> ${res.panelSize > 1 ? res.panelSize - 1 : 0} seat${res.panelSize === 2 ? "" : "s"} on each one.
@@ -1349,7 +1349,7 @@ function renderPanels() {
           : ""}.
         Availability wins over fairness where they conflict: someone free for only one time can only ever
         sit on that one panel, and every panel still has to stay balanced.</div>
-      <p class="small"><b>${escapeHtml(chair)}</b> — all ${n} panel${n === 1 ? "" : "s"} (chair).</p>
+      <p class="small"><b>${escapeHtml(chair)}</b>: all ${n} panel${n === 1 ? "" : "s"} (chair).</p>
       <div>${chips}</div>
       ${unused.length ? idleInterviewers(unused, res)
         : `<p class="ok small" style="margin-top:.55rem">✓ Every interviewer is on at least one panel.</p>`}`;
@@ -1511,16 +1511,20 @@ function renderRankingInner() {
     const thin = r.expected && r.n < r.expected;
     const shift = r.shift > 0 ? `<span class="shift up" data-tip="Ranks ${r.shift} place${r.shift === 1 ? "" : "s"} higher once rater tendency is taken out">▲${r.shift}</span>`
       : r.shift < 0 ? `<span class="shift down" data-tip="Ranks ${-r.shift} place${r.shift === -1 ? "" : "s"} lower once rater tendency is taken out">▼${-r.shift}</span>` : "";
-    return `<tr><td class="rankn num">${i + 1}</td><td class="name">${escapeHtml(r.name)}</td>
+    const count = `${r.n}${r.expected ? ` of ${r.expected}` : ""}`;
+    // On a phone Adj and Scored by fold into a second line under the name
+    // (.rk-sub), so the table fits 390px and the count still sits by the mean.
+    return `<tr><td class="rankn num">${i + 1}</td><td class="name">${escapeHtml(r.name)}
+        <div class="rk-sub">Adj ${r.adj.toFixed(2)}${shift} · <span class="${thin ? "thinscore" : ""}">scored by ${count}</span></div></td>
       <td class="num" data-tip="${escapeHtml(`Mean of ${r.n} submitted score${r.n === 1 ? "" : "s"}: ${r.raters.join(", ")}`)}"><b>${r.raw.toFixed(2)}</b></td>
-      <td class="adj num" data-tip="${escapeHtml(adjInfo)}">${r.adj.toFixed(2)}${shift}</td>
-      <td class="num${thin ? " thinscore" : ""}" data-tip="${thin ? escapeHtml(`Only ${r.n} of the ${r.expected} panellists have scored this candidate.`) : "Every panellist on record has scored this candidate."}">${r.n}${r.expected ? ` of ${r.expected}` : ""}</td></tr>`;
+      <td class="adj num rk-opt" data-tip="${escapeHtml(adjInfo)}">${r.adj.toFixed(2)}${shift}</td>
+      <td class="num rk-opt${thin ? " thinscore" : ""}" data-tip="${thin ? escapeHtml(`Only ${r.n} of the ${r.expected} panellists have scored this candidate.`) : "Every panellist on record has scored this candidate."}">${count}</td></tr>`;
   }).join("");
-  $("#ranking").innerHTML = hint("Average interview scores — decision support, not a decision.")
+  $("#ranking").innerHTML = hint("Average interview scores. Decision support, not a decision.")
     + `<p class="toolline"><button class="linky" onclick="IV.exportScores()">Export scores (CSV)</button>
       <button class="linky" onclick="IV.setComplete(false,this)">Re-hide ranking</button></p>
-    <div class="card flush"><div class="tablewrap"><table><thead><tr><th class="num">#</th><th>Candidate</th><th class="num">Avg</th>
-      <th class="num">Adj${infoIcon(adjInfo)}</th><th class="num">Scored by</th></tr></thead>
+    <div class="card flush"><div class="tablewrap"><table class="ranktable"><thead><tr><th class="num">#</th><th>Candidate</th><th class="num">Avg</th>
+      <th class="num rk-opt">Adj${infoIcon(adjInfo)}</th><th class="num rk-opt">Scored by</th></tr></thead>
       <tbody>${body || `<tr><td colspan="5">${empty(ICON.star, "No scores yet", "Scores will appear as interviewers submit them.")}</td></tr>`}</tbody></table></div></div>`
     + offersSection(rows) + backupCard();
 }
@@ -1681,7 +1685,7 @@ function cycleTables() {
 function renderSettings() {
   const { committee, chair, slots, oneDrive } = EFF();
   const committeeBody = `<div class="note">One per line as <b>Name, F</b> or <b>Name, M</b> (self-identified gender, used only to
-      build balanced panels — never shown as an M/F label). Saving replaces the whole list.</div>
+      build balanced panels, never shown as an M/F label). Saving replaces the whole list.</div>
     <textarea id="commBulk" rows="6" placeholder="Vojdani, M&#10;Marrocco, F">${committee.map((m) => escapeHtml(m.name + ", " + m.gender)).join("\n")}</textarea>
     <div style="margin-top:.5rem"><button class="btn tinted small" onclick="IV.setCommittee(this)">Save committee</button></div>`;
   const chairBody = `<div class="note">The chair is on every panel.</div>
@@ -1692,7 +1696,7 @@ function renderSettings() {
     <div style="margin-top:.5rem"><button class="btn tinted small" onclick="IV.saveOneDrive(this)">Save link</button></div>`;
 
   $("#settings").innerHTML = `${section("setChair", "Panel chair", chair, chairBody, { open: false, info: "The chair is on every interview panel. Pick from your committee list below." })}
-    ${section("setCommittee", "Committee (interviewers)", `${committee.length} members`, committeeBody, { open: false, info: "Your interviewers. One per line as ‘Name, F’ or ‘Name, M’. The F/M is self-identified and used only to build balanced panels — it is never shown as a label. Saving replaces the whole list." })}
+    ${section("setCommittee", "Committee (interviewers)", `${committee.length} members`, committeeBody, { open: false, info: "Your interviewers. One per line as ‘Name, F’ or ‘Name, M’. The F/M is self-identified and used only to build balanced panels. It is never shown as a label. Saving replaces the whole list." })}
     ${section("setSlots", "Interview times", `${slots.length} time${slots.length === 1 ? "" : "s"}`, slotsBody, { open: false, info: "The interview times interviewers and applicants choose from. Add a single time or a block of back-to-back times; edit or remove any time. If people already answered for a time you change, you choose whether to keep their answers or ask them again." })}
     ${section("setOneDrive", "Applications folder (OneDrive)", "", odBody, { open: false, info: "Link to the access-controlled OneDrive folder holding the CVs/cover letters. Committee members open applicant files from here. Stored privately, never in the app's code." })}
     ${hint("Applicants are added on the Screen tab, under “Add candidates”.")}`;
@@ -1775,7 +1779,7 @@ function timesEditor(slots) {
       <div class="tgroup-h"><b>${escapeHtml(g.title)}</b> <span class="muted small">· ${pl(g.items.length, "time")}</span>
         <button class="linky danger small" onclick="IV.tRemoveDay('${g.date}')">Remove day</button></div>
       ${g.items.map(row).join("")}</div>`).join("")
-    || `<div class="muted small" style="padding:.4rem 0">No interview times yet — add some below. Interviewers and applicants will see “times not posted yet” until you do.</div>`;
+    || `<div class="muted small" style="padding:.4rem 0">No interview times yet. Add some below. Interviewers and applicants will see “times not posted yet” until you do.</div>`;
   const a = tAdd();
   const lens = [["0", "One time (whole range)"], ["30", "30-min interviews"], ["45", "45-min interviews"], ["60", "1-hour interviews"], ["90", "90-min interviews"]];
   return `<div class="note">Everyone picks their availability from these. Changes save immediately and update everyone's screen live.
@@ -1871,7 +1875,7 @@ function renderCandidate() {
       ${slots.length ? `<h2 class="pagetitle">When can you interview?</h2>
         ${hint("Choose in person, Zoom or either for every time you can make. In person is preferred.")}
         <div class="card"><div class="slotgrid">${slotRows(slots, map, "CAND.set")}</div></div>
-        <p class="hint">Saved as you tap — come back and change it any time. We'll confirm your final time by email.</p>`
+        <p class="hint">Saved as you tap. Come back and change it any time. We'll confirm your final time by email.</p>`
         : `<div class="card">${empty(ICON.calendar, "Times not posted yet", "The interview times haven't been published yet. Please check back soon.")}</div>`}
     </main>`;
 }
@@ -1954,7 +1958,7 @@ function markSaved() {
   markSaved._t = setTimeout(() => el.classList.add("hidden"), 2200);
 }
 // wrap a store write so it always shows Saving… → ✓ Saved
-async function saved(promise) { markSaving(); try { await promise; markSaved(); } catch (e) { toast("Couldn't save — check your connection", "err"); } }
+async function saved(promise) { markSaving(); try { await promise; markSaved(); } catch (e) { toast("Couldn't save. Check your connection", "err"); } }
 window.IV = {
   toggleFlag: (id) => { const cur = (S.screening[key(ui.member, id)] || {}).flag; saved(store.setScreening(ui.member, id, { flag: !cur, reason: cur ? "" : (S.screening[key(ui.member, id)] || {}).reason || "" })); },
   saveReason: (id, btn) => withBusy(btn, () => store.setScreening(ui.member, id, { reason: $("#rsn-" + id).value }), "Saved"),
@@ -2024,8 +2028,8 @@ window.IV = {
     const here = me === ui.member && cid === ui.scoreCand;   // box still on screen
     const v = parseScore(raw);
     if (v === null) {
-      const m = $("#overallMsg"); if (m && here) m.textContent = "Not saved — enter 1 to 5 with at most one decimal, e.g. 4.7";
-      toast("Score not saved — use 1 to 5, e.g. 4.7", "err");
+      const m = $("#overallMsg"); if (m && here) m.textContent = "Not saved. Enter 1 to 5 with at most one decimal, e.g. 4.7";
+      toast("Score not saved. Use 1 to 5, e.g. 4.7", "err");
       return false;
     }
     const cur = myScore(me, cid).overall || 0;
@@ -2077,7 +2081,7 @@ window.IV = {
   clearOverride: async (cid) => {
     try {
       await store.updateConfig((c) => { const ov = { ...(c.panelOverrides || {}) }; delete ov[cid]; return { panelOverrides: ov }; });
-    } catch { toast("Couldn't save — check your connection", "err"); return; }
+    } catch { toast("Couldn't save. Check your connection", "err"); return; }
     toast("Reset to auto", "ok"); ui.editPanel = null; renderPanels();
   },
   clearOverrides: (btn) => withBusy(btn, async () => {
@@ -2098,11 +2102,11 @@ window.IV = {
     }
     const name = (cand(id) || {}).name || "Candidate";
     store.setOffer(id, patch).then(() => toast(status ? `${name}: ${OFFER_WORD[status].toLowerCase()}` : `${name}: offer cleared`, "ok"))
-      .catch(() => toast("Couldn't save — check your connection", "err"));
+      .catch(() => toast("Couldn't save. Check your connection", "err"));
   },
   offerDate: (id, field, value) => {
     store.setOffer(id, { [field]: value || "", updatedAt: new Date().toISOString() })
-      .then(() => toast("Date saved", "ok")).catch(() => toast("Couldn't save — check your connection", "err"));
+      .then(() => toast("Date saved", "ok")).catch(() => toast("Couldn't save. Check your connection", "err"));
   },
   offerNoteInput: (id, el) => {
     ui.offerNotes = ui.offerNotes || {}; ui.offerNotes[id] = el.value;
@@ -2213,7 +2217,7 @@ window.IV = {
           return [...set];
         }) };
       });
-    } catch { toast("Couldn't save — check your connection", "err"); rerenderSettings(); } // reset the picker
+    } catch { toast("Couldn't save. Check your connection", "err"); rerenderSettings(); } // reset the picker
   },
   // ---- interview times (see timesEditor). Every write goes through
   // store.updateTimes, which applies the change to the LATEST saved list, so a
@@ -2243,7 +2247,7 @@ window.IV = {
         return { times: out, overrides };
       })));
     } catch { return; } // withBusy already showed the error
-    if (!added) { toast("Nothing added — someone else just added those times", "err"); return; }
+    if (!added) { toast("Nothing added. Someone else just added those times", "err"); return; }
     const skipped = items.length - added;
     toast(`Added ${pl(added, "time")}${skipped ? ` (${skipped} already existed)` : ""}`, "ok");
   },
@@ -2267,8 +2271,8 @@ window.IV = {
       const was = slotLabel(orig), now = slotLabel(t);
       const choice = await confirmDialog(
         `${who ? `${who} already answered for ${was}.` : `A panel is booked for ${was}.`}\n\n` +
-        `• Keep answers — for small corrections; everyone's answers${booked.length ? " and the booked panel" : ""} move to ${now}.\n` +
-        `• Ask again — if the time really changed; their answers for this time are cleared${booked.length ? ", the panel is re-planned," : ""} and they'll need to re-answer (they'll show as “waiting on” again).`,
+        `• Keep answers: for small corrections; everyone's answers${booked.length ? " and the booked panel" : ""} move to ${now}.\n` +
+        `• Ask again: if the time really changed; their answers for this time are cleared${booked.length ? ", the panel is re-planned," : ""} and they'll need to re-answer (they'll show as “waiting on” again).`,
         { title: "Change an answered time", yes: "Ask again", alt: "Keep answers", danger: true });
       if (!choice) return;
       reask = choice === true;
@@ -2285,7 +2289,7 @@ window.IV = {
       const out = others.concat(next);
       if (reask) Object.keys(overrides).forEach((c) => { if (String(overrides[c].slot) === d.id) delete overrides[c]; });
       return { times: out, overrides };
-    }), reask ? "Time changed — answers cleared" : "Time updated").then(() => { ui.tEdit = null; ui.setupStale = true; }, () => {}));
+    }), reask ? "Time changed, answers cleared" : "Time updated").then(() => { ui.tEdit = null; ui.setupStale = true; }, () => {}));
   },
   tRemove: async (ids) => {
     const cur = EFF().slots.filter((t) => ids.includes(t.id));
@@ -2297,10 +2301,10 @@ window.IV = {
       : isStructured(cur[0]) ? `all ${cur.length} times on ${fmtDate(cur[0].date, true)}` : `all ${cur.length} undated times`;
     let msg = `Remove ${what}?`;
     const who = answersText(tot);
-    if (who) msg += `\n\n${who} already answered for ${cur.length === 1 ? "it" : "these"} — those answers will be discarded.`;
-    if (booked.length) msg += `\n\nScheduled then: ${booked.map((b) => b.name + (b.manual ? " (manual panel — will be removed)" : "")).join(", ")}. They'll be re-planned into other times if possible.`;
+    if (who) msg += `\n\n${who} already answered for ${cur.length === 1 ? "it" : "these"}. Those answers will be discarded.`;
+    if (booked.length) msg += `\n\nScheduled then: ${booked.map((b) => b.name + (b.manual ? " (manual panel, will be removed)" : "")).join(", ")}. They'll be re-planned into other times if possible.`;
     const left = EFF().slots.length - cur.length;
-    if (!left) msg += "\n\nThis leaves no interview times — people will see “times not posted yet”.";
+    if (!left) msg += "\n\nThis leaves no interview times. People will see “times not posted yet”.";
     if (!(await confirmDialog(msg, { title: cur.length === 1 ? "Remove time" : "Remove day", yes: "Remove" }))) return;
     const gone = new Set(cur.map((t) => t.id));
     try {
@@ -2313,7 +2317,7 @@ window.IV = {
         ui.setupStale = true;
       });
       toast(cur.length === 1 ? "Time removed" : `${cur.length} times removed`, "ok");
-    } catch (e) { toast((e && e.message) || "Couldn't remove — check your connection", "err"); }
+    } catch (e) { toast((e && e.message) || "Couldn't remove. Check your connection", "err"); }
   },
   tRemoveDay: (date) => IV.tRemove(EFF().slots.filter((t) => (isStructured(t) ? t.date : "") === date).map((t) => t.id)),
   saveOneDrive: (btn) => withBusy(btn, () => store.setSettings({ oneDrive: ($("#odIn").value || "").trim() || "#" }), "Saved"),
@@ -2328,8 +2332,8 @@ window.CAND = {
         // changed underneath them (removed, or renamed). Saying "check your
         // connection" would send them away thinking they were scheduled.
         e && e.code === "permission-denied"
-          ? "We can no longer find your name in the applicant list — please contact us"
-          : "Couldn't save — check your connection", "err"));
+          ? "We can no longer find your name in the applicant list. Please contact us"
+          : "Couldn't save. Check your connection", "err"));
   },
   rename: () => { ss.del("ed_iv_cand"); ss.del("ed_iv_cand_disp"); ui.candLast = null; ui.candDisplay = null; renderCandidate(); },
   logout: () => { ["ed_iv_cand", "ed_iv_cand_disp", "ed_iv_code"].forEach((k) => ss.del(k)); location.reload(); },
@@ -2393,7 +2397,7 @@ if (!storageWorks()) {
   const el = $("#gerr");
   if (el) el.innerHTML = `<div style="text-align:left" class="muted">Your browser is blocking site storage
     (often Settings → Safari → “Block All Cookies”, or Private Browsing). You can still sign in and
-    everything you submit is saved — this device just won’t remember your own answers between visits.</div>`;
+    everything you submit is saved. This device just won’t remember your own answers between visits.</div>`;
 }
 
 const savedCode = ss.get("ed_iv_code");

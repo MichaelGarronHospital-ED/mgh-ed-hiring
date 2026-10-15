@@ -374,7 +374,7 @@ const scenarios = {
       }
     }
     problems.push(...ok(Object.keys(grid.cells.Bodine || {}).length === 0, "Bodine's column isn't empty"));
-    problems.push(...ok(grid.offered.Bodine === "—", `Bodine's "times offered" is ${grid.offered.Bodine}`));
+    problems.push(...ok(grid.offered.Bodine === "-", `Bodine's "times offered" is ${grid.offered.Bodine}`));
 
     // the ring marks exactly where each applicant is being interviewed
     await tab(page, "panels");

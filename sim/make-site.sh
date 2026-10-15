@@ -6,7 +6,7 @@ set -e
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 DST="$(dirname "$0")/site"
 rm -rf "$DST"; mkdir -p "$DST"
-cp -r "$SRC"/index.html "$SRC"/book.html "$SRC"/css "$SRC"/js "$DST"/
+cp -r "$SRC"/index.html "$SRC"/book.html "$SRC"/css "$SRC"/js "$SRC"/icons "$DST"/
 
 # config: same roster/times/chair as the real thing, but no Firebase.
 python3 - "$DST/js/config.js" <<'PY'

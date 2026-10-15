@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="color-scheme" content="light dark" />
 <title>Physician Hiring</title>
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
 <link rel="stylesheet" href="css/ed-ui.css" />
 <link rel="stylesheet" href="css/styles.css" />
 </head>
@@ -16,8 +17,8 @@
     <h2 id="gateTitle">Physician Hiring</h2>
     <p class="muted">Enter your password to continue.</p>
     <form id="gateForm" autocomplete="off">
-      <input id="gpw" type="password" placeholder="Password" autocomplete="off"
-             aria-label="Password" autofocus />
+      <label class="ed-label gatelabel" for="gpw">Password
+        <input id="gpw" type="password" autocomplete="off" autofocus /></label>
       <button id="gbtn" class="primary" type="submit">Enter</button>
     </form>
     <div id="gerr" class="err" role="alert" aria-live="assertive"></div>
