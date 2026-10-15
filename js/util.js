@@ -54,7 +54,10 @@ export function toast(msg, kind) {
   const el = document.getElementById("toast");
   if (!el) return;
   el.textContent = msg;
-  el.className = "toast" + (kind ? " " + kind : "");
+  // "toast-ok", not "ok": `.ok` and `.err` are utility classes (green text,
+  // the red error line with its margin), and a modifier must never also be a
+  // utility, or the toast silently picks up their styles.
+  el.className = "toast" + (kind ? " toast-" + kind : "");
   clearTimeout(toast._t);
   toast._t = setTimeout(() => el.classList.add("hide"), kind === "err" ? 3500 : 2000);
 }

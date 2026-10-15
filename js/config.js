@@ -48,7 +48,7 @@ export const AUTH = {
 };
 
 // ---- 3. Branding ----------------------------------------------------------
-export const ORG_NAME = "MGH ED — Physician Hiring";
+export const ORG_NAME = "Physician Hiring";
 
 // Screening deadline — shown as a countdown banner. Set to "" to hide.
 export const SCREENING_DEADLINE = "2026-09-23";

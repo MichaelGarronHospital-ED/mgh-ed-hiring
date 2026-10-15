@@ -355,7 +355,7 @@ function showApp() {
   $("#memberpick").classList.add("hidden");
   $("#orgName").textContent = ORG_NAME;
   $("#whoLine").textContent = ui.member || "Admin";
-  $("#changeMember").textContent = ui.member ? "change" : "review as a member";
+  $("#changeMember").textContent = ui.member ? "Change" : "Review as a member";
   $("#adminTag").classList.toggle("hidden", !ui.isAdmin || !ui.member);
   $("#setupBtn").classList.toggle("hidden", !ui.isAdmin);
   if (!ui.isAdmin && ui.tab === "settings") ui.tab = "screen";
@@ -375,16 +375,34 @@ function buildTabs() {
   // nothing to show and nowhere to file anything.
   if (ui.member) tabs.push(["score", "Score"]);
   if (ui.isAdmin) tabs.push(["ranking", "Ranking"]);
-  $("#tabs").innerHTML = tabs.map(([t, label], i) =>
+  $("#tabs").innerHTML = tabs.map(([t, label]) =>
     `<button id="tab-${t}" data-tab="${t}" role="tab" aria-controls="${t}" aria-selected="${t === ui.tab}"
-       tabindex="${t === ui.tab ? "0" : "-1"}" class="${t === ui.tab ? "on" : ""}">${i + 1} · ${label}</button>`).join("");
+       tabindex="${t === ui.tab ? "0" : "-1"}" class="${t === ui.tab ? "on" : ""}">${label}</button>`).join("");
   tabs.forEach(([t]) => { const s = $("#" + t); if (s) s.setAttribute("aria-labelledby", "tab-" + t); });
+  // On a phone the track can be wider than the screen and scrolls sideways.
+  // Fade whichever edge has a tab hidden past it, so the last tab never just
+  // looks cut off, and keep the chosen tab in view.
+  const nav = $("#tabs");
+  const edges = () => {
+    const max = nav.scrollWidth - nav.clientWidth;
+    nav.classList.toggle("more-left", max > 1 && nav.scrollLeft > 1);
+    nav.classList.toggle("more-right", max > 1 && nav.scrollLeft < max - 1);
+  };
+  nav.onscroll = edges;
+  if (!buildTabs.wired) { buildTabs.wired = true; window.addEventListener("resize", () => { const n = $("#tabs"); if (n && n.onscroll) n.onscroll(); }); }
+  const reveal = () => {
+    const on = nav.querySelector("button.on");
+    if (on && nav.scrollWidth > nav.clientWidth) nav.scrollLeft = Math.max(0, on.offsetLeft - (nav.clientWidth - on.offsetWidth) / 2);
+    edges();
+  };
+  requestAnimationFrame(reveal);
   const btns = [...$("#tabs").querySelectorAll("button")];
   const select = (b, focus) => {
     ui.tab = b.dataset.tab;
     $("#setupBtn").classList.remove("active");
     btns.forEach((x) => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-selected", on); x.tabIndex = on ? 0 : -1; });
     if (focus) b.focus();
+    reveal();
     render();
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -439,8 +457,30 @@ function wireSections() {
 // visit, invisible enough for the fiftieth. Anything longer belongs on the ⓘ
 // beside the thing it explains, where it is asked for rather than announced.
 const hint = (text) => `<p class="hint">${text}</p>`;
-const empty = (ico, title, msg) =>
-  `<div class="empty"><div class="ico" aria-hidden="true">${ico}</div><h4>${escapeHtml(title)}</h4><p>${escapeHtml(msg)}</p></div>`;
+const empty = (icon, title, msg) =>
+  `<div class="empty">${icon}<h4>${escapeHtml(title)}</h4><p>${escapeHtml(msg)}</p></div>`;
+
+// Line icons drawn in the text colour. House rule for every ED tool: no emoji
+// as icons (they render differently on every phone and ignore dark mode). The
+// 40px ones head an empty state; the 16px ones sit inline in a line of text.
+const svgIcon = (body, { size = 16, vb = 16, sw = 1.6, cls = "ico" } = {}) =>
+  `<svg class="${cls}" viewBox="0 0 ${vb} ${vb}" width="${size}" height="${size}" fill="none" stroke="currentColor" `
+  + `stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${body}</svg>`;
+const bigIcon = (body) => svgIcon(body, { size: 40, vb: 40, sw: 2, cls: "empty-ico" });
+const ICON = {
+  list: bigIcon('<rect x="9" y="7" width="22" height="27" rx="4"/><path d="M15 15h10M15 21h10M15 27h6"/>'),
+  calendar: bigIcon('<rect x="7" y="9" width="26" height="24" rx="4"/><path d="M7 16h26M14 6v6M26 6v6"/>'),
+  star: bigIcon('<path d="M20 7.5l3.8 7.7 8.5 1.2-6.2 6 1.5 8.4L20 26.8l-7.6 4 1.5-8.4-6.2-6 8.5-1.2z"/>'),
+  lock: bigIcon('<rect x="10" y="18" width="20" height="15" rx="3"/><path d="M14 18v-4a6 6 0 0 1 12 0v4M20 24v3"/>'),
+  people: bigIcon('<circle cx="20" cy="14" r="5"/><path d="M11 32c1-5 4.6-8 9-8s8 3 9 8"/><circle cx="9.5" cy="17" r="3.5"/>'
+    + '<path d="M3.5 29c.6-3 2.8-5 5.6-5.3"/><circle cx="30.5" cy="17" r="3.5"/><path d="M36.5 29c-.6-3-2.8-5-5.6-5.3"/>'),
+  mail: bigIcon('<rect x="7" y="10" width="26" height="20" rx="3"/><path d="M8 12l12 9 12-9"/>'),
+  warn: svgIcon('<path d="M8 2.3L14.6 13.6H1.4z"/><path d="M8 6.6v3.2M8 11.7v.1"/>'),
+  flag: svgIcon('<path d="M3.5 14.5V2M3.5 2.5h8.5l-2 3.25 2 3.25H3.5"/>'),
+  cal: svgIcon('<rect x="2" y="3" width="12" height="11" rx="2"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3"/>'),
+  prev: svgIcon('<path d="M10 3L5 8l5 5"/>', { size: 20, sw: 2 }),
+  next: svgIcon('<path d="M6 3l5 5-5 5"/>', { size: 20, sw: 2 }),
+};
 
 // The deadline bar is a countdown, so it belongs on screen while there is
 // something to count down to. It used to stay up afterwards — "Screening
@@ -462,7 +502,7 @@ function renderBanner() {
   if (d > 0) { txt = `<b>Screening closes in ${d} day${d === 1 ? "" : "s"}</b> — due ${date}.`; if (d <= 3) cls += " urgent"; }
   else { txt = `<b>Screening closes today</b> (${date}).`; cls += " urgent"; }
   el.className = cls;
-  el.innerHTML = `<div class="inner"><span aria-hidden="true">🗓️</span><span>${txt}</span></div>`;
+  el.innerHTML = `<div class="inner">${ICON.cal}<span>${txt}</span></div>`;
 }
 
 function render() {
@@ -651,11 +691,11 @@ function renderScreen() {
       // distinguish admin-removed from flag-excluded, so "restore" isn't a confusing no-op
       // A pill only where the status is NOT the expected one. Seventeen green
       // "interview" pills say nothing and bury the two that matter.
-      const statusPill = c.removed ? '<span class="pill out">removed</span>'
-        : fc >= 2 ? '<span class="pill out">excluded · flags</span>' : "";
+      const statusPill = c.removed ? '<span class="pill out">Removed</span>'
+        : fc >= 2 ? '<span class="pill out">Excluded · flags</span>' : "";
       const action = c.removed
-        ? `<button class="linky" onclick="IV.removeCand('${c.id}',false)">restore</button>`
-        : `<button class="linky danger" onclick="IV.removeCand('${c.id}',true)">remove</button>`;
+        ? `<button class="linky" onclick="IV.removeCand('${c.id}',false)">Restore</button>`
+        : `<button class="linky danger" onclick="IV.removeCand('${c.id}',true)">Remove</button>`;
       // One line per flagger, attributed and quoted in full. Several people
       // flagging one applicant is the normal case, and each sentence is the
       // thing leadership actually has to weigh.
@@ -690,13 +730,13 @@ function renderScreen() {
     }).join("");
 
     const collation = `${S.candidates.length > 1 ? sortBar : ""}
-      <div class="collist">${rows || empty("📝", "No candidates yet", "Add applicants below to start screening.")}</div>
+      <div class="collist">${rows || empty(ICON.list, "No candidates yet", "Add applicants below to start screening.")}</div>
       <p class="toolline"><button class="linky" onclick="IV.exportShortlist()">Export shortlist (CSV)</button></p>`;
 
     const hidden = hiddenInput();
     const part = (n, w) => (n ? `${n} ${w}${n === 1 ? "" : "s"}` : "");
     const hiddenBlock = !hidden.entries.length ? "" : `<div class="note warnbox" style="margin-top:.8rem">
-      <b class="warn">⚠ ${hidden.total} saved entr${hidden.total === 1 ? "y is" : "ies are"} attached to
+      <b class="warn">${ICON.warn} ${hidden.total} saved entr${hidden.total === 1 ? "y is" : "ies are"} attached to
       ${hidden.entries.length} applicant${hidden.entries.length === 1 ? "" : "s"} nobody can see.</b>
       That is the footprint of a remove-and-re-add: the new entry gets a new id, and the flags, ratings and
       scores already given stay on the old one. <b>Nothing is lost</b> — it is in the database, just attached
@@ -710,7 +750,7 @@ function renderScreen() {
           : null;
         return `<div class="hidrow">
           <div><b>${escapeHtml(e.name || e.id)}</b>
-            <span class="pill out">${e.kind === "removed" ? "removed" : "no longer on the roster"}</span></div>
+            <span class="pill out">${e.kind === "removed" ? "Removed" : "No longer on the roster"}</span></div>
           <div class="muted small">${escapeHtml(bits)} — from ${who}</div>
           ${target ? `<div class="small">Looks like the same person as <b>${escapeHtml(target.name)}</b>, who is still on the list.</div>` : ""}
           ${cmd ? `<pre class="cmd">${escapeHtml(cmd)}</pre>` : ""}
@@ -734,7 +774,7 @@ function renderScreen() {
     html += section("collation", "Collation & shortlist", `${activeCands().length} of ${S.candidates.length} still in`, collation,
         { open: !me, info: "Everyone's flags and priority ratings, collated. A candidate drops off the interview list at 2 or more flags. Reasons are visible to leadership only. Export the shortlist as a CSV here." })
       + section("dash", "Coordinator dashboard", `${submitted.size}/${committee.length} submitted`, dash,
-        { open: false, info: "Track who has and hasn't submitted their screening, so you can chase people before the deadline.", count: hidden.entries.length ? "⚠" : null })
+        { open: false, info: "Track who has and hasn't submitted their screening, so you can chase people before the deadline.", count: hidden.entries.length ? ICON.warn : null })
       + section("adder", "Add candidates", "", adder,
         { open: false, info: "Paste applicant names to add them to the interview list. Stored securely in your database — never in the app's code. You can add or remove people any time." })
       + (me ? `<h3>Your review</h3>` : "");
@@ -762,14 +802,14 @@ function renderScreen() {
     return `<div class="rrow${flagged ? " flagged" : ""}">
       <div class="row center"><div class="grow name">${escapeHtml(c.name)}</div>
         <div class="rate" role="group" aria-label="Priority rating for ${escapeHtml(c.name)}">${[1, 2, 3, 4, 5].map((n) => `<button class="${sc.rating === n ? "on" : ""}" aria-pressed="${sc.rating === n}" onclick="IV.rate('${c.id}',${n})">${n}</button>`).join("")}</div>
-        <button class="flagbtn ${flagged ? "on" : ""}" aria-pressed="${flagged}" aria-label="Flag ${escapeHtml(c.name)}" onclick="IV.toggleFlag('${c.id}')">${flagged ? '<span aria-hidden="true">⚑</span> Flagged' : "Flag"}</button></div>
+        <button class="flagbtn ${flagged ? "on" : ""}" aria-pressed="${flagged}" aria-label="Flag ${escapeHtml(c.name)}" onclick="IV.toggleFlag('${c.id}')">${flagged ? `${ICON.flag} Flagged` : "Flag"}</button></div>
       ${flagged ? `<textarea id="rsn-${c.id}" placeholder="Why? (optional, leadership only)" aria-label="Reason">${escapeHtml(sc.reason || "")}</textarea>
         <div style="margin-top:.4rem"><button class="savebtn" onclick="IV.saveReason('${c.id}',this)">Save reason</button></div>` : ""}
     </div>`;
   }).join("");
 
   html += docsBar + (rows ? `<div class="card flush list">${rows}</div>`
-    : ui.isAdmin ? "" : empty("📝", "Nothing to screen yet", "Applicants will appear here once leadership adds them."));
+    : ui.isAdmin ? "" : empty(ICON.list, "Nothing to screen yet", "Applicants will appear here once leadership adds them."));
   $("#screen").innerHTML = html;
 }
 
@@ -941,7 +981,7 @@ function candGrid() {
     nTaken && `<li><b>${nTaken}</b> want times that are already taken. <b>This is the one more interview times would fix.</b></li>`,
   ].filter(Boolean).join("");
   const capacity = missed.length && causes     // no causes at all = panel building failed; say nothing
-    ? `<div class="note warnbox"><b class="warn">⚠ ${scheduled} of ${people.length} applicants can be
+    ? `<div class="note warnbox"><b class="warn">${ICON.warn} ${scheduled} of ${people.length} applicants can be
         interviewed in the ${usable} usable time${usable === 1 ? "" : "s"} you have.</b>
         <ul class="small" style="margin:.4rem 0 0">${causes}</ul></div>`
     : "";
@@ -963,7 +1003,7 @@ function renderAvailability() {
   let html = ui.member ? hint("Tap how you can do each time you're free. Tap again to clear.") : "";
   html += slots.length
     ? (ui.member ? `<div class="card"><div class="slotgrid">${slotRows(slots, map, "IV.avail")}</div></div>` : "")
-    : empty("🗓️", "No interview times yet", ui.isAdmin ? "Add interview times in Setup (the gear icon)." : "Leadership hasn't published the interview times yet — check back soon.");
+    : empty(ICON.calendar, "No interview times yet", ui.isAdmin ? "Add interview times in Setup (the gear icon)." : "Leadership hasn't published the interview times yet. Check back soon.");
 
   // There used to be three sections here — both grids and a separate
   // "Availability dashboard" whose whole content was who hadn't answered. That
@@ -974,7 +1014,7 @@ function renderAvailability() {
   const ivIn = committee.filter((m) => liveAnswers(S.availIv[m.name]).length).length;
   const waiting = (names) => names.length
     ? `<p class="small muted" style="margin-top:.7rem">Waiting on ${names.map((n) => escapeHtml(n)).join(", ")}</p>`
-    : `<p class="small ok" style="margin-top:.7rem">✓ everyone has answered</p>`;
+    : `<p class="small ok" style="margin-top:.7rem">✓ Everyone has answered</p>`;
 
   const grid = availGrid();
   if (grid) {
@@ -1002,15 +1042,15 @@ function renderAvailability() {
 function renderScore() {
   const list = activeCands().slice().sort((a, b) => a.name.localeCompare(b.name));
   const head = hint("Notes per question, then one overall rating.");
-  if (!list.length) { delete $("#score").dataset.sig; $("#score").innerHTML = head + empty("⭐️", "No candidates to score", "Candidates on the interview list will appear here."); return; }
+  if (!list.length) { delete $("#score").dataset.sig; $("#score").innerHTML = head + empty(ICON.star, "No candidates to score", "Candidates on the interview list will appear here."); return; }
   if (!ui.scoreCand || !list.some((c) => c.id === ui.scoreCand)) ui.scoreCand = list[0].id;
   const me = ui.member, cid = ui.scoreCand;
   const rec = myScore(me, cid);
   const scored = (c) => !!myScore(me, c.id).overall;
   const at = list.findIndex((c) => c.id === cid);
   const jump = (d) => { const t = list[at + d]; return t
-    ? `<button class="btn ghost small" onclick="IV.pickScore('${t.id}')" aria-label="${d < 0 ? "Previous" : "Next"} candidate: ${escapeHtml(t.name)}">${d < 0 ? "‹" : "›"}</button>`
-    : `<button class="btn ghost small" disabled aria-hidden="true">${d < 0 ? "‹" : "›"}</button>`; };
+    ? `<button class="btn ghost small" onclick="IV.pickScore('${t.id}')" aria-label="${d < 0 ? "Previous" : "Next"} candidate: ${escapeHtml(t.name)}">${d < 0 ? ICON.prev : ICON.next}</button>`
+    : `<button class="btn ghost small" disabled aria-hidden="true">${d < 0 ? ICON.prev : ICON.next}</button>`; };
   // A "scored" tick in the picker turns thirteen identical names into a
   // progress list — the reviewer can see at a glance who they still owe.
   // One card for the whole interview — picker, questions, rating — ruled
@@ -1194,7 +1234,7 @@ function idleInterviewers(unused, res) {
   const chips = (list) => list.map((x) => `<span class="chip">${escapeHtml(x)}</span>`).join("");
   const line = (list, tail) => list.length
     ? `<p class="small" style="margin-top:.45rem">${chips(list)} — ${tail}</p>` : "";
-  return `<p class="small" style="margin-top:.55rem"><b class="warn">⚠ Not on any panel:</b></p>
+  return `<p class="small" style="margin-top:.55rem"><b class="warn">${ICON.warn} Not on any panel:</b></p>
     ${line(group.silent, "no availability sent yet.")}
     ${line(group.wrongTimes, `free only at times nobody is being interviewed in, or only in a format
       (in person / Zoom) the interviews booked then aren't running in.`)}
@@ -1250,7 +1290,7 @@ function needsAttention(res) {
      ${d.cands.map((id) => editLink(id, shortName(id))).join(", ")}. Move one.`));
   res.lostTime.forEach((id) => items.push(
     `<b>${escapeHtml(nameOf(id))}</b>'s hand-picked time no longer exists — showing the suggestion instead.
-     <button class="linky" onclick="IV.clearOverride('${id}')">dismiss</button>`));
+     <button class="linky" onclick="IV.clearOverride('${id}')">Dismiss</button>`));
 
   // the common bulk case: people who simply haven't answered yet
   const silent = by("no-answer");
@@ -1259,8 +1299,8 @@ function needsAttention(res) {
      ${silent.map((id) => editLink(id, shortName(id))).join(", ")}`);
 
   // the two specific cases keep their own line, because the fix differs per person
-  by("no-panel").forEach((id) => items.push(`${unschedulableLine(id, res)} ${editLink(id, "set a time")}`));
-  by("contested").forEach((id) => items.push(`${unschedulableLine(id, res)} ${editLink(id, "set a time")}`));
+  by("no-panel").forEach((id) => items.push(`${unschedulableLine(id, res)} ${editLink(id, "Set a time")}`));
+  by("contested").forEach((id) => items.push(`${unschedulableLine(id, res)} ${editLink(id, "Set a time")}`));
 
   if (res.understaffed.length) items.push(
     `<b>${res.understaffed.length} time${res.understaffed.length === 1 ? "" : "s"}</b> nobody can staff a balanced panel for —
@@ -1269,7 +1309,7 @@ function needsAttention(res) {
   if (!items.length) return "";
   const openEditor = res.unschedulable.filter((id) => ui.editPanel === id)
     .map((id) => `<div class="prow open">${panelEditor({ cand: id, slot: null, members: [] })}</div>`).join("");
-  return `<div class="card attention"><b class="ahead"><span aria-hidden="true">⚠</span> Needs attention</b>
+  return `<div class="card attention"><b class="ahead">${ICON.warn} Needs attention</b>
     <ul class="small">${items.map((t) => `<li>${t}</li>`).join("")}</ul>${openEditor}</div>`;
 }
 
@@ -1280,7 +1320,7 @@ function renderPanels() {
   const res = computePanels();
 
   let html = hint("Suggested panels, one applicant per time. Edit any of them by hand.");
-  if (!EFF().slots.length) { $("#panels").innerHTML = html + empty("🗓️", "No interview times yet", "Add interview times in Setup, then collect availability."); return; }
+  if (!EFF().slots.length) { $("#panels").innerHTML = html + empty(ICON.calendar, "No interview times yet", "Add interview times in Setup, then collect availability."); return; }
 
   html += `<p class="toolline">
     <button class="linky" onclick="IV.exportSchedule()">Export CSV</button>
@@ -1315,7 +1355,7 @@ function renderPanels() {
         : `<p class="ok small" style="margin-top:.55rem">✓ Every interviewer is on at least one panel.</p>`}`;
     html += section("panelload", "Interviewer load",
       unused.length ? `${unused.length} not used` : `${lo}–${hi} each`, loadBody,
-      { open: false, count: unused.length ? "⚠" : null,
+      { open: false, count: unused.length ? ICON.warn : null,
         info: "How the interviewing is shared out. The chair is on every panel by rule; the remaining seats go to whoever has done fewest so far, subject to who is actually available and keeping every panel balanced." });
   }
 
@@ -1338,12 +1378,12 @@ function renderPanels() {
         </div>
         <button class="btn ghost small" onclick="IV.editPanel('${p.cand}')">${editing ? "Done" : "Edit"}</button></div>
       <div class="small members">${p.members.map(escapeHtml).join(" · ")}</div>
-      ${faults.length ? `<div class="badges">${faults.map((w) => `<span class="badge bad">⚠ ${escapeHtml(w)}</span>`).join("")}</div>` : ""}`;
+      ${faults.length ? `<div class="badges">${faults.map((w) => `<span class="badge bad">${ICON.warn}${escapeHtml(w)}</span>`).join("")}</div>` : ""}`;
     if (editing) row += panelEditor(p);
     return row + `</div>`;
   }).join("");
   html += panelRows ? `<div class="card flush list">${panelRows}</div>`
-    : `<div class="card">${empty("🧩", "No panels yet", "Panels appear once interviewers and applicants submit availability.")}</div>`;
+    : `<div class="card">${empty(ICON.people, "No panels yet", "Panels appear once interviewers and applicants submit availability.")}</div>`;
 
   html += needsAttention(res);
   $("#panels").innerHTML = html;
@@ -1363,7 +1403,7 @@ function panelEditor(p) {
     ${slotChoices.map((s) => `<option value="${s}" ${String(p.slot) === String(s) ? "selected" : ""}>${escapeHtml(slotName(s))}${avail[s] ? " · " + avail[s] : ""}</option>`).join("")}</select>`;
   const curMod = p.modality || (avail[p.slot] === "zoom" ? "zoom" : "ip");
   const modSel = `<span class="seg" id="ovmod-${p.cand}" role="group" aria-label="Modality">
-    ${["ip", "zoom"].map((mv) => `<button type="button" class="${curMod === mv ? "on" : ""}" onclick="IV.setOvMod('${p.cand}','${mv}',this)">${mv === "ip" ? "In person" : "Zoom"}</button>`).join("")}</span>`;
+    ${["ip", "zoom"].map((mv) => `<button type="button" class="${curMod === mv ? "on" : ""}" aria-pressed="${curMod === mv}" onclick="IV.setOvMod('${p.cand}','${mv}',this)">${mv === "ip" ? "In person" : "Zoom"}</button>`).join("")}</span>`;
   // pass the committee INDEX (not the name) so names with quotes/apostrophes
   // (e.g. O'Brien) can't break the inline handler.
   const memToggles = committee.map((m, idx) => {
@@ -1371,7 +1411,7 @@ function panelEditor(p) {
     return `<label class="chip" style="cursor:${isChair ? "default" : "pointer"}"><input type="checkbox" ${on ? "checked" : ""} ${isChair ? "disabled" : ""}
       onchange="IV.toggleMember('${p.cand}',${idx},this.checked)" style="margin-right:.35rem"/>${escapeHtml(m.name)}${isChair ? " (chair)" : ""}</label>`;
   }).join("");
-  return `<div style="margin-top:.7rem; border-top:1px solid var(--line-2); padding-top:.7rem">
+  return `<div class="peditor">
     <div class="row center" style="gap:.5rem; flex-wrap:wrap"><span class="muted small">Time</span>${slotSel}<span class="muted small">Modality</span>${modSel}</div>
     <div class="muted small" style="margin:.6rem 0 .3rem">Members (chair always included)</div>
     <div>${memToggles}</div>
@@ -1459,7 +1499,7 @@ function renderRanking() {
 }
 function renderRankingInner() {
   if (!S.meta.interviewsComplete) {
-    $("#ranking").innerHTML = `<div class="card">${empty("🏆", "Ranking is hidden", "Reveal it once all interviews are done.")}
+    $("#ranking").innerHTML = `<div class="card">${empty(ICON.lock, "Ranking is hidden", "Reveal it once all interviews are done.")}
       <div style="text-align:center"><button class="btn filled" onclick="IV.setComplete(true,this)">Mark interviews complete &amp; reveal ranking</button></div></div>` + backupCard();
     return;
   }
@@ -1471,17 +1511,17 @@ function renderRankingInner() {
     const thin = r.expected && r.n < r.expected;
     const shift = r.shift > 0 ? `<span class="shift up" data-tip="Ranks ${r.shift} place${r.shift === 1 ? "" : "s"} higher once rater tendency is taken out">▲${r.shift}</span>`
       : r.shift < 0 ? `<span class="shift down" data-tip="Ranks ${-r.shift} place${r.shift === -1 ? "" : "s"} lower once rater tendency is taken out">▼${-r.shift}</span>` : "";
-    return `<tr><td class="rankn">${i + 1}</td><td class="name">${escapeHtml(r.name)}</td>
-      <td data-tip="${escapeHtml(`Mean of ${r.n} submitted score${r.n === 1 ? "" : "s"}: ${r.raters.join(", ")}`)}"><b>${r.raw.toFixed(2)}</b></td>
-      <td class="adj" data-tip="${escapeHtml(adjInfo)}">${r.adj.toFixed(2)}${shift}</td>
-      <td class="${thin ? "thinscore" : ""}" data-tip="${thin ? escapeHtml(`Only ${r.n} of the ${r.expected} panellists have scored this candidate.`) : "Every panellist on record has scored this candidate."}">${r.n}${r.expected ? ` of ${r.expected}` : ""}</td></tr>`;
+    return `<tr><td class="rankn num">${i + 1}</td><td class="name">${escapeHtml(r.name)}</td>
+      <td class="num" data-tip="${escapeHtml(`Mean of ${r.n} submitted score${r.n === 1 ? "" : "s"}: ${r.raters.join(", ")}`)}"><b>${r.raw.toFixed(2)}</b></td>
+      <td class="adj num" data-tip="${escapeHtml(adjInfo)}">${r.adj.toFixed(2)}${shift}</td>
+      <td class="num${thin ? " thinscore" : ""}" data-tip="${thin ? escapeHtml(`Only ${r.n} of the ${r.expected} panellists have scored this candidate.`) : "Every panellist on record has scored this candidate."}">${r.n}${r.expected ? ` of ${r.expected}` : ""}</td></tr>`;
   }).join("");
   $("#ranking").innerHTML = hint("Average interview scores — decision support, not a decision.")
     + `<p class="toolline"><button class="linky" onclick="IV.exportScores()">Export scores (CSV)</button>
       <button class="linky" onclick="IV.setComplete(false,this)">Re-hide ranking</button></p>
-    <div class="card flush"><div class="tablewrap"><table><thead><tr><th>#</th><th>Candidate</th><th>Avg</th>
-      <th>Adj${infoIcon(adjInfo)}</th><th>Scored by</th></tr></thead>
-      <tbody>${body || `<tr><td colspan="5">${empty("⭐️", "No scores yet", "Scores will appear as interviewers submit them.")}</td></tr>`}</tbody></table></div></div>`
+    <div class="card flush"><div class="tablewrap"><table><thead><tr><th class="num">#</th><th>Candidate</th><th class="num">Avg</th>
+      <th class="num">Adj${infoIcon(adjInfo)}</th><th class="num">Scored by</th></tr></thead>
+      <tbody>${body || `<tr><td colspan="5">${empty(ICON.star, "No scores yet", "Scores will appear as interviewers submit them.")}</td></tr>`}</tbody></table></div></div>`
     + offersSection(rows) + backupCard();
 }
 
@@ -1553,7 +1593,7 @@ function offersSection(rows) {
   return `<h3 class="sechead">Offers</h3>
     <p class="hint">Record each offer as you make it, then the answer. Only admins can see this.</p>
     <div class="ofsummary">${summary}</div>
-    <div class="card flush list">${body || empty("🤝", "No candidates yet", "Candidates appear here once they are on the list.")}</div>`;
+    <div class="card flush list">${body || empty(ICON.mail, "No candidates yet", "Candidates appear here once they are on the list.")}</div>`;
 }
 
 // ------------------------------------------------ 5c · Back up the cycle
@@ -1725,15 +1765,15 @@ function timesEditor(slots) {
       <div class="adminbar" style="margin-top:.5rem"><button class="btn tinted small" onclick="IV.tSave(this)">Save</button>
         <button class="btn ghost small" onclick="IV.tEditCancel()">Cancel</button></div></div>`;
     const c = answersText(counts[t.id]);
-    const b = booked[t.id] ? `<span class="pill neutral">panel booked</span>` : "";
+    const b = booked[t.id] ? `<span class="pill neutral">Panel booked</span>` : "";
     return `<div class="trow"><div class="grow"><span class="ttime">${escapeHtml(slotTimeLabel(t))}</span>
         <span class="muted small">${c ? escapeHtml(c) + " answered" : "no answers yet"}</span> ${b}</div>
-      <button class="linky" onclick="IV.tEdit('${t.id}')" aria-label="Edit ${escapeHtml(slotLabel(t))}">edit</button>
-      <button class="linky danger" onclick="IV.tRemove(['${t.id}'])" aria-label="Remove ${escapeHtml(slotLabel(t))}">remove</button></div>`;
+      <button class="linky" onclick="IV.tEdit('${t.id}')" aria-label="Edit ${escapeHtml(slotLabel(t))}">Edit</button>
+      <button class="linky danger" onclick="IV.tRemove(['${t.id}'])" aria-label="Remove ${escapeHtml(slotLabel(t))}">Remove</button></div>`;
   };
   const list = groupByDate(slots).map((g) => `<div class="tgroup">
       <div class="tgroup-h"><b>${escapeHtml(g.title)}</b> <span class="muted small">· ${pl(g.items.length, "time")}</span>
-        <button class="linky danger small" onclick="IV.tRemoveDay('${g.date}')">remove day</button></div>
+        <button class="linky danger small" onclick="IV.tRemoveDay('${g.date}')">Remove day</button></div>
       ${g.items.map(row).join("")}</div>`).join("")
     || `<div class="muted small" style="padding:.4rem 0">No interview times yet — add some below. Interviewers and applicants will see “times not posted yet” until you do.</div>`;
   const a = tAdd();
@@ -1825,14 +1865,14 @@ function renderCandidate() {
   // above the times are now a subtitle and a single sentence.
   el.innerHTML = `<header class="page"><div class="brandrow"><div class="brandmark" aria-hidden="true">ED</div>
       <div class="grow"><h1>${escapeHtml(ORG_NAME)}</h1>
-        <p class="muted">${escapeHtml(who)} · <button class="linky" onclick="CAND.rename()">not you?</button></p></div>
+        <p class="muted">${escapeHtml(who)} · <button class="linky" onclick="CAND.rename()">Not you?</button></p></div>
       <button class="linky" onclick="CAND.logout()">Log out</button></div></header>
     <main style="max-width:600px">
       ${slots.length ? `<h2 class="pagetitle">When can you interview?</h2>
         ${hint("Choose in person, Zoom or either for every time you can make. In person is preferred.")}
         <div class="card"><div class="slotgrid">${slotRows(slots, map, "CAND.set")}</div></div>
         <p class="hint">Saved as you tap — come back and change it any time. We'll confirm your final time by email.</p>`
-        : `<div class="card">${empty("🗓️", "Times not posted yet", "The interview times haven't been published yet. Please check back soon.")}</div>`}
+        : `<div class="card">${empty(ICON.calendar, "Times not posted yet", "The interview times haven't been published yet. Please check back soon.")}</div>`}
     </main>`;
 }
 
@@ -2010,7 +2050,7 @@ window.IV = {
   setOvMod: (cid, mv, btn) => {
     ui._draft = ui._draft || {}; ui._draft[cid] = { ...(ui._draft[cid] || {}), modality: mv };
     const seg = document.getElementById("ovmod-" + cid);
-    if (seg) seg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === btn));
+    if (seg) seg.querySelectorAll("button").forEach((b) => { b.classList.toggle("on", b === btn); b.setAttribute("aria-pressed", b === btn); });
   },
   savePanel: async (cid, btn) => {
     const slotSel = $("#ovslot-" + cid);
