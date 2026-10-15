@@ -179,7 +179,7 @@ header.page .muted { margin:2px 0 0; }
    hides content scrolling underneath once the bar sticks. */
 nav.tabs { position:sticky; top:8px; z-index:5; display:flex; gap:2px; padding:3px;
   width:calc(100% - 2 * var(--ed-gutter)); max-width:calc(var(--ed-maxw) - 2 * var(--ed-gutter)); margin:8px auto 4px;
-  background:var(--ed-fill); border-radius:var(--ed-r-sm); box-shadow:0 0 0 8px var(--ed-bg);
+  background:var(--ed-seg-track); border-radius:var(--ed-r-sm); box-shadow:0 0 0 8px var(--ed-bg);
   overflow-x:auto; scrollbar-width:none; }
 nav.tabs::-webkit-scrollbar { display:none; }
 nav.tabs.more-right { -webkit-mask-image:linear-gradient(to right, #000 calc(100% - 40px), transparent);
@@ -190,7 +190,7 @@ nav.tabs.more-left.more-right { -webkit-mask-image:linear-gradient(to right, tra
   mask-image:linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent); }
 nav.tabs button { flex:1 0 auto; font:500 var(--ed-text-sm)/1 var(--ed-font); border:0; background:none;
   border-radius:var(--ed-r-xs); min-height:38px; padding:0 14px; color:var(--ed-ink); cursor:pointer; white-space:nowrap; }
-nav.tabs button.on { background:var(--ed-surface); font-weight:600; box-shadow:0 1px 3px rgba(0,0,0,.12); }
+nav.tabs button.on { background:var(--ed-seg-on); font-weight:600; box-shadow:0 1px 3px rgba(0,0,0,.12); }
 
 /* ---- main + cards -------------------------------------------------------- */
 main { padding:8px var(--ed-gutter) 64px; max-width:var(--ed-maxw); margin:0 auto; }
@@ -272,14 +272,14 @@ a.doc:hover { text-decoration:underline; }
 
 /* ---- segmented controls: rating 1 to 5, in person / Zoom / either, sort,
    offer status. One shape everywhere: a grey track, the chosen segment white. */
-.rate, .seg { display:inline-flex; background:var(--ed-fill); border-radius:var(--ed-r-sm); padding:3px; gap:2px;
+.rate, .seg { display:inline-flex; background:var(--ed-seg-track); border-radius:var(--ed-r-sm); padding:3px; gap:2px;
   max-width:100%; }
 .rate button, .seg button { font:500 var(--ed-text-sm)/1 var(--ed-font); border:0; background:none; cursor:pointer;
   min-height:38px; padding:0 14px; border-radius:var(--ed-r-xs); color:var(--ed-ink); white-space:nowrap;
   transition:background-color .15s; }
 .rate button { min-width:44px; padding:0 8px; font-variant-numeric:tabular-nums; }
-.rate button.on, .seg button.on { background:var(--ed-surface); font-weight:600; box-shadow:0 1px 3px rgba(0,0,0,.12); }
-.rate button:hover:not(.on), .seg button:hover:not(.on) { background:color-mix(in srgb, var(--ed-surface) 45%, transparent); }
+.rate button.on, .seg button.on { background:var(--ed-seg-on); font-weight:600; box-shadow:0 1px 3px rgba(0,0,0,.12); }
+.rate button:hover:not(.on), .seg button:hover:not(.on) { background:color-mix(in srgb, var(--ed-seg-on) 45%, transparent); }
 /* interview overall score: typed, 1.0 to 5.0 */
 .overall { display:flex; align-items:center; gap:8px; flex:none; }
 .overall input[type=text] { width:5.5rem; margin-top:0; text-align:center; font-weight:600; }
@@ -581,9 +581,9 @@ td.adj { font-variant-numeric:tabular-nums; color:var(--ed-ink-2); }
 .rrow.offer .rankn { min-width:1.6rem; text-align:center; }
 .rrow.offer .ofseg { margin-left:auto; }
 .ofseg button.on.none { color:var(--ed-ink); }
-.ofseg button.on.offered { color:var(--ed-accent-ink); }
-.ofseg button.on.accepted { color:var(--ed-green); }
-.ofseg button.on.declined { color:var(--ed-red); }
+.ofseg button.on.offered { background:var(--ed-accent-tint); color:var(--ed-accent-ink); }
+.ofseg button.on.accepted { background:var(--ed-green-tint); color:var(--ed-green); }
+.ofseg button.on.declined { background:var(--ed-red-tint); color:var(--ed-red); }
 .ofdates { display:flex; flex-wrap:wrap; gap:6px 16px; margin:10px 0 0 2.3rem; font-size:var(--ed-text-sm); color:var(--ed-ink-2); }
 .ofdates label { display:inline-flex; align-items:center; gap:8px; }
 .ofdates input[type=date] { font:inherit; color:var(--ed-ink); border:1px solid transparent; border-radius:var(--ed-r-sm);
