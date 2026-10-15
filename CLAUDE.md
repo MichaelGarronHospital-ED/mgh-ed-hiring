@@ -30,9 +30,10 @@ Full design and reference data (committee, candidates, questions, rules) live in
   For a safe copy with Firebase switched off, use `sim/make-site.sh` (builds `sim/site/`).
 - **Rules tests:** `cd tests && npm install && npm test` (Firestore emulator; needs Java). 90 tests.
 - **UI simulations:** `cd sim && npm install && npm test`. Any Chrome works; set `$CHROME`
-  to pick one. Known on Alvin's Mac (2026-10-14): 13/15 scenarios pass; `editAnsweredTimeKeep`
-  and `editAnsweredTimeReask` fail in the test driver ("not clickable"), also on the
-  2026-09-28 version, so not caused by later changes. e2e, score and fuzz pass.
+  to pick one. All pass (15/15 scenarios, e2e, score, fuzz; 2026-10-14). Fixture
+  interview dates come from `daysAhead()` in `sim/drive.mjs`: never hard-code a
+  date, because once it passes the tool adds a "date is in the past" dialog and the
+  time-edit scenarios fail (that, not macOS, was the old 13/15).
 - **Deploy the site:** push to `main`; GitHub Pages is live about a minute later.
   Firestore rules are separate: see README (run `scripts/sync-allowed.mjs --apply` first).
 - **Accounts:** repo owned by the `MichaelGarronHospital-ED` org (department login

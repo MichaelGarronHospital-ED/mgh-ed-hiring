@@ -2,7 +2,7 @@
 // edits after people have answered, manual panels, removals and chair changes.
 // Each scenario is a named check that returns a list of problems.
 import { pathToFileURL } from "node:url";
-import { serve, browser, openPage, signIn, pickMember, landAsAdmin, changeMember, tab, setSlot, dumpState, seedState, sleep } from "./drive.mjs";
+import { serve, browser, openPage, signIn, pickMember, landAsAdmin, changeMember, tab, setSlot, dumpState, seedState, sleep, daysAhead } from "./drive.mjs";
 import { readPanels, readCandGrid } from "./scrape.mjs";
 
 const COMMITTEE = [
@@ -10,9 +10,9 @@ const COMMITTEE = [
   { name: "Dufour", gender: "F" }, { name: "Ekwueme", gender: "M" },
 ];
 const TIMES = [
-  { id: "t0", date: "2026-10-01", start: "09:00", end: "10:00" },
-  { id: "t1", date: "2026-10-01", start: "10:00", end: "11:00" },
-  { id: "t2", date: "2026-10-02", start: "09:00", end: "10:00" },
+  { id: "t0", date: daysAhead(30), start: "09:00", end: "10:00" },
+  { id: "t1", date: daysAhead(30), start: "10:00", end: "11:00" },
+  { id: "t2", date: daysAhead(31), start: "09:00", end: "10:00" },
 ];
 const CANDS = [
   { id: "c-1", name: "Dr Rosalind Ashcombe", removed: false },
