@@ -45,6 +45,10 @@ the three role-account sign-ins (see the console steps in README).
 - Drafts live in `ui.commDraft` / `ui.qDraft`, so a live re-render never wipes typing, and the
   self-reload waits while either is open.
 
+- **Review fix:** an open Score tab redraws when the question wording, the scale or the
+  guidance changes (they are part of its signature now), flushing anything still pausing
+  first, instead of keeping the old text up (`sim/editors.mjs` checks it from a second tab).
+
 Tests: `sim/editors.mjs` (5 scenarios, in `npm test`): rename keeps input, a left member's
 concern still counts, screens-only never on a panel, chair and duplicate checks, questions
 edit, reorder and lock. Checked: see the release commit message.

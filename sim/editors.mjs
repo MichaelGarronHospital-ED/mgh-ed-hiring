@@ -184,6 +184,19 @@ const scenarios = {
     problems.push(...ok(msg.includes("Only fix spelling or small wording"), `confirm: ${msg}`));
     st = await dumpState(page);
     problems.push(...ok(st.questions.questions[0].text === "Tell us about yourself, briefly" && st.questions.questions[0].id === "0", "wording fix not saved under the same id"));
+    // review: an open Score tab redraws when the wording changes (another tab)
+    const pB = await page.browser().newPage();
+    await pB.goto(url, { waitUntil: "domcontentloaded" }); await pB.waitForFunction("window.__edReady === true");
+    await signIn(pB, "staffpw"); await pickMember(pB, "Chen"); await tab(pB, "score");
+    await pB.select("select[aria-label='Candidate to score']", "c-1"); await sleep(150);
+    await page.bringToFront();   // a background tab doesn't take typing
+    await page.$eval("#qText-0", (e) => { e.value = ""; });
+    await page.type("#qText-0", "Tell us about yourself");
+    await page.evaluate(() => [...document.querySelectorAll("#settings button")].find((b) => b.textContent.trim() === "Save questions").click());
+    await confirmYes(page); await sleep(600);
+    const q0 = await pB.$eval("#score .qrow .q", (e) => e.textContent).catch(() => "");
+    problems.push(...ok(q0 === "Tell us about yourself", `the open Score tab still shows "${q0}"`));
+    await pB.close();
     // a structural change while locked is refused even if forced through the draft
     await page.evaluate(() => { window.IV.qSet(0, "x"); });
     await page.evaluate(() => window.IV.qAdd());   // ignored while locked

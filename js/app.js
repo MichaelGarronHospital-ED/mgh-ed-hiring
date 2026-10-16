@@ -1200,7 +1200,10 @@ function renderScore() {
   // note into the NEXT candidate's box. A change of candidate or person always
   // rebuilds, so nothing typed for one can ever appear under another.
   const root = $("#score");
-  const sig = [me, cid, list.map((c) => c.id).join(","), QUESTIONS.map((q) => q.id).join(","), SCALE.length].join("|");
+  // the wording, scale and guidance count too: an edit in Setup redraws the tab
+  // (flushing anything still pausing first), never leaves the old text up
+  const sig = [me, cid, list.map((c) => c.id).join(","), QUESTIONS.map((q) => q.id).join(","), SCALE.length,
+    hashOf({ t: QUESTIONS.map((q) => q.text), s: SCALE, g: GUIDE })].join("|");
   // About to rebuild: land anything still pausing first, then start over so
   // `rec` is read after it (the saves may already have re-entered here).
   if (root.dataset.sig !== sig && flushPending()) return renderScore();
