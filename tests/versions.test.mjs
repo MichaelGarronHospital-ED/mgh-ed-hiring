@@ -3,7 +3,7 @@
 // script tag, carries the same ?v=<release> as version.json and RELEASE.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 
 const root = new URL("../", import.meta.url);
 const release = JSON.parse(readFileSync(new URL("version.json", root), "utf8")).release;
@@ -37,4 +37,18 @@ test("index.html loads both stylesheets with the same ?v=", () => {
 test("app.js says it is the same release", () => {
   const app = readFileSync(new URL("js/app.js", root), "utf8");
   assert.match(app, new RegExp(`const RELEASE = "${release}";`));
+});
+
+// R8: the old encrypted question file is gone, and nothing may bring back a
+// value derived from a password (CLAUDE.md). No module, test, sim or script
+// imports it.
+test("js/data.js is gone and nothing imports it", () => {
+  assert.equal(existsSync(new URL("js/data.js", root)), false, "js/data.js is back");
+  const dirs = ["js/", "tests/", "sim/", "scripts/"];
+  for (const d of dirs) {
+    for (const f of readdirSync(new URL(d, root)).filter((n) => /\.(m?js|sh)$/.test(n) && n !== "versions.test.mjs")) {
+      const src = readFileSync(new URL(d + f, root), "utf8");
+      assert.ok(!/from\s*["'][^"']*data\.js|import\(\s*["'][^"']*data\.js|decryptContent/.test(src), `${d}${f} imports data.js`);
+    }
+  }
 });

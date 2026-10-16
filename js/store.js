@@ -26,9 +26,9 @@
 //  with the server time. There is no "saved but not logged".
 // ============================================================================
 
-import { effectiveSlots, toStored } from "./slots.js?v=R7";
-import { lastKey, candKey, ls } from "./util.js?v=R7";
-import { ROUND_COLLECTIONS, quarantineSet, isQuarantined } from "./backup.js?v=R7";
+import { effectiveSlots, toStored } from "./slots.js?v=R8";
+import { lastKey, candKey, ls } from "./util.js?v=R8";
+import { ROUND_COLLECTIONS, quarantineSet, isQuarantined } from "./backup.js?v=R8";
 
 // R6 (review 3 m2): documents kept by a close because they changed after the
 // copy belong to no round until leadership decides. Every view leaves them out.
@@ -268,16 +268,6 @@ export class LocalStore extends BaseStore {
     this.state.settings = { ...this.state.settings, ...next };
     this._hist(histOf(history, before, next));
     this._save();
-  }
-  // H2: create the questions document only if there is none (two tabs migrating
-  // at once: the second is a no-op). Returns whether it wrote.
-  async createQuestions(docData, history) {
-    this._load();
-    if (this.state.questions) return false;
-    this.state.questions = { ...docData, updatedAt: new Date().toISOString() };
-    this._hist(histOf(history));
-    this._save();
-    return true;
   }
   async updateQuestions(mutate, history) {
     this._load();
@@ -930,20 +920,6 @@ export class FirestoreStore extends BaseStore {
       tx.set(pubRef, { times: next.times }, { mergeFields: ["times"] });
       const h = histOf(history, before, next);
       if (h) tx.set(...this._histDoc(h));
-    });
-  }
-  // H2: create interviews_meta/questions only if it is missing, with its history
-  // entry. Two Leadership tabs migrating at once: the second is a no-op.
-  async createQuestions(docData, history) {
-    const { db, runTransaction, serverTimestamp } = this._fb;
-    const ref = this._doc("interviews_meta", "questions");
-    return runTransaction(db, async (tx) => {
-      const snap = await tx.get(ref);
-      if (snap.exists()) return false;
-      tx.set(ref, { ...docData, updatedAt: serverTimestamp() });
-      const h = histOf(history);
-      if (h) tx.set(...this._histDoc(h));
-      return true;
     });
   }
   async updateQuestions(mutate, history) {

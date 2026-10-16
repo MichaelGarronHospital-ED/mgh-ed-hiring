@@ -8,39 +8,37 @@
 //  enforced by the Firestore rules (see config.js and firestore.rules).
 // ============================================================================
 import { firebaseConfig, ORG_NAME, CHAIR, COMMITTEE, SLOTS, ONEDRIVE,
-         LOCAL_CODES, PARTNERS, AUTH, SCREENING_DEADLINE } from "./config.js?v=R7";
+         LOCAL_CODES, PARTNERS, AUTH, SCREENING_DEADLINE } from "./config.js?v=R8";
 import { ROLES, ROLE_WORD, ACCOUNTS, accountsFor, validateNew, preflight, applyChange, verify, halfDoneText,
-         makeFirebaseAdapter } from "./passwords.js?v=R7";
-import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R7";
-import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R7";
-import { autoPanels, buildPanel } from "./panels.js?v=R7";
+         makeFirebaseAdapter } from "./passwords.js?v=R8";
+import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R8";
+import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R8";
+import { autoPanels, buildPanel } from "./panels.js?v=R8";
 import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell, lastKey,
-         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R7";
-import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R7";
+         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R8";
+import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R8";
 import { effectiveSlots, slotLabel, slotTimeLabel, groupByDate, checkSlot, splitRange, responseCounts,
-         newSlotId, isStructured, fmtDate } from "./slots.js?v=R7";
+         newSlotId, isStructured, fmtDate } from "./slots.js?v=R8";
 import { normalizeCommittee, interviewers as interviewersOf, pickable as pickableOf, memberName, memberStatus,
-         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R7";
-import { fromLegacy, normalizeQuestions, liveQuestions, idsWithNotes, scoringStarted, checkEdit, newQuestionId,
-         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R7";
+         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R8";
+import { normalizeQuestions, liveQuestions, idsWithNotes, scoringStarted, checkEdit, newQuestionId,
+         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R8";
 import { entry as hEntry, newHistoryId, panelUndo, shortlistUndo, screeningUndo, canUndo, undoneIds, textFor, whoFor, whenFor,
-         hashOf, toDate } from "./history.js?v=R7";
-import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R7";
-import { createRounds, pageId } from "./rounds.js?v=R7";
-import { icsEvent, icsCalendar } from "./ics.js?v=R7";
-import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R7";
+         hashOf, toDate } from "./history.js?v=R8";
+import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R8";
+import { createRounds, pageId } from "./rounds.js?v=R8";
+import { icsEvent, icsCalendar } from "./ics.js?v=R8";
+import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R8";
 import { STAGES, STAGE_WORD, stageOpen, stageClosedAt, roundOpen, bookingFor, thresholdOf, isOnList, closePlan, reopenPlan,
-         lockEntry } from "./stages.js?v=R7";
+         lockEntry } from "./stages.js?v=R8";
 
 // The release this page is. Must equal version.json and every "?v=" in every
 // import (tests/versions.test.mjs). A page that sees a different version.json
 // was updated underneath it (section "Reload notice" below).
-const RELEASE = "R7";
+const RELEASE = "R8";
 
-// Interview questions (H2): the saved document (interviews_meta/questions).
-// Since R7 there is no other source: the old encrypted js/data.js is no longer
-// read (it stays in the repo, unused, until R8, for cached older pages).
-const LEGACY_DOC = null;   // kept so maybeMigrateQuestions stays inert until R8 removes it
+// Interview questions (H2): the saved document (interviews_meta/questions), the
+// only copy since R7 (the old encrypted js/data.js was deleted in R8).
 const Q = () => normalizeQuestions(S && S.questions);
 let store = null, S = null;
 let fbAuth = null;   // { auth, authFns } once Firebase has loaded, so Log out can sign out
@@ -357,26 +355,9 @@ async function initStore(role) {
       if (pub) { ui._syncedSlots = true; store.syncPublicSlots(pub).catch(() => { ui._syncedSlots = false; }); }
     }
     if (ui.role === "admin") syncAllowedNames();
-    if (ui.role === "admin") maybeMigrateQuestions();
     if (ui.role === "admin" && rounds) renderRoundLine();
   });
   S = store.getState();
-}
-
-// H2 (R1 to R6): the first Leadership sign-in copied the questions out of
-// the old encrypted js/data.js into interviews_meta/questions. Inert since R7
-// (nothing is decrypted any more); removed in R8. It copied them (ids "0".."n-1",
-// exactly the keys every saved note uses). Create-only, in a transaction with
-// its history entry, so two tabs doing it at once write it once.
-function maybeMigrateQuestions() {
-  if (!store || !store.metaLoaded || S.questions || !LEGACY_DOC || ui._migrating || ui._migrated) return;
-  ui._migrating = true;
-  const n = LEGACY_DOC.questions.length;
-  store.createQuestions(LEGACY_DOC, hEntry("questions.migrate",
-    `Copied the interview questions from the old locked file (${n} question${n === 1 ? "" : "s"})`, { by: byWho() }))
-    .then(() => { ui._migrated = true; })
-    .catch((e) => console.warn("questions copy failed:", e && e.code))
-    .finally(() => { ui._migrating = false; });
 }
 
 // Keep the rules' allowed-surname list in step with the roster. firestore.rules
@@ -3497,7 +3478,6 @@ window.IV = {
       catch (e) { toast((e && e.message) || "Couldn't undo. Check your connection", "err"); }
     } });
   },
-  clearOverrides: (btn) => IV.resetPanels(btn),   // the old name, kept for one release
   // ---- applicants: shared surnames (H14), rename, merge, delete (H5)
   separateKeys: () => separateShared(true),
   claimShared: async (key, id) => {

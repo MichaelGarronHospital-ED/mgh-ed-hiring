@@ -81,7 +81,7 @@ Full design and reference data (committee, candidates, questions, rules) live in
   may change. Never add, remove or reorder mid-round; notes are filed under the ids.
 - **Score notes are keyed by question id. Legacy ids are `"0"`..`"9"`; never renumber.** The
   questions live in `interviews_meta/questions` only (R1 to R6 copied them out of the old
-  encrypted `js/data.js` with exactly those ids; since R7 nothing reads that file).
+  encrypted `js/data.js` with exactly those ids; the file was deleted in R8).
 - **Every module import carries `?v=<release>`** (same as `version.json` and `RELEASE` in
   `app.js`, checked by `tests/versions.test.mjs`). Bump them all together each release. Never
   remove a module or an export in the release that stops using it; remove it one release later.

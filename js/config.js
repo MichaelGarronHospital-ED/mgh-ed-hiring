@@ -26,12 +26,6 @@ export const firebaseConfig = {
 // file is derived from a password, so changing one needs no commit: Setup,
 // "Passwords for all ED tools" (README, "Passwords").
 
-// Guest password for LOCAL mode only (no Firebase; the sim copy sets its own).
-// Deliberately blank here: this repo is public, and in the live (roles) model the
-// Guest password is only the applicant Firebase account's password, checked by
-// Firebase at sign-in. Never write a real password into this file.
-export const CANDIDATE_CODE_LOCAL = "";   // unused since R7; kept one release for cached older pages
-
 // The three passwords for LOCAL mode only (no Firebase; sim/make-site.sh fills
 // them in its own copy). Blank here, always: this repo is public, and in the
 // live model a password is only ever the password of a Firebase account.

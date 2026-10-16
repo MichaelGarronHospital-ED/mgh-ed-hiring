@@ -24,6 +24,26 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## R8: remove what R7 stopped using (Oct 16 2026)
+
+- **Deleted `js/data.js`**, the old encrypted copy of the interview questions. Since R7 the page
+  reads the questions only from `interviews_meta/questions` and finds the role by signing in, so
+  nothing used it; it stayed one release so cached older pages kept working. After this release
+  no file in the repo is derived from a password.
+- Removed the compatibility leftovers kept for one release: `CANDIDATE_CODE_LOCAL` (config),
+  the inert `maybeMigrateQuestions` and `store.createQuestions` (the R1 to R6 questions copy),
+  and the old `IV.clearOverrides` name (now only `IV.resetPanels`). `fromLegacy` stays: it
+  defines the legacy question ids and the tests build fixtures with it.
+- README "Re-keying" removed. NEW check in `tests/versions.test.mjs`: `js/data.js` does not exist
+  and no module, test, sim or script imports it.
+- **Before deploying:** R7 live for a week, and Alvin has signed in with each of the three
+  passwords and run "Change a password" to the Check step. **Never roll the page back past R7
+  after a password has been changed in the app** (pre-R7 pages decide the role by decrypting).
+
+Tests: as R7, plus the new versions check. Checked: see the release commit message.
+
+---
+
 ## R7: sign in without data.js, and change the passwords in Setup (Oct 16 2026)
 
 - **The gate finds the role by signing in (design 5.2).** `app.js` no longer imports

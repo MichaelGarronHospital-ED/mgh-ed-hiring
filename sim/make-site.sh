@@ -2,8 +2,7 @@
 # Rebuild the test copy of the tool from the repo, with the doubles the
 # CLAUDE.md recipe calls for: blank firebaseConfig (→ LocalStore), the three
 # local-mode passwords (adminpw, staffpw, guestpw in LOCAL_CODES) and sample
-# interview questions in LocalStore's empty state. Since R7 the page no longer
-# reads js/data.js, so nothing is stubbed there.
+# interview questions in LocalStore's empty state.
 #
 #   bash make-site.sh              → sim/site/          (LocalStore, no Firebase at all)
 #   bash make-site.sh --emulator   → sim/site-emulator/ (the REAL Firestore and Auth code,

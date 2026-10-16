@@ -46,7 +46,7 @@ the usual system paths is used.
 `make-site.sh` builds `site/`, a copy of the tool with `config.js`'s
 `firebaseConfig` blanked (so it runs on `LocalStore`), its `LOCAL_CODES` set to the
 test passwords (`adminpw` = Leadership, `staffpw` = ED, `guestpw` = Guest) and sample
-interview questions in LocalStore's empty state. Since R7 nothing reads `data.js`. Nothing here can reach
+interview questions in LocalStore's empty state. Nothing here can reach
 Firebase or real data. Re-run it after changing the tool; every `npm` script
 above does.
 
