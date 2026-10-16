@@ -52,5 +52,14 @@ const shots = {
       await p.evaluate(() => [...document.querySelectorAll("#panels button")].find((b) => b.textContent.includes("Reset hand-made panels")).click());
       await p.waitForSelector("#confirmWrap:not(.hidden)"); await p.click("#confirmYes"); await sleep(300); });
   },
+  R2: async () => {
+    const st = { ...STATE, scores: {} };
+    await shoot("setup-committee", async (p) => { await landAsAdmin(p); await openCard(p, "setCommittee");
+      await p.evaluate(() => window.IV.mSet(3, "active", "false")); }, { state: st });
+    await shoot("setup-questions", async (p) => { await landAsAdmin(p); await sleep(300); await openCard(p, "setQuestions"); }, { state: st });
+    await shoot("setup-questions-locked", async (p) => { await landAsAdmin(p); await sleep(300); await openCard(p, "setQuestions"); },
+      { state: { ...STATE, scores: { "Chen~c-1": { overall: 4.2 } } } });
+    await shoot("name-list", async (p) => { await p.waitForSelector("#memberpick:not(.hidden)"); }, { code: "staffpw" });
+  },
 };
 if (shots[rel]) { await shots[rel](); await done(); }
