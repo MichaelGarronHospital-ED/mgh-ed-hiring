@@ -2236,9 +2236,19 @@ function proceedCandidate() {
   $("#candview").classList.remove("hidden");
   renderCandidate();
 }
+// H4 (review): what the public times document says about booking. Read before
+// asking for a name, so a closed availability stage is never reported to an
+// applicant as an unknown name.
+const bookingNow = () => (S && S.publicInfo && S.publicInfo.booking) || (S && S.booking) || "open";
 function renderCandidate() {
   const el = $("#candview");
   const slots = effectiveSlots(S.settings, SLOTS);
+  if (bookingNow() === "closed") {
+    el.innerHTML = `<div class="overlay"><div class="overlay-box"><div class="logo" aria-hidden="true">ED</div>
+      <h2>Interview availability</h2>${empty(ICON.calendar, "Booking is closed", "If you need to change your times, reply to our email.")}
+      <p><button class="linky" onclick="CAND.logout()">Log out</button></p></div></div>`;
+    return;
+  }
   if (!ui.candLast) {
     el.innerHTML = `<div class="overlay"><div class="overlay-box"><div class="logo" aria-hidden="true">ED</div>
       <h2>Interview availability</h2><p class="muted">Enter your last name to pick the times that work for you.

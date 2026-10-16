@@ -53,6 +53,11 @@ the three role-account sign-ins (see the console steps in README).
   change, used by undo), `now()`, `DEL`.
 - `sim/check.mjs` restates the new list rule (leadership decision, then the Setup threshold).
 
+- **Review fix:** the applicant page reads `booking` from the public times document (it was
+  only read from R5 on), so once availability is closed an applicant sees "Booking is closed.
+  If you need to change your times, reply to our email." instead of every name being "not
+  found". Checked in the emulator (`bookingFlag`).
+
 Tests: `tests/stages.test.mjs` (the `isOnList` truth table, freeze and reopen plans);
 `sim/stages.mjs` (7 scenarios); emulator `stageRefusals` (a note pending when scoring closes
 is refused with the right message and nothing is written; an older page's screening write is

@@ -392,7 +392,7 @@ export class FirestoreStore extends BaseStore {
       const d = snap.data() || {};
       this.state.settings = { ...this.state.settings, slots: d.slots || [] };
       if (Array.isArray(d.times)) this.state.settings.times = d.times; else delete this.state.settings.times;
-      this.state.publicInfo = { orgName: d.orgName || "", note: d.note || "" };
+      this.state.publicInfo = { orgName: d.orgName || "", note: d.note || "", booking: d.booking || "open" };
       arrive();
     });
   }

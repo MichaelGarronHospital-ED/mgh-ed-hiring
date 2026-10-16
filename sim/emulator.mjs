@@ -175,6 +175,13 @@ export const cases = {
     const st = await emu.getDocument("interviews_meta/state");
     problems.push(...ok(st && st.stages && st.stages.availability.closed === true && st.stages.availability.at.__ts, `state: ${JSON.stringify(st)}`));
     await sleep(300);
+    // review: an applicant sees "Booking is closed" before any name step
+    const g = await freshPage({ log });
+    await signIn(g, "guestpw");
+    await g.waitForFunction(() => /Booking is closed/.test(document.querySelector("#candview").textContent), { timeout: 8000 }).catch(() => {});
+    const gt = await g.$eval("#candview", (e) => e.textContent);
+    problems.push(...ok(gt.includes("Booking is closed") && !(await g.$("#candName")), `applicant sees: ${gt.slice(0, 120)}`));
+    await closePage(g);
     await p.evaluate(() => [...document.querySelectorAll("#settings button")].find((b) => b.textContent.trim() === "Reopen").click());
     const pub2 = await until(async () => { const d = await emu.getDocument("interviews_public/slots"); return d && d.booking === "open" && d; });
     problems.push(...ok(pub2, "booking wasn't set back to open"));
