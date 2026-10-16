@@ -23,9 +23,9 @@ rules_version = '2';
 //  IMPORTANT — before publishing this file:
 //    1. Authentication → Sign-in method → enable Email/Password.
 //    2. Authentication → Users → add the three accounts above; set each password
-//       (committee = the staff code; admin = the independent admin code; applicant
-//       = the guest code). See README → "Real access control".
-//    3. Set AUTH.mode = "roles" in js/config.js and redeploy.
+//       (committee = the ED password; admin = the independent Leadership
+//       password; applicant = the Guest password). See README, "Real access control".
+//    3. The page signs in with these accounts (AUTH in js/config.js).
 //    4. Sign in as admin once (publishes the PII-free list of interview times to
 //       /interviews_public/slots for applicants; every edit in Setup re-publishes).
 //  If the emails in js/config.js differ, edit the three constants below to match.
@@ -232,6 +232,9 @@ service cloud.firestore {
     // not against Leadership itself. Outside a close (closingTab null before and
     // after) it always passes, so the ranking reveal and stage writes are
     // unchanged. It uses only resource and request.time: no extra read.
+    // Every write must also leave roundStatus "closing" exactly when closingTab
+    // is set, so a close can never be left with no holder (or a holder with no
+    // close) for pages to misread.
     function leaseOk() {
       let before = resource == null ? {} : resource.data;
       let after = request.resource.data;
@@ -243,13 +246,15 @@ service cloud.firestore {
       let prev0 = before.get('lease', null);
       let prevAt = prev0 is map ? prev0.get('at', null) : null;
       let expired = !(prevAt is timestamp) || request.time > prevAt + duration.value(5, 'm');
-      return (holder == null && next == null)                      // no close, none starting
+      let consistent = (after.get('roundStatus', 'open') == 'closing') == (next != null);
+      return consistent && (
+           (holder == null && next == null)                        // no close, none starting
         || (holder == null && next != null
             && fresh && claim.get('tab', '') == next)              // starting a close
         || (holder != null && fresh && claim.get('tab', '') == holder
             && (next == holder || next == null))                   // holder: renew, edit, finish, stop
         || (holder != null && next != null && next != holder
-            && fresh && claim.get('tab', '') == next && expired);  // takeover of a stale lease
+            && fresh && claim.get('tab', '') == next && expired)); // takeover of a stale lease
     }
     match /interviews_meta/{doc} {
       allow read:  if isCommittee();

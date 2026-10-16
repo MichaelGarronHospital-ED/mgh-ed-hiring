@@ -51,8 +51,14 @@ does anything until a later page sets a stage, starts a close or writes a new do
   `closingAttemptId`. Outside a close it always passes.
 - **Leadership first.** `isAdmin()` comes first in every rule, so the extra `get()` of
   `state` is paid on ED and Guest writes only (one read each).
+- **Review fix:** every write to `state` must leave `roundStatus: "closing"` exactly when
+  `closingTab` is set (`leaseOk`), so a close can never be left without a holder, or a holder
+  without a close; a close found with no holder can be finished or stopped by any page at once.
+  The header's set-up steps now name the passwords, not the old codes.
+- **Review fix:** the sim's generated site copies are never tracked (`.gitignore` has
+  `site-emulator/`; NEW `tests/repo-hygiene.test.mjs` fails if anything generated is tracked).
 
-Tests: `tests/rules-v2.test.mjs` (81, its own project id) covers every probe in the
+Tests: `tests/rules-v2.test.mjs` (83 with the review fix, its own project id) covers every probe in the
 design, including the review round 4 and 5 ones run before publishing: a close started
 without a claim, with a client-time claim, and over an old claim; expired, missing and
 malformed stored claims (null, a string, a number, a map without `at`), with and without

@@ -386,6 +386,24 @@ describe("close lease: the holder, plain writes and stale pages (review 3 M1, m1
     await assertFails(setDoc(doc(admin(), STATE), { closingTab: "p-A", lease: claim("p-A") }, { merge: true }));
   });
 
+  // review: a close must never be left with no holder, or a holder with no close
+  it("roundStatus is \"closing\" exactly when closingTab is set, on every write", async () => {
+    await assertFails(setDoc(doc(admin(), STATE), { roundStatus: "open", lease: claim("p-B", "l-b") }, { merge: true }));
+    await assertFails(setDoc(doc(admin(), STATE), { closingTab: null, lease: claim("p-B", "l-b") }, { merge: true }));
+    await seed(STATE, { roundStatus: "open", closingTab: null });
+    await assertFails(setDoc(doc(admin(), STATE), { closingTab: "p-A", lease: claim("p-A") }, { merge: true }));
+    await assertFails(setDoc(doc(admin(), STATE), { roundStatus: "closing", lease: claim("p-A") }, { merge: true }));
+    await assertSucceeds(setDoc(doc(admin(), STATE), { roundStatus: "closing", closingTab: "p-A", lease: claim("p-A") }, { merge: true }));
+  });
+
+  it("a close left with no holder (closing, no closingTab) can be finished or stopped at once by any page", async () => {
+    await seed(STATE, { roundStatus: "closing", closingAttemptId: "a-1" });
+    await assertFails(setDoc(doc(admin(), STATE), { interviewsComplete: true }, { merge: true }));
+    await assertSucceeds(setDoc(doc(admin(), STATE), { closingTab: "p-C", lease: claim("p-C") }, { merge: true }));
+    await seed(STATE, { roundStatus: "closing", closingAttemptId: "a-1" });
+    await assertSucceeds(setDoc(doc(admin(), STATE), { roundStatus: "open", closingTab: null, lease: claim("p-C") }, { merge: true }));
+  });
+
   it("a takeover must name itself in its claim", async () => {
     await seed(STATE, { roundStatus: "closing", closingTab: "p-B", closingAttemptId: "a-1", lease: { tab: "p-B", at: ago(10) } });
     await assertFails(setDoc(doc(admin(), STATE), { closingTab: "p-C", lease: claim("p-B") }, { merge: true }));
