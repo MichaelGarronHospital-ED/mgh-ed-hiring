@@ -271,13 +271,15 @@ function givenTokens(name) {
 export const firstKey = (name) => givenTokens(name)[0] || "";
 // every given name, for two applicants whose first names also match ("Jane A Kim" → "janea")
 export const givenKey = (name) => givenTokens(name).join("");
-// What an applicant TYPES in "First name": titles dropped, first word or all words.
+// What an applicant TYPES in "First name": titles dropped; all words first (the
+// most specific key, "Jane B" -> "janeb"), then the first word ("jane"). The page
+// tries them in this order, so "Jane B Kim" is never booked under Jane Kim.
 export function typedFirstKeys(first) {
   const toks = String(first || "").trim().split(/\s+/).filter(Boolean);
   let i = 0;
   while (i < toks.length - 1 && TITLES.has(tokKey(toks[i]))) i++;
   const rest = toks.slice(i).map(tokKey).filter(Boolean);
-  return [...new Set([rest[0] || "", rest.join("")])].filter(Boolean);
+  return [...new Set([rest.join(""), rest[0] || ""])].filter(Boolean);
 }
 // The id of an applicant's availability document: their own key when they share
 // a surname (set by Leadership), else today's surname key.

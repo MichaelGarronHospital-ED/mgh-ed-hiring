@@ -50,6 +50,14 @@ the three role-account sign-ins (see the console steps in README).
   fight an open page); `sync-allowed.mjs` and `report-data.mjs --issues` stop flagging pairs
   that have keys; `scripts/README.md` says the app does all three now.
 
+- **Review fixes:** the applicant page tries the most specific first-name key first (all given
+  names, then the first one), so "Jane B Kim" is found as herself and never booked under Jane
+  Kim (`tests/keys.test.mjs`). The maintenance scripts use the applicant's own key when they
+  share a surname (`availKey`), like the app: `report-data`, `purge-candidate` and
+  `migrate-candidate` read and move the right document, and `rename-candidate` recomputes
+  `availKey` the way the app's Rename does (and refuses, pointing to the app, when a rename
+  would create a new shared surname).
+
 Tests: `tests/keys.test.mjs`, `tests/candidates.test.mjs` (the remove-and-re-add fixture from
 `scripts/seed-migration.mjs`), `applicant-availability` two-Kims case; `sim/applicants.mjs`
 (7 scenarios); emulator `sameSurnameBooking`. Checked: see the release commit message.

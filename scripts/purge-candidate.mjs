@@ -24,7 +24,7 @@ import { initializeApp } from "firebase/app";
 import { getAuth, signInWithEmailAndPassword, connectAuthEmulator } from "firebase/auth";
 import { getFirestore, collection, getDocs, doc, getDoc, deleteDoc, connectFirestoreEmulator } from "firebase/firestore";
 import { firebaseConfig, AUTH } from "../js/config.js";
-import { refreshAllowed, describeAllowed, lastKey } from "./allowed-list.mjs";
+import { refreshAllowed, describeAllowed, candKey } from "./allowed-list.mjs";
 
 const argv = process.argv.slice(2);
 const val = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : null; };
@@ -88,7 +88,7 @@ for (const r of screening.filter((r) => r.candId === cand.id))
 for (const s of scores.filter((s) => s.candId === cand.id))
   refs.push(`interviews_scores/${s.id} — ${s.member}: overall ${s.overall || "–"}, ` +
     `${Object.values(s.notes || {}).filter((v) => String(v || "").trim()).length} note(s)`);
-const av = availCand.find((a) => a.id === lastKey(cand.name));
+const av = availCand.find((a) => a.id === candKey(cand));
 if (av && Object.keys(av.slots || {}).length)
   refs.push(`interviews_availCand/${av.id} — ${Object.keys(av.slots).length} time pick(s)`);
 if (overrides[cand.id]) refs.push(`interviews_meta/config panelOverrides[${cand.id}] — a manually built panel`);
@@ -103,7 +103,7 @@ if (refs.length) {
 
 // Availability is keyed by surname, so a namesake would share the doc. Say so
 // rather than implying this candidate had picked no times.
-const shared = candidates.filter((c) => c.id !== cand.id && lastKey(c.name) === lastKey(cand.name));
+const shared = candidates.filter((c) => c.id !== cand.id && candKey(c) === candKey(cand));
 if (shared.length && av)
   console.log(`Note: availability under "${av.id}" is shared with ${shared.map((c) => c.name).join(", ")} — left alone.`);
 

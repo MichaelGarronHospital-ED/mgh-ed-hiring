@@ -13,7 +13,7 @@ test("firstKey and givenKey drop titles and use the same normalising as lastKey"
   assert.equal(givenKey("Dr Jane A. Kim"), "janea");
   assert.equal(lastKey("Dr Jane A. Kim"), "kim");
   assert.deepEqual(typedFirstKeys("Jane"), ["jane"]);
-  assert.deepEqual(typedFirstKeys(" Dr  Jane A. "), ["jane", "janea"]);
+  assert.deepEqual(typedFirstKeys(" Dr  Jane A. "), ["janea", "jane"]);
   assert.deepEqual(typedFirstKeys(""), []);
 });
 
@@ -64,4 +64,15 @@ test("claimPlan moves the whole document to the chosen applicant, never over the
   const q = claimPlan({ ...st, availRaw: { ...st.availRaw, "kim-min": { slots: { t2: "zoom" } } } }, "kim", "b");
   assert.deepEqual(q.writes, []);
   assert.ok(q.skipped[0].includes("already answered again"));
+});
+
+// review M6: two applicants "Jane Kim" and "Jane B Kim". The page tries the
+// surname, then each typed key in order; the most specific one must win.
+test("Jane B Kim is found as herself, never as Jane Kim", () => {
+  const keys = assignKeys([{ id: "a", name: "Dr Jane Kim" }, { id: "b", name: "Dr Jane B Kim" }]).patches;
+  const allowed = new Set([keys.a.availKey, keys.b.availKey]);
+  const find = (first, last) => [lastKey(last), ...typedFirstKeys(first).map((f) => `${lastKey(last)}-${f}`)].find((k) => allowed.has(k));
+  assert.equal(find("Jane B", "Kim"), "kim-janeb");
+  assert.equal(find("Dr Jane B.", "Kim"), "kim-janeb");
+  assert.equal(find("Jane", "Kim"), "kim-jane");
 });

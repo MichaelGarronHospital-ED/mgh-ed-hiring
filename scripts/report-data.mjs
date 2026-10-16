@@ -87,7 +87,8 @@ if (!ISSUES_ONLY) {
 
   for (const id of order) {
     const b = byCand.get(id) || { scr: [], sc: [] };
-    const av = availCand.find((a) => a.id === lastKey(nameById.get(id) || ""));
+    const cc = candidates.find((x) => x.id === id);
+    const av = availCand.find((a) => a.id === (cc ? (cc.availKey || lastKey(cc.name)) : ""));
     const picks = Object.keys((av && av.slots) || {}).length;
     console.log(`\n${label(id)}`);
     if (!b.scr.length && !b.sc.length && !picks) { console.log("  (no input)"); continue; }
