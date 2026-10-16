@@ -35,11 +35,11 @@ export const ls = {
 // Does this browser let us remember anything at all? Used to warn people whose
 // own answers will not replay on a later visit, rather than letting it look
 // like the app lost them.
-export function storageWorks() {
+export function storageWorks(kind = "localStorage") {
   try {
     const k = "__ed_probe__";
-    window.localStorage.setItem(k, "1");
-    window.localStorage.removeItem(k);
+    window[kind].setItem(k, "1");
+    window[kind].removeItem(k);
     return true;
   } catch { return false; }
 }
