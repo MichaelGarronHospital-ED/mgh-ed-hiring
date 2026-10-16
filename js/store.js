@@ -15,10 +15,20 @@
 //    scores     : { "<member>~<candId>": { overall, notes:{<qi>:text} } }
 //    meta       : { interviewsComplete }
 //    offers     : { "<candId>": { status:""|"offered"|"accepted"|"declined", note, offeredAt, respondedAt, updatedAt } }  (admin only)
+//    questions  : interviews_meta/questions as stored, or null (H2)
+//    schedule   : interviews_meta/schedule, or null (H4)
+//    passwordsMeta : interviews_meta/passwords (dates only), or null (H3)
+//  "<member>" is a member ID (members.js). Legacy ids are the names.
+//
+//  History (H12): every leadership mutation takes an optional `history` entry
+//  (history.js entry(), or a function of the saved document before the change
+//  that returns one) and writes it in the SAME batch or transaction, stamped
+//  with the server time. There is no "saved but not logged".
 // ============================================================================
 
-import { effectiveSlots, toStored } from "./slots.js";
-import { lastKey, ls } from "./util.js";
+import { effectiveSlots, toStored } from "./slots.js?v=R1";
+import { lastKey, ls } from "./util.js?v=R1";
+import { ROUND_COLLECTIONS } from "./backup.js?v=R1";
 
 export const key = (member, candId) => `${member}~${candId}`;
 
@@ -33,6 +43,7 @@ const EMPTY = () => ({
   // admin first edits them, so it is deliberately not defaulted here.
   settings: { committee: [], chair: "", slots: [], oneDrive: "", panelOverrides: {} },
   publicInfo: { orgName: "", note: "" },
+  questions: null, schedule: null, passwordsMeta: null,
   // Roster surname keys that firestore.rules lets an applicant write availability
   // under. null = not configured yet (the rules then refuse every applicant
   // write, so the admin session syncs this from the roster — app.js).
@@ -46,7 +57,7 @@ class BaseStore {
   // picker waits for it: someone who commits to a name from the fallback list
   // files their flags, ratings and scores under that spelling, and if the saved
   // roster spells them differently their input lands under a name nothing reads.
-  constructor() { this.state = EMPTY(); this._subs = new Set(); this.ready = true; }
+  constructor() { this.state = EMPTY(); this._subs = new Set(); this.ready = true; this.metaLoaded = true; }
   // Which committee member is signed in. Only the Firestore backend acts on it
   // (it decides which screening documents to fetch back); local mode already
   // has the whole collection in hand.
@@ -62,7 +73,14 @@ class BaseStore {
   subscribe(cb) { this._subs.add(cb); cb(this.state); return () => this._subs.delete(cb); }
   _emit() { for (const cb of this._subs) cb(this.state); }
   async syncPublicSlots() { /* no-op except on Firestore */ }
+  // Forget this browser's own copies of scores, screening and an applicant's
+  // picks (H12, at log out). The server copy is untouched.
+  clearLocalCopies() { ls.del(ECHO_KEY); ls.del(CAND_ECHO_KEY); }
 }
+
+// history may be an entry, or a function (savedBefore, patch) → entry | null
+const histOf = (h, before, patch) => (typeof h === "function" ? h(before, patch) : h) || null;
+const newLocalId = () => "h" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
 // Apply an edit to the interview times against the LATEST saved list (not the
 // caller's possibly-stale copy). `mutate(times, overrides)` returns
@@ -96,11 +114,55 @@ export class LocalStore extends BaseStore {
     try { this._ch && this._ch.postMessage(1); } catch { /* ignore */ }
     this._emit();
   }
+  // the local twin of a history document (no server clock here)
+  _hist(entry) {
+    if (!entry) return;
+    const { _id, ...data } = entry;
+    const id = _id || newLocalId();
+    this.state.history = { ...(this.state.history || {}), [id]: { ...data, at: new Date().toISOString() } };
+    return id;
+  }
+  async addHistory(entry) { this._load(); this._hist(entry); this._save(); }
+  async listHistory({ after = 0, limit = 50 } = {}) {
+    this._load();
+    const all = Object.entries(this.state.history || {}).map(([id, e]) => ({ id, ...e }))
+      .sort((a, b) => String(b.at).localeCompare(String(a.at)));
+    const entries = all.slice(after, after + limit);
+    return { entries, next: after + limit < all.length ? after + limit : null };
+  }
+  // the stored state, re-shaped as the raw documents of every round collection
+  async snapshotRaw() {
+    this._load();
+    const st = JSON.parse(JSON.stringify(this.state));
+    const raw = Object.fromEntries(ROUND_COLLECTIONS.map((n) => [n, {}]));
+    (st.candidates || []).forEach(({ id, ...d }) => { raw.interviews_candidates[id] = d; });
+    raw.interviews_screening = st.screening || {};
+    raw.interviews_scores = st.scores || {};
+    Object.entries(st.availIv || {}).forEach(([id, slots]) => { raw.interviews_availIv[id] = { slots }; });
+    Object.entries(st.availCand || {}).forEach(([id, slots]) => { raw.interviews_availCand[id] = { slots, ...((st.replies || {})[id] || {}) }; });
+    raw.interviews_offers = st.offers || {};
+    raw.interviews_applicant = st.notices || {};
+    const set = st.settings || {};
+    const pub = { ...(Array.isArray(set.times) ? { times: set.times } : {}), slots: set.slots || [] };
+    if (st.publicInfo && st.publicInfo.orgName) pub.orgName = st.publicInfo.orgName;
+    if (st.booking) pub.booking = st.booking;
+    raw.interviews_public = { slots: pub };
+    const meta = { state: st.meta || {}, config: set };
+    if (Array.isArray(st.allowedNames)) meta.allowed = { keys: st.allowedNames };
+    if (st.questions) meta.questions = st.questions;
+    if (st.schedule) meta.schedule = st.schedule;
+    if (st.passwordsMeta) meta.passwords = st.passwordsMeta;
+    raw.interviews_meta = meta;
+    raw.interviews_history = st.history || {};
+    return raw;
+  }
   // -- mutations
-  async addCandidate(name) {
+  async addCandidate(name, history) {
     const id = "c-" + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + "-" + Math.random());
     this.state.candidates = [...this.state.candidates, { id, name, removed: false }];
+    this._hist(histOf(history, null, { id, name }));
     this._save();
+    return id;
   }
   // Local mode has no rules engine, so mirror what the rules enforce on the
   // server: the same answer to "is this surname on the roster?", so the applicant
@@ -109,8 +171,9 @@ export class LocalStore extends BaseStore {
   async checkName(key) {
     return this.state.candidates.some((c) => !c.removed && lastKey(c.name) === key);
   }
-  async setCandidateRemoved(id, removed) {
+  async setCandidateRemoved(id, removed, history) {
     this.state.candidates = this.state.candidates.map((c) => c.id === id ? { ...c, removed } : c);
+    this._hist(histOf(history));
     this._save();
   }
   async setScreening(member, candId, patch) {
@@ -132,20 +195,45 @@ export class LocalStore extends BaseStore {
     this.state.scores = { ...this.state.scores, [k]: next };
     this._save();
   }
-  async setMeta(patch) { this.state.meta = { ...this.state.meta, ...patch }; this._save(); }
-  async setOffer(candId, patch) {
+  async setMeta(patch, history) { this.state.meta = { ...this.state.meta, ...patch }; this._hist(histOf(history)); this._save(); }
+  async setOffer(candId, patch, history) {
     this.state.offers = { ...(this.state.offers || {}), [candId]: { ...((this.state.offers || {})[candId] || {}), ...patch } };
+    this._hist(histOf(history));
     this._save();
   }
-  async setSettings(patch) { this.state.settings = { ...this.state.settings, ...patch }; this._save(); }
-  async updateConfig(mutate) {
+  async setSettings(patch, history) { this.state.settings = { ...this.state.settings, ...patch }; this._hist(histOf(history)); this._save(); }
+  async updateConfig(mutate, history) {
     this._load();
-    this.state.settings = { ...this.state.settings, ...mutate(this.state.settings) };
+    const before = JSON.parse(JSON.stringify(this.state.settings || {}));
+    const patch = mutate(this.state.settings);
+    this.state.settings = { ...this.state.settings, ...patch };
+    this._hist(histOf(history, before, patch));
     this._save();
   }
-  async updateTimes(defaults, mutate) {
+  async updateTimes(defaults, mutate, history) {
     this._load(); // pick up another tab's edits first
-    this.state.settings = { ...this.state.settings, ...applyTimes(this.state.settings, defaults, mutate) };
+    const before = JSON.parse(JSON.stringify(this.state.settings || {}));
+    const next = applyTimes(this.state.settings, defaults, mutate);
+    this.state.settings = { ...this.state.settings, ...next };
+    this._hist(histOf(history, before, next));
+    this._save();
+  }
+  // H2: create the questions document only if there is none (two tabs migrating
+  // at once: the second is a no-op). Returns whether it wrote.
+  async createQuestions(docData, history) {
+    this._load();
+    if (this.state.questions) return false;
+    this.state.questions = { ...docData, updatedAt: new Date().toISOString() };
+    this._hist(histOf(history));
+    this._save();
+    return true;
+  }
+  async updateQuestions(mutate, history) {
+    this._load();
+    const before = this.state.questions ? JSON.parse(JSON.stringify(this.state.questions)) : null;
+    const next = mutate(before);
+    this.state.questions = { ...next, updatedAt: new Date().toISOString() };
+    this._hist(histOf(history, before, next));
     this._save();
   }
 }
@@ -178,6 +266,7 @@ export class FirestoreStore extends BaseStore {
     // a denied or hanging read can never leave the app stuck behind the picker —
     // it falls back to the config roster, which is what it did before.
     this.ready = false;
+    this.metaLoaded = false;   // the first real interviews_meta snapshot (not the 5 s fallback)
     const arrive = () => { this.ready = true; };
     setTimeout(() => { if (!this.ready) { arrive(); this._emit(); } }, 5000);
     this._candEcho = !on("availCand"); // applicants: no read access to availCand
@@ -223,6 +312,12 @@ export class FirestoreStore extends BaseStore {
       this.state.settings = { committee: [], chair: "", slots: [], oneDrive: "", ...(c ? c.data() : {}) };
       const a = snap.docs.find((d) => d.id === "allowed");
       this.state.allowedNames = a && Array.isArray(a.data().keys) ? a.data().keys : null;
+      // H2/H4/H3: read by the same listener, so no new collection is subscribed
+      const one = (id) => { const d = snap.docs.find((x) => x.id === id); return d ? d.data() : null; };
+      this.state.questions = one("questions");
+      this.state.schedule = one("schedule");
+      this.state.passwordsMeta = one("passwords");
+      this.metaLoaded = true;
       arrive();
     });
     // Candidates read the slots from the public, PII-free mirror doc.
@@ -296,14 +391,54 @@ export class FirestoreStore extends BaseStore {
     ls.set(ECHO_KEY, JSON.stringify({ screening: this._echoScreening, scores: this._echoScores }));
   }
   _doc(name, id) { const { db, doc } = this._fb; return doc(db, name, id); }
-  async addCandidate(name) {
-    const { setDoc } = this._fb;
-    const id = "c-" + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + "");
-    await setDoc(this._doc("interviews_candidates", id), { name, removed: false });
+  // A new history document for a batch or transaction, stamped by the server.
+  _histDoc(entry) {
+    const { db, doc, collection, serverTimestamp } = this._fb;
+    const { _id, ...data } = entry;
+    return [_id ? doc(db, "interviews_history", _id) : doc(collection(db, "interviews_history")), { ...data, at: serverTimestamp() }];
   }
-  async setCandidateRemoved(id, removed) {
-    const { updateDoc } = this._fb;
-    await updateDoc(this._doc("interviews_candidates", id), { removed });
+  // One write plus its history entry, together or not at all.
+  async _withHistory(apply, history) {
+    const { db, writeBatch } = this._fb;
+    const b = writeBatch(db);
+    apply(b);
+    const h = histOf(history);
+    if (h) b.set(...this._histDoc(h));
+    await b.commit();
+  }
+  async addHistory(entry) { await this._withHistory(() => {}, entry); }
+  // One page of the history, newest first (a one-shot read, never a listener).
+  async listHistory({ after = null, limit: n = 50 } = {}) {
+    const { db, collection, query, orderBy, limit, startAfter, getDocs } = this._fb;
+    const parts = [collection(db, "interviews_history"), orderBy("at", "desc")];
+    if (after) parts.push(startAfter(after));
+    parts.push(limit(n));
+    const snap = await getDocs(query(...parts));
+    const entries = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return { entries, next: snap.docs.length === n ? snap.docs[snap.docs.length - 1] : null };
+  }
+  // Every document of every round collection, exactly as the server returns it
+  // (backups, the restore preview and the close: never page state, which mixes
+  // in this browser's echo and defaults). One-shot reads.
+  async snapshotRaw() {
+    const { db, collection, getDocs } = this._fb;
+    const snaps = await Promise.all(ROUND_COLLECTIONS.map((n) => getDocs(collection(db, n))));
+    const raw = {};
+    ROUND_COLLECTIONS.forEach((n, i) => { raw[n] = Object.fromEntries(snaps[i].docs.map((d) => [d.id, d.data()])); });
+    return raw;
+  }
+  clearLocalCopies() {
+    super.clearLocalCopies();
+    this._echoScreening = {}; this._echoScores = {};
+  }
+  async addCandidate(name, history) {
+    const id = "c-" + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + "");
+    await this._withHistory((b) => b.set(this._doc("interviews_candidates", id), { name, removed: false, addedAt: this._fb.serverTimestamp() }),
+      histOf(history, null, { id, name }));
+    return id;
+  }
+  async setCandidateRemoved(id, removed, history) {
+    await this._withHistory((b) => b.update(this._doc("interviews_candidates", id), { removed }), history);
   }
   // The echo is written optimistically so input appears instantly — but it MUST
   // be rolled back if the write fails, exactly as setAvail does. Without that, a
@@ -392,20 +527,18 @@ export class FirestoreStore extends BaseStore {
       throw e;
     }
   }
-  async setMeta(patch) {
-    const { setDoc } = this._fb;
-    await setDoc(this._doc("interviews_meta", "state"), patch, { merge: true });
+  async setMeta(patch, history) {
+    await this._withHistory((b) => b.set(this._doc("interviews_meta", "state"), patch, { merge: true }), history);
   }
   // Admin only. One document per candidate; merge so changing the status never
   // drops the note (and vice versa). Shown optimistically, rolled back on a
   // refusal so the screen never claims an outcome the server did not keep.
-  async setOffer(candId, patch) {
-    const { setDoc } = this._fb;
+  async setOffer(candId, patch, history) {
     const prev = this.state.offers[candId];
     this.state.offers = { ...this.state.offers, [candId]: { ...(prev || {}), ...patch } };
     this._emit();
     try {
-      await setDoc(this._doc("interviews_offers", candId), patch, { merge: true });
+      await this._withHistory((b) => b.set(this._doc("interviews_offers", candId), patch, { merge: true }), history);
     } catch (e) {
       const next = { ...this.state.offers };
       if (prev === undefined) delete next[candId]; else next[candId] = prev;
@@ -446,38 +579,70 @@ export class FirestoreStore extends BaseStore {
       throw e; // offline or misconfigured — the caller must not read that as "unknown name"
     }
   }
-  async setSettings(patch) {
-    const { setDoc } = this._fb;
+  async setSettings(patch, history) {
     // mergeFields (not merge:true): replace each written field wholesale. merge
     // deep-merges maps, so a deleted panelOverrides entry would never go away.
-    await setDoc(this._doc("interviews_meta", "config"), patch, { mergeFields: Object.keys(patch) });
-    // Mirror the PII-free slot list to the public doc so applicants can read it.
-    if ("slots" in patch) {
-      await setDoc(this._doc("interviews_public", "slots"),
+    // The PII-free slot list is mirrored to the public doc in the same batch.
+    await this._withHistory((b) => {
+      b.set(this._doc("interviews_meta", "config"), patch, { mergeFields: Object.keys(patch) });
+      if ("slots" in patch) b.set(this._doc("interviews_public", "slots"),
         { slots: patch.slots || this.state.settings.slots || [] }, { merge: true });
-    }
+    }, history);
   }
   // Read-modify-write of the committee config against the LATEST saved copy.
   // `mutate(config)` returns a patch; each patched field is replaced wholesale.
-  async updateConfig(mutate) {
+  // `history` may be a function of (saved config, patch), for undo data.
+  async updateConfig(mutate, history) {
     const { db, runTransaction } = this._fb;
     const ref = this._doc("interviews_meta", "config");
     await runTransaction(db, async (tx) => {
       const snap = await tx.get(ref);
-      const patch = mutate(snap.exists() ? snap.data() : {});
+      const before = snap.exists() ? snap.data() : {};
+      const patch = mutate(before);
       tx.set(ref, patch, { mergeFields: Object.keys(patch) });
+      const h = histOf(history, before, patch);
+      if (h) tx.set(...this._histDoc(h));
     });
   }
   // Transactional: re-reads the saved config so two admins editing times at once
   // can't overwrite each other, and writes config + public mirror together.
-  async updateTimes(defaults, mutate) {
+  async updateTimes(defaults, mutate, history) {
     const { db, runTransaction } = this._fb;
     const cfgRef = this._doc("interviews_meta", "config"), pubRef = this._doc("interviews_public", "slots");
     await runTransaction(db, async (tx) => {
       const snap = await tx.get(cfgRef);
-      const next = applyTimes(snap.exists() ? snap.data() : {}, defaults, mutate);
+      const before = snap.exists() ? snap.data() : {};
+      const next = applyTimes(before, defaults, mutate);
       tx.set(cfgRef, next, { mergeFields: ["times", "panelOverrides"] });
       tx.set(pubRef, { times: next.times }, { mergeFields: ["times"] });
+      const h = histOf(history, before, next);
+      if (h) tx.set(...this._histDoc(h));
+    });
+  }
+  // H2: create interviews_meta/questions only if it is missing, with its history
+  // entry. Two Leadership tabs migrating at once: the second is a no-op.
+  async createQuestions(docData, history) {
+    const { db, runTransaction, serverTimestamp } = this._fb;
+    const ref = this._doc("interviews_meta", "questions");
+    return runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      if (snap.exists()) return false;
+      tx.set(ref, { ...docData, updatedAt: serverTimestamp() });
+      const h = histOf(history);
+      if (h) tx.set(...this._histDoc(h));
+      return true;
+    });
+  }
+  async updateQuestions(mutate, history) {
+    const { db, runTransaction, serverTimestamp } = this._fb;
+    const ref = this._doc("interviews_meta", "questions");
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      const before = snap.exists() ? snap.data() : null;
+      const next = mutate(before);
+      tx.set(ref, { ...next, updatedAt: serverTimestamp() });
+      const h = histOf(history, before, next);
+      if (h) tx.set(...this._histDoc(h));
     });
   }
   // push the current list to the PII-free public doc (self-heal for dates

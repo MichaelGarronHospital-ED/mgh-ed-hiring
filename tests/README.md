@@ -4,7 +4,14 @@ Tests for [`../firestore.rules`](../firestore.rules). They run against the local
 Firestore **emulator** — no real Firebase project, no real data, no credentials,
 nothing to clean up afterwards.
 
-Two files here are not rules tests. `panels.share.test.mjs` covers the pure
+Several files here are not rules tests and need no emulator: `members`, `questions`,
+`history`, `backup` and `versions` cover the pure modules added in Oct 2026 (member and
+question ids, change-history texts and undo, the backup file format, and the `?v=` import
+check), and `store.snapshot` / `store.questions` drive `FirestoreStore` against a stub (the
+backup never contains an entry that exists only in this browser's echo; the questions arrive
+through the meta listener the ED page already has).
+
+Two older files here are not rules tests either. `panels.share.test.mjs` covers the pure
 scheduler: that nobody is left off every panel when a seat exists for them
 (`shareOut`), that the repair never breaks a panel, and that an applicant with no
 interview is given the right one of the three reasons. It needs no emulator.

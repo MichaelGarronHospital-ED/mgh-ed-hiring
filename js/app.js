@@ -7,17 +7,31 @@
 //  Firestore rules when AUTH.mode === "roles" (see config.js + firestore.rules).
 // ============================================================================
 import { firebaseConfig, ORG_NAME, CHAIR, COMMITTEE, SLOTS, ONEDRIVE,
-         CANDIDATE_CODE_LOCAL, AUTH, SCREENING_DEADLINE } from "./config.js";
-import { decryptContent } from "./data.js";
-import { buildXlsx, XLSX_MIME } from "./xlsx.js";
-import { LocalStore, FirestoreStore, key } from "./store.js";
-import { autoPanels, buildPanel } from "./panels.js";
+         CANDIDATE_CODE_LOCAL, AUTH, SCREENING_DEADLINE } from "./config.js?v=R1";
+import { decryptContent } from "./data.js?v=R1";
+import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R1";
+import { LocalStore, FirestoreStore, key } from "./store.js?v=R1";
+import { autoPanels, buildPanel } from "./panels.js?v=R1";
 import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell, lastKey,
-         ss, ls, storageWorks } from "./util.js";
+         ss, ls, storageWorks, dialogOpen } from "./util.js?v=R1";
 import { effectiveSlots, slotLabel, slotTimeLabel, groupByDate, checkSlot, splitRange, responseCounts,
-         newSlotId, isStructured, fmtDate } from "./slots.js";
+         newSlotId, isStructured, fmtDate } from "./slots.js?v=R1";
+import { normalizeCommittee, interviewers as interviewersOf, pickable as pickableOf, memberName, memberStatus,
+         idsWithInput, validMemberId, newMemberId, toStoredCommittee } from "./members.js?v=R1";
+import { fromLegacy, normalizeQuestions, liveQuestions, idsWithNotes } from "./questions.js?v=R1";
+import { entry as hEntry, newHistoryId, panelUndo, canUndo, undoneIds, textFor, whoFor, whenFor, hashOf } from "./history.js?v=R1";
+import { buildBackup, backupFileName, toState } from "./backup.js?v=R1";
 
-let QUESTIONS = [], SCALE = [], GUIDE = [];
+// The release this page is. Must equal version.json and every "?v=" in every
+// import (tests/versions.test.mjs). A page that sees a different version.json
+// was updated underneath it (section "Reload notice" below).
+const RELEASE = "R1";
+
+// Interview questions (H2): the saved document (interviews_meta/questions) when
+// there is one, else what the typed password decrypted from the old js/data.js
+// this session (the fallback until the first Leadership sign-in copies them).
+let LEGACY_Q = null, LEGACY_DOC = null;
+const Q = () => normalizeQuestions(S && S.questions) || LEGACY_Q;
 let store = null, S = null;
 let fbAuth = null;   // { auth, authFns } once Firebase has loaded, so Log out can sign out
 const ui = { role: "committee", isAdmin: false, member: null, tab: "screen", scoreCand: null,
@@ -32,13 +46,26 @@ const ADMIN_SCOPES = ["candidates", "screening", "availIv", "availCand", "scores
 // Effective config: admin-set settings (DB) if present, else placeholder defaults.
 // `slots` = interview times [{id,date,start,end}] in date order; everything that
 // references a time (availability, panels) uses its stable `id`, never a position.
+// Members (H6): `committee` is everyone on the list, normalized with a stable
+// `id` (legacy id = name); `interviewers` the active ones who interview (panels,
+// the availability grid); `pickable` the active ones (the name list). Every key
+// is an id; `nameOf(id)` is for display only.
+let _effMemo = { src: undefined, c: null };
 function EFF() {
   const s = (S && S.settings) || {};
-  const committee = s.committee && s.committee.length ? s.committee : COMMITTEE;
+  const src = s.committee && s.committee.length ? s.committee : COMMITTEE;
+  if (_effMemo.src !== src) _effMemo = { src, c: normalizeCommittee(src) };
+  const committee = _effMemo.c;
   const slots = effectiveSlots(s, SLOTS);
-  return { committee, chair: s.chair || CHAIR, slots, oneDrive: s.oneDrive || ONEDRIVE,
+  return { committee, interviewers: interviewersOf(committee), pickable: pickableOf(committee),
+    nameOf: (id) => memberName(committee, id),
+    chair: s.chair || CHAIR, slots, oneDrive: s.oneDrive || ONEDRIVE,
     overrides: s.panelOverrides || {}, slotIds: slots.map((t) => t.id) };
 }
+const mname = (id) => EFF().nameOf(id);
+// Who a Leadership history entry says did it: the name Leadership picked to
+// review as, else just "leadership".
+const byWho = () => ui.member || "leadership";
 const slotName = (id) => slotLabel(EFF().slots.find((t) => t.id === String(id)));
 // only answers for times that still exist count (edited/removed times leave stale keys)
 const liveAnswers = (map) => { const ids = new Set(EFF().slotIds); return Object.keys(map || {}).filter((k) => ids.has(k)); };
@@ -57,7 +84,8 @@ async function unlock(typed, silent) {
   let decrypted = null;
   try { decrypted = await decryptContent(typed); } catch { /* not a staff/admin code */ }
   if (decrypted) {
-    QUESTIONS = decrypted.q; SCALE = decrypted.s; GUIDE = decrypted.g || [];
+    LEGACY_DOC = fromLegacy(decrypted);
+    LEGACY_Q = normalizeQuestions(LEGACY_DOC);
     ui.isAdmin = decrypted.isAdmin;
     ui.role = ui.isAdmin ? "admin" : "committee";
     try { await initStore(ui.role, typed); }
@@ -212,8 +240,8 @@ async function initStore(role, typed) {
       // The roster changed out from under this session and no longer has the
       // name we're filing input under — everything typed from here would be
       // saved to a name nobody reads. Send them back to the picker instead.
-      if (ui.member && !EFF().committee.some((m) => m.name === ui.member)) {
-        toast(`“${ui.member}” is no longer on the committee list. Please pick your name again`, "err");
+      if (ui.member && !EFF().pickable.some((m) => m.id === ui.member)) {
+        toast("You are no longer on the list. Please pick your name again", "err");
         backToMemberPick();
         return;
       }
@@ -235,8 +263,24 @@ async function initStore(role, typed) {
       if (pub) { ui._syncedSlots = true; store.syncPublicSlots(pub).catch(() => { ui._syncedSlots = false; }); }
     }
     if (ui.role === "admin" && isConfigured()) syncAllowedNames();
+    if (ui.role === "admin") maybeMigrateQuestions();
   });
   S = store.getState();
+}
+
+// H2: the first Leadership sign-in on this release copies the questions out of
+// the old encrypted js/data.js into interviews_meta/questions (ids "0".."n-1",
+// exactly the keys every saved note uses). Create-only, in a transaction with
+// its history entry, so two tabs doing it at once write it once.
+function maybeMigrateQuestions() {
+  if (!store || !store.metaLoaded || S.questions || !LEGACY_DOC || ui._migrating || ui._migrated) return;
+  ui._migrating = true;
+  const n = LEGACY_DOC.questions.length;
+  store.createQuestions(LEGACY_DOC, hEntry("questions.migrate",
+    `Copied the interview questions from the old locked file (${n} question${n === 1 ? "" : "s"})`, { by: byWho() }))
+    .then(() => { ui._migrated = true; })
+    .catch((e) => console.warn("questions copy failed:", e && e.code))
+    .finally(() => { ui._migrating = false; });
 }
 
 // Keep the rules' allowed-surname list in step with the roster. firestore.rules
@@ -248,13 +292,42 @@ async function initStore(role, typed) {
 // so it is a no-op in the normal case. Self-healing on purpose: any roster edit,
 // from any device or from scripts/, is reconciled the next time an admin has the
 // app open, with no separate step for someone to forget.
+//
+// Guard against a write loop between page versions (review M4, m4). Two open
+// Leadership tabs that build the list differently (an older and a newer page)
+// would otherwise rewrite it back and forth all day. So:
+//   - a write made because THIS tab's roster changed since its last write is
+//     never counted and never held back;
+//   - only a "fight" counts: the saved list changed to something this tab did
+//     not write while this tab's roster stayed the same. After 3 fights in 10
+//     minutes this tab stops rewriting and tells Leadership to reload the other
+//     tab, and a timer tries again when the 10 minutes are up.
+const ALLOWED_WINDOW_MS = 10 * 60 * 1000;
+const rosterSig = () => S.candidates.map((c) => `${c.id}:${c.name}:${c.removed ? 1 : 0}`).sort().join("|");
 function syncAllowedNames() {
   const want = [...new Set(S.candidates.filter((c) => !c.removed).map((c) => lastKey(c.name)).filter(Boolean))].sort();
   if (!want.length) return;                 // never publish an empty list: that would lock every applicant out
   const have = S.allowedNames;
-  if (have && have.length === want.length && want.every((k, i) => have[i] === k)) return;
+  if (have && have.length === want.length && want.every((k, i) => have[i] === k)) {
+    if (ui._allowed && ui._allowed.held) { ui._allowed.held = false; renderUpdateLine(); }
+    return;
+  }
   if (ui._syncingNames) return;
+  const g = ui._allowed = ui._allowed || { last: null, fights: [], held: false, timer: null };
+  const roster = rosterSig(), now = Date.now();
+  if (g.last && g.last.roster === roster) {             // our roster didn't move: someone else changed it
+    g.fights = g.fights.filter((t) => now - t < ALLOWED_WINDOW_MS);
+    g.fights.push(now);
+    if (g.fights.length >= 3) {
+      if (!g.held) { g.held = true; renderUpdateLine(); }
+      clearTimeout(g.timer);
+      g.timer = setTimeout(() => { if (S) syncAllowedNames(); }, g.fights[0] + ALLOWED_WINDOW_MS - now + 50);
+      return;
+    }
+  }
+  if (g.held) { g.held = false; renderUpdateLine(); }
   ui._syncingNames = true;
+  g.last = { roster, list: want.join("|") };
   store.setAllowedNames(want)
     .catch((e) => console.warn("allowed-name sync failed:", e && e.code))
     .finally(() => { ui._syncingNames = false; });
@@ -267,11 +340,15 @@ async function loadFirestore() {
     import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"),
   ]);
   const app = a.initializeApp(firebaseConfig);
+  const auth = au.getAuth(app);
+  const db = f.getFirestore(app);
   return {
-    app, auth: au.getAuth(app), authFns: au,
-    db: f.getFirestore(app), collection: f.collection, doc: f.doc,
+    app, auth, authFns: au,
+    db, collection: f.collection, doc: f.doc,
     setDoc: f.setDoc, updateDoc: f.updateDoc, onSnapshot: f.onSnapshot, runTransaction: f.runTransaction,
-    deleteField: f.deleteField,
+    deleteField: f.deleteField, writeBatch: f.writeBatch, serverTimestamp: f.serverTimestamp,
+    getDoc: f.getDoc, getDocs: f.getDocs, deleteDoc: f.deleteDoc, Timestamp: f.Timestamp,
+    query: f.query, orderBy: f.orderBy, limit: f.limit, startAfter: f.startAfter,
   };
 }
 
@@ -333,9 +410,10 @@ function fillMemberSel() {
   // is the live settings array (or the COMMITTEE config constant), and panel
   // building reads that order, so sorting it in place would reorder the roster
   // everywhere.
-  const names = [...EFF().committee].sort((a, b) => a.name.localeCompare(b.name));
+  // Active people only; the value is the member id (legacy id = the name).
+  const names = [...EFF().pickable].sort((a, b) => a.name.localeCompare(b.name));
   sel.innerHTML = `<option value="" disabled selected>Select your name</option>`
-    + names.map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("");
+    + names.map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join("");
   // Don't let anyone commit to a name off the config fallback list before the
   // saved roster lands — input filed under the wrong spelling is invisible
   // afterwards, and it looks exactly like the app having lost it.
@@ -366,7 +444,7 @@ function showApp() {
   if (store) store.setMember(ui.member);
   $("#memberpick").classList.add("hidden");
   $("#orgName").textContent = ORG_NAME;
-  $("#whoLine").textContent = ui.member || "Admin";
+  $("#whoLine").textContent = ui.member ? mname(ui.member) : "Admin";
   $("#changeMember").textContent = ui.member ? "Change" : "Review as a member";
   $("#adminTag").classList.toggle("hidden", !ui.isAdmin || !ui.member);
   $("#setupBtn").classList.toggle("hidden", !ui.isAdmin);
@@ -433,7 +511,8 @@ function buildTabs() {
 
 // --------------------------------------------------------------- helpers
 const cand = (id) => S.candidates.find((c) => c.id === id);
-const flagsCount = (id) => EFF().committee.filter((c) => (S.screening[key(c.name, id)] || {}).flag).length;
+// everyone on the list counts, including people who have left (their input stays)
+const flagsCount = (id) => EFF().committee.filter((c) => (S.screening[key(c.id, id)] || {}).flag).length;
 const isIn = (c) => !c.removed && flagsCount(c.id) < 2;
 const activeCands = () => S.candidates.filter(isIn);
 
@@ -455,7 +534,10 @@ function section(id, title, sub, bodyHtml, opts = {}) {
 // wire <details> toggles → persist open state (called after each render)
 function wireSections() {
   document.querySelectorAll("details.section").forEach((d) => {
-    d.addEventListener("toggle", () => { ui.openSections[d.dataset.sec] = d.open; });
+    d.addEventListener("toggle", () => {
+      ui.openSections[d.dataset.sec] = d.open;
+      if (d.dataset.sec === "setHistory" && d.open && !ui.hist) IV.loadHistory();
+    });
   });
 }
 
@@ -529,7 +611,8 @@ function render() {
 // settings, not navigating away).
 function openSetup() {
   // always open with every card collapsed
-  ["setChair", "setCommittee", "setSlots", "setOneDrive"].forEach((k) => delete ui.openSections[k]);
+  ["setChair", "setCommittee", "setSlots", "setOneDrive", "setBackup", "setHistory"].forEach((k) => delete ui.openSections[k]);
+  ui.hist = null;   // the history card reads fresh each time Setup opens
   renderSettings(); wireSections();
   $("#setupModal").classList.remove("hidden");
   $("#setupBtn").classList.add("active");
@@ -563,9 +646,10 @@ function screenStats(candId) {
   const { committee } = EFF();
   const flags = [], ratings = [], by = [];
   committee.forEach((m) => {
-    const s = S.screening[key(m.name, candId)] || {};
-    if (s.flag) flags.push({ who: m.name, reason: String(s.reason || "").trim() });
-    if (s.rating) { ratings.push(s.rating); by.push({ who: m.name, rating: s.rating }); }
+    const s = S.screening[key(m.id, candId)] || {};
+    const who = m.active ? m.name : `${m.name} (left)`;
+    if (s.flag) flags.push({ who, id: m.id, reason: String(s.reason || "").trim() });
+    if (s.rating) { ratings.push(s.rating); by.push({ who, rating: s.rating }); }
   });
   by.sort((a, b) => b.rating - a.rating || a.who.localeCompare(b.who));
   // reasons first: a bare flag is the least informative line on the card and
@@ -646,10 +730,10 @@ function myInputNotice(list, get, deviceOnly) {
   // the app can't do is worse than saying nothing.
   const anywhere = !store || store.screeningReadBack !== false;
   const why = deviceOnly
-    ? "Everything you tap is saved to leadership immediately. Scores are deliberately write-only: "
-      + "nobody on the committee can read anyone's back, which is what stops the ranking leaking "
-      + "mid-process. So this page replays your answers from this browser. On another device they "
-      + "will look blank; that is the privacy model, not lost work."
+    ? "Everything you type is saved to leadership. Scores are deliberately write-only: nobody on the "
+      + "committee can read anyone's back, which is what stops the ranking leaking mid-process. This "
+      + "browser keeps a copy of your scores so you can see them again here. Logging out clears it. "
+      + "On another device they look blank; that is the privacy model, not lost work."
     : anywhere
       ? "Saved to leadership as you tap. Your own flags and ratings follow you: sign in on any device, "
         + "pick your name, and they are here. Only leadership sees everyone's together."
@@ -661,13 +745,13 @@ function myInputNotice(list, get, deviceOnly) {
 // ------------------------------------------------------------ 1 · Screen
 function renderScreen() {
   const me = ui.member;
-  const { committee, oneDrive } = EFF();
+  const { pickable: committee, oneDrive } = EFF();   // waiting on = active people only
   let html = me ? hint("Flag anyone you feel isn't qualified. Priority is optional.") : "";
 
   if (ui.isAdmin) {
     const submitted = new Set();
     Object.keys(S.screening).forEach((k) => { const v = S.screening[k]; if (v && (v.flag || v.rating)) submitted.add(k.split("~")[0]); });
-    const notYet = committee.filter((m) => !submitted.has(m.name)).map((m) => m.name);
+    const notYet = committee.filter((m) => !submitted.has(m.id)).map((m) => m.name);
 
     // Still-in first, then excluded/removed — that split is the decision, so it
     // holds whichever sort is chosen and excluded people never drift back up
@@ -755,7 +839,7 @@ function renderScreen() {
       to an entry the Screen tab doesn't show reviewers.
       ${hidden.entries.map((e) => {
         const bits = [part(e.flags, "flag"), part(e.ratings, "rating"), part(e.scores, "interview score")].filter(Boolean).join(", ");
-        const who = [...e.members].sort().map((m) => `<span class="chip">${escapeHtml(m)}</span>`).join("");
+        const who = [...e.members].map(mname).sort().map((m) => `<span class="chip">${escapeHtml(m)}</span>`).join("");
         const target = e.likely && e.likely.length === 1 ? e.likely[0] : null;
         const cmd = e.name && target
           ? `node migrate-candidate.mjs --from ${JSON.stringify(e.name)} --to ${JSON.stringify(target.name)} --apply`
@@ -773,7 +857,8 @@ function renderScreen() {
       input already given under the new entry). To fix a spelling in future use
       <code>scripts/rename-candidate.mjs</code>, which keeps the id, instead of removing and re-adding.</div>
     </div>`;
-    const dash = `<p><b>${submitted.size}/${committee.length}</b> members have submitted screening.</p>
+    const nSub = committee.filter((m) => submitted.has(m.id)).length;
+    const dash = `<p><b>${nSub}/${committee.length}</b> members have submitted screening.</p>
       ${notYet.length ? `<p class="muted small">Waiting on:</p><div>${notYet.map((n) => `<span class="chip">${escapeHtml(n)}</span>`).join("")}</div>`
         : `<p class="ok small">✓ Everyone has submitted.</p>`}
       ${hiddenBlock}`;
@@ -785,7 +870,7 @@ function renderScreen() {
 
     html += section("collation", "Collation & shortlist", `${activeCands().length} of ${S.candidates.length} still in`, collation,
         { open: !me, info: "Everyone's flags and priority ratings, collated. A candidate drops off the interview list at 2 or more flags. Reasons are visible to leadership only. Export the shortlist as a CSV here." })
-      + section("dash", "Coordinator dashboard", `${submitted.size}/${committee.length} submitted`, dash,
+      + section("dash", "Coordinator dashboard", `${nSub}/${committee.length} submitted`, dash,
         { open: false, info: "Track who has and hasn't submitted their screening, so you can chase people before the deadline.", count: hidden.entries.length ? ICON.warn : null })
       + section("adder", "Add candidates", "", adder,
         { open: false, info: "Paste applicant names to add them to the interview list. Stored securely in your database, never in the app's code. You can add or remove people any time." })
@@ -847,24 +932,24 @@ function slotRows(slots, map, handler) {
 // panel run at this time? That is computed with buildPanel — the same function
 // the Panels tab uses — so the two can never disagree about the rules.
 function availGrid() {
-  const { committee, slots, chair } = EFF();
+  const { interviewers: committee, slots, chair, nameOf } = EFF();
   if (!slots.length || !committee.length) return "";
 
   // Chair first (every panel needs them), then alphabetical.
   const people = [...committee].sort((a, b) =>
-    a.name === chair ? -1 : b.name === chair ? 1 : a.name.localeCompare(b.name));
+    a.id === chair ? -1 : b.id === chair ? 1 : a.name.localeCompare(b.name));
 
   // buildPanel wants { g, avail }; the roster stores the field as `gender`
-  // (same mapping as renderPanels — see the interviewers object there).
+  // (same mapping as renderPanels, see the interviewers object there).
   const ivMap = {};
-  for (const m of committee) ivMap[m.name] = { g: m.gender, avail: S.availIv[m.name] || {} };
+  for (const m of committee) ivMap[m.id] = { g: m.gender, avail: S.availIv[m.id] || {} };
 
   const GLYPH = { ip: "P", zoom: "Z", either: "E" };
   const WORD = { ip: "in person", zoom: "Zoom", either: "either" };
 
   const head = `<tr><th class="tlab">Time</th>` +
-    people.map((m) => `<th class="ivcol"><span data-tip="${escapeHtml(m.name)}${m.name === chair ? " (chair)" : ""}">` +
-      `${escapeHtml(m.name)}${m.name === chair ? " ★" : ""}</span></th>`).join("") +
+    people.map((m) => `<th class="ivcol"><span data-tip="${escapeHtml(m.name)}${m.id === chair ? " (chair)" : ""}">` +
+      `${escapeHtml(m.name)}${m.id === chair ? " ★" : ""}</span></th>`).join("") +
     `<th class="sum" data-tip="Whether a balanced panel can be formed at this time">Panel</th>` +
     `<th class="pad" aria-hidden="true"></th></tr>`;
 
@@ -872,18 +957,18 @@ function availGrid() {
     `<tr class="dayrow"><td colspan="${people.length + 3}">${escapeHtml(g.title)}</td></tr>` +
     g.items.map((t) => {
       const cells = people.map((m) => {
-        const v = (S.availIv[m.name] || {})[t.id];
+        const v = (S.availIv[m.id] || {})[t.id];
         return v
           ? `<td class="av ${v}" data-tip="${escapeHtml(m.name)} · ${WORD[v]}">${GLYPH[v]}</td>`
           : `<td class="av no" data-tip="${escapeHtml(m.name)} · not available"></td>`;
       }).join("");
-      const n = people.filter((m) => (S.availIv[m.name] || {})[t.id]).length;
+      const n = people.filter((m) => (S.availIv[m.id] || {})[t.id]).length;
       // A panel needs the chair, 3–5 people and a gender mix; ask buildPanel
       // rather than guessing from the count, which would be wrong and look right.
       const ok = buildPanel(t.id, "ip", ivMap, chair) || buildPanel(t.id, "zoom", ivMap, chair);
       const why = ok ? `A panel can run at this time (${n} available)`
         : n === 0 ? "Nobody has said they can do this time"
-        : !(S.availIv[chair] || {})[t.id] ? `${chair} (chair) isn't available, so no panel can run`
+        : !(S.availIv[chair] || {})[t.id] ? `${nameOf(chair)} (chair) isn't available, so no panel can run`
         : `${n} available, but not a combination that makes a balanced panel`;
       return `<tr><th class="tlab">${escapeHtml(slotTimeLabel(t))}</th>${cells}` +
         `<td class="sum ${ok ? "yes" : "nope"}" data-tip="${escapeHtml(why)}">${n}${ok ? " ✓" : " ✗"}</td>` +
@@ -914,14 +999,14 @@ function availGrid() {
 // Letters carry the meaning, never colour alone, and the ring is a shape, so
 // the grid still reads without colour vision.
 function candGrid() {
-  const { slots, committee, chair } = EFF();
+  const { slots, interviewers: committee, chair } = EFF();
   const surnameOf = (n) => String(n || "").trim().split(/\s+/).pop();
   const people = activeCands().slice()
     .sort((a, b) => surnameOf(a.name).localeCompare(surnameOf(b.name)) || a.name.localeCompare(b.name));
   if (!slots.length || !people.length) return "";
 
   const ivMap = {};
-  for (const m of committee) ivMap[m.name] = { g: m.gender, avail: S.availIv[m.name] || {} };
+  for (const m of committee) ivMap[m.id] = { g: m.gender, avail: S.availIv[m.id] || {} };
   const canRun = (id) => !!(buildPanel(id, "ip", ivMap, chair) || buildPanel(id, "zoom", ivMap, chair));
   // where each applicant currently sits — auto or hand-built. Wrapped because
   // this grid must still draw if panel building throws for any reason.
@@ -1022,15 +1107,15 @@ function renderAvailability() {
   // is one line per grid, so it lives in the grid it is about, and the section
   // is gone. Each header carries its own count, so a closed section still
   // answers "how far along is this?" without being opened.
-  const { committee } = EFF();
-  const ivIn = committee.filter((m) => liveAnswers(S.availIv[m.name]).length).length;
+  const { interviewers: committee } = EFF();
+  const ivIn = committee.filter((m) => liveAnswers(S.availIv[m.id]).length).length;
   const waiting = (names) => names.length
     ? `<p class="small muted" style="margin-top:.7rem">Waiting on ${names.map((n) => escapeHtml(n)).join(", ")}</p>`
     : `<p class="small ok" style="margin-top:.7rem">✓ Everyone has answered</p>`;
 
   const grid = availGrid();
   if (grid) {
-    const ivNot = committee.filter((m) => !liveAnswers(S.availIv[m.name]).length).map((m) => m.name);
+    const ivNot = committee.filter((m) => !liveAnswers(S.availIv[m.id]).length).map((m) => m.name);
     html += section("avgrid", "Who's available when", `${ivIn} of ${committee.length} interviewers`,
       grid + waiting(ivNot),
       { open: !ui.isAdmin || !ui.member,
@@ -1054,6 +1139,10 @@ function renderAvailability() {
 function renderScore() {
   const list = activeCands().slice().sort((a, b) => a.name.localeCompare(b.name));
   const head = hint("Notes per question, then one overall rating.");
+  // Questions by id, in the saved order (H2). Notes are keyed by question id;
+  // legacy ids are "0".."9", exactly the keys every older note already has.
+  const QQ = Q(), QUESTIONS = liveQuestions(QQ), SCALE = QQ ? QQ.scale : [], GUIDE = QQ ? QQ.guide : [];
+  if (!QUESTIONS.length) { delete $("#score").dataset.sig; $("#score").innerHTML = head + empty(ICON.star, "No questions yet", "The interview questions aren't set up yet."); return; }
   if (!list.length) { delete $("#score").dataset.sig; $("#score").innerHTML = head + empty(ICON.star, "No candidates to score", "Candidates on the interview list will appear here."); return; }
   if (!ui.scoreCand || !list.some((c) => c.id === ui.scoreCand)) ui.scoreCand = list[0].id;
   const me = ui.member, cid = ui.scoreCand;
@@ -1080,7 +1169,7 @@ function renderScore() {
   // note into the NEXT candidate's box. A change of candidate or person always
   // rebuilds, so nothing typed for one can ever appear under another.
   const root = $("#score");
-  const sig = [me, cid, list.map((c) => c.id).join(","), QUESTIONS.length, SCALE.length].join("|");
+  const sig = [me, cid, list.map((c) => c.id).join(","), QUESTIONS.map((q) => q.id).join(","), SCALE.length].join("|");
   // About to rebuild: land anything still pausing first, then start over so
   // `rec` is read after it (the saves may already have re-entered here).
   if (root.dataset.sig !== sig && flushPending()) return renderScore();
@@ -1091,11 +1180,11 @@ function renderScore() {
       const c = list.find((x) => x.id === o.value);
       if (c) o.textContent = c.name + (scored(c) ? " ✓" : "");
     });
-    QUESTIONS.forEach((q, i) => {
-      const t = $("#note-" + i), saved = (rec.notes || {})[i] || "";
+    QUESTIONS.forEach((q) => {
+      const t = $("#note-" + q.id), saved = (rec.notes || {})[q.id] || "";
       // not one whose save is still waiting out its pause: its box is NEWER
       // than the saved copy, and typing into a reverted box would save it short
-      if (t !== act && !noteTimers[cid + ":" + i] && t.value !== saved) t.value = saved;
+      if (t !== act && !noteTimers[cid + ":" + q.id] && t.value !== saved) t.value = saved;
       t.closest(".qrow").classList.toggle("done", !!String(t.value).trim());
     });
     const box = $("#overallIn");
@@ -1111,11 +1200,11 @@ function renderScore() {
           `<option value="${c.id}" ${c.id === cid ? "selected" : ""}>${escapeHtml(c.name)}${scored(c) ? " ✓" : ""}</option>`).join("")}</select>
         <span class="scorenav">${jump(-1)}${jump(1)}</span></div></div>
       ${QUESTIONS.map((q, i) => {
-        const filled = String((rec.notes || {})[i] || "").trim();
-        // numbered from 1 for the human reading it; the note itself is still
-        // keyed by the array index, so nothing saved moves.
-        return `<div class="prow qrow ${filled ? "done" : ""}"><div class="q">${escapeHtml(q)}</div>
-          <textarea id="note-${i}" oninput="IV.note(${i},this.value)" placeholder="Notes" aria-label="Notes for question ${i + 1}">${escapeHtml((rec.notes || {})[i] || "")}</textarea></div>`;
+        const filled = String((rec.notes || {})[q.id] || "").trim();
+        // numbered from 1 for the human reading it; the note itself is keyed by
+        // the question's id, so reordering or adding questions moves nothing.
+        return `<div class="prow qrow ${filled ? "done" : ""}"><div class="q">${escapeHtml(q.text)}</div>
+          <textarea id="note-${q.id}" oninput="IV.note('${q.id}',this.value)" placeholder="Notes" aria-label="Notes for question ${i + 1}">${escapeHtml((rec.notes || {})[q.id] || "")}</textarea></div>`;
       }).join("")}
       <div class="prow"><div class="row center"><label class="grow name" for="overallIn">Overall rating${infoIcon(scaleText)}</label>
         <span class="overall"><input id="overallIn" type="text" inputmode="decimal" autocomplete="off" placeholder="1.0–5.0" value="${ov}"
@@ -1142,8 +1231,8 @@ function parseScore(raw) {
 // validate a panel's members against the current committee (size, chair present,
 // balanced = ≥1 who identifies female + ≥1 male). Returns flags + warnings.
 function validatePanel(members, slot, modality) {
-  const { committee, chair } = EFF();
-  const gmap = {}; committee.forEach((m) => { gmap[m.name] = m.gender; });
+  const { interviewers: committee, chair, nameOf } = EFF();
+  const gmap = {}; committee.forEach((m) => { gmap[m.id] = m.gender; });
   const present = members.filter((m) => gmap[m]);            // still on the committee
   const size = present.length, sizeOk = size >= 3 && size <= 5;
   const chairOk = present.includes(chair);
@@ -1163,8 +1252,8 @@ function validatePanel(members, slot, modality) {
   // else catches.
   if (slot != null) present.forEach((m) => {
     const av = (S.availIv[m] || {})[String(slot)];
-    if (av === undefined) warns.push(`${m} hasn't said they can do that time`);
-    else if (modality && !(av === "either" || av === modality)) warns.push(`${m} can't do ${modality} that time`);
+    if (av === undefined) warns.push(`${nameOf(m)} hasn't said they can do that time`);
+    else if (modality && !(av === "either" || av === modality)) warns.push(`${nameOf(m)} can't do ${modality} that time`);
   });
   return { ok: sizeOk && chairOk && balanced && members.length === present.length && !warns.length, sizeOk, chairOk, balanced, size, warns };
 }
@@ -1181,9 +1270,9 @@ function pruneOverrides(overrides, mapMembers) {
 
 // merge the auto-proposal with any manual overrides the admin has saved
 function computePanels() {
-  const { committee, chair, slotIds, overrides } = EFF();
+  const { interviewers: committee, chair, slotIds, overrides } = EFF();
   const interviewers = {};
-  committee.forEach((c) => { interviewers[c.name] = { g: c.gender, avail: S.availIv[c.name] || {} }; });
+  committee.forEach((c) => { interviewers[c.id] = { g: c.gender, avail: S.availIv[c.id] || {} }; });
   const candidates = {};
   activeCands().forEach((c) => { candidates[c.id] = { avail: availForCand(c) }; });
   const res = autoPanels(candidates, interviewers, slotIds, chair);
@@ -1200,7 +1289,7 @@ function computePanels() {
     if (!slotIds.includes(String(ov.slot))) { lostTime.push(cid); return; }
     const avail = candidates[cid] ? candidates[cid].avail : {};
     // always include the current chair; keep only current committee members
-    const names = new Set(committee.map((m) => m.name));
+    const names = new Set(committee.map((m) => m.id));
     let members = ov.members.filter((m) => names.has(m));
     if (names.has(chair) && !members.includes(chair)) members = [chair, ...members];
     const modality = ov.modality || (avail[ov.slot] === "zoom" ? "zoom" : avail[ov.slot] === "ip" ? "ip" : "ip");
@@ -1243,7 +1332,7 @@ function idleInterviewers(unused, res) {
   });
   // The lines have to read for one name as well as five, so each tail is a
   // clause with no subject and no number of its own.
-  const chips = (list) => list.map((x) => `<span class="chip">${escapeHtml(x)}</span>`).join("");
+  const chips = (list) => list.map((x) => `<span class="chip">${escapeHtml(mname(x))}</span>`).join("");
   const line = (list, tail) => list.length
     ? `<p class="small" style="margin-top:.45rem">${chips(list)}: ${tail}</p>` : "";
   return `<p class="small" style="margin-top:.55rem"><b class="warn">${ICON.warn} Not on any panel:</b></p>
@@ -1326,7 +1415,7 @@ function needsAttention(res) {
 }
 
 function renderPanels() {
-  const { committee, chair, slots, overrides } = EFF();
+  const { interviewers: committee, chair, slots, overrides, nameOf: memName } = EFF();
   const nameOf = (id) => (cand(id) || {}).name || id;
   const modPill = (m) => `<span class="pill ${m === "ip" ? "ip" : "zoom"}">${m === "ip" ? "In-person" : "Zoom"}</span>`;
   const res = computePanels();
@@ -1337,7 +1426,7 @@ function renderPanels() {
   html += `<p class="toolline">
     <button class="linky" onclick="IV.exportSchedule()">Export CSV</button>
     <button class="linky" onclick="IV.printSchedule()">Print</button>
-    ${Object.keys(overrides).length ? `<button class="linky" onclick="IV.clearOverrides(this)">Undo my edits</button>` : ""}
+    ${Object.keys(overrides).length ? `<button class="linky" onclick="IV.resetPanels(this)">Reset hand-made panels</button>` : ""}
   </p>`;
 
   // Who is actually doing the interviews. Counted from the panels ON SCREEN —
@@ -1345,23 +1434,23 @@ function renderPanels() {
   // a hand-edited panel skews the share and that is exactly what this should
   // show. The builder shares the non-chair seats out by load; this is the proof.
   if (res.panels.length) {
-    const load = {}; committee.forEach((m) => { load[m.name] = 0; });
+    const load = {}; committee.forEach((m) => { load[m.id] = 0; });
     res.panels.forEach((p) => p.members.forEach((m) => { if (m in load) load[m]++; }));
     const others = Object.entries(load).filter(([n]) => n !== chair);
     const counts = others.map(([, v]) => v);
     const unused = others.filter(([, v]) => !v).map(([n]) => n);
     const lo = counts.length ? Math.min(...counts) : 0, hi = counts.length ? Math.max(...counts) : 0;
     const chips = others.slice().sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([n, v]) => `<span class="chip">${escapeHtml(n)} <b>${v ? "×" + v : "×0"}</b></span>`).join("");
+      .map(([n, v]) => `<span class="chip">${escapeHtml(memName(n))} <b>${v ? "×" + v : "×0"}</b></span>`).join("");
     const n = res.panels.length;
-    const loadBody = `<div class="note">${escapeHtml(chair)} chairs every panel, so the share that can be
+    const loadBody = `<div class="note">${escapeHtml(memName(chair))} chairs every panel, so the share that can be
         spread is the <b>other</b> ${res.panelSize > 1 ? res.panelSize - 1 : 0} seat${res.panelSize === 2 ? "" : "s"} on each one.
         They go to whoever has done fewest interviews so far${res.panelSize > 3
           ? `, and panels are set to <b>${res.panelSize}</b> rather than the minimum 3 precisely so there are enough seats for everyone`
           : ""}.
         Availability wins over fairness where they conflict: someone free for only one time can only ever
         sit on that one panel, and every panel still has to stay balanced.</div>
-      <p class="small"><b>${escapeHtml(chair)}</b>: all ${n} panel${n === 1 ? "" : "s"} (chair).</p>
+      <p class="small"><b>${escapeHtml(memName(chair))}</b>: all ${n} panel${n === 1 ? "" : "s"} (chair).</p>
       <div>${chips}</div>
       ${unused.length ? idleInterviewers(unused, res)
         : `<p class="ok small" style="margin-top:.55rem">✓ Every interviewer is on at least one panel.</p>`}`;
@@ -1389,7 +1478,7 @@ function renderPanels() {
           <div class="small muted">${escapeHtml(slotName(p.slot))} · ${p.modality === "ip" ? "in person" : "Zoom"}${p.manual ? " · edited" : ""}</div>
         </div>
         <button class="btn ghost small" onclick="IV.editPanel('${p.cand}')">${editing ? "Done" : "Edit"}</button></div>
-      <div class="small members">${p.members.map(escapeHtml).join(" · ")}</div>
+      <div class="small members">${p.members.map((m) => escapeHtml(memName(m))).join(" · ")}</div>
       ${faults.length ? `<div class="badges">${faults.map((w) => `<span class="badge bad">${ICON.warn}${escapeHtml(w)}</span>`).join("")}</div>` : ""}`;
     if (editing) row += panelEditor(p);
     return row + `</div>`;
@@ -1403,7 +1492,7 @@ function renderPanels() {
 
 // inline editor for one panel: choose slot + toggle members (chair locked on)
 function panelEditor(p) {
-  const { committee, chair } = EFF();
+  const { interviewers: committee, chair } = EFF();
   const c = cand(p.cand);
   const avail = c ? availForCand(c) : {};
   // their available times (in date order), else every time; always keep the current one
@@ -1419,7 +1508,7 @@ function panelEditor(p) {
   // pass the committee INDEX (not the name) so names with quotes/apostrophes
   // (e.g. O'Brien) can't break the inline handler.
   const memToggles = committee.map((m, idx) => {
-    const on = members.has(m.name), isChair = m.name === chair;
+    const on = members.has(m.id), isChair = m.id === chair;
     return `<label class="chip" style="cursor:${isChair ? "default" : "pointer"}"><input type="checkbox" ${on ? "checked" : ""} ${isChair ? "disabled" : ""}
       onchange="IV.toggleMember('${p.cand}',${idx},this.checked)" style="margin-right:.35rem"/>${escapeHtml(m.name)}${isChair ? " (chair)" : ""}</label>`;
   }).join("");
@@ -1454,8 +1543,8 @@ function rankingRows() {
   const committee = EFF().committee;
   const obs = [];
   activeCands().forEach((c) => committee.forEach((m) => {
-    const v = (S.scores[key(m.name, c.id)] || {}).overall;
-    if (v) obs.push({ m: m.name, c: c.id, v });
+    const v = (S.scores[key(m.id, c.id)] || {}).overall;
+    if (v) obs.push({ m: m.id, c: c.id, v });
   }));
   const grand = obs.length ? obs.reduce((a, o) => a + o.v, 0) / obs.length : 0;
   const byRater = {};
@@ -1479,7 +1568,7 @@ function rankingRows() {
     return { id: c.id, name: c.name, n: mine.length, expected,
       raw: mine.reduce((a, o) => a + o.v, 0) / mine.length,
       adj: mine.reduce((a, o) => a + (o.v - offset[o.m]), 0) / mine.length,
-      raters: mine.map((o) => o.m) };
+      raters: mine.map((o) => mname(o.m)) };
   }).filter(Boolean);
 
   const byAdj = [...rows].sort((a, b) => b.adj - a.adj).map((r) => r.id);
@@ -1621,20 +1710,29 @@ function backupCard() {
   return `<div class="card backup">
     <div class="row center">
       <div class="grow"><h3 style="margin:0 0 .2rem">Back up this hiring cycle</h3>
-        <p class="small muted" style="margin:0">Everything in this round, in one Excel file: candidates, screening, availability,
-          panels, scores, ranking and offers. Save it with the CVs on OneDrive; the site is the working copy, not the record.</p></div>
+        <p class="small muted" style="margin:0">Everything in this round, read fresh from the database. The backup file can be
+          loaded back into the tool; the Excel file is for reading. Save both with the CVs on OneDrive; the site is the
+          working copy, not the record.</p></div>
     </div>
     <div class="row backup-actions">
-      <button class="btn filled" onclick="IV.exportCycle(this)">Download Excel</button>
+      <button class="btn filled" onclick="IV.downloadBackup(this)">Download backup file (for restoring)</button>
+      <button class="btn tinted" onclick="IV.exportCycle(this)">Download Excel</button>
       <button class="btn ghost" onclick="IV.printCycle()">Print or save as PDF</button>
     </div>
+    <p class="small muted" style="margin:.7rem 0 0">This file has applicant names and the committee's comments. Save it with the
+      CVs on OneDrive. Don't email it.</p>
   </div>`;
 }
 
 // One place builds every table, so the workbook and the printout cannot drift.
 const MOD_WORD = { ip: "In person", zoom: "Zoom", either: "Either" };
 function cycleTables() {
-  const { committee, chair, slots } = EFF();
+  const { committee, chair, slots, nameOf } = EFF();
+  // Everyone on the list plus anyone else whose input is saved (people who left
+  // or were taken off the list), so no one's input is missing from the record.
+  const memberIds = committee.map((m) => m.id);
+  idsWithInput(S).forEach((id) => { if (!memberIds.includes(id)) memberIds.push(id); });
+  const mStatus = (id) => memberStatus(committee, id);
   const status = (c) => c.removed ? "Removed" : flagsCount(c.id) >= 2 ? "Excluded (2+ flags)" : "Interview list";
   const rank = rankingRows();
   const rankPos = {}; rank.rows.forEach((r, i) => { rankPos[r.id] = i + 1; });
@@ -1646,35 +1744,44 @@ function cycleTables() {
     t.candidates.push([c.name, status(c), st.flags.length, st.avg == null ? null : Number(st.avg.toFixed(1)), st.n,
       rankPos[c.id] || null, OFFER_WORD[o.status] || ""]);
   });
-  t.screening = [["Reviewer", "Candidate", "Priority rating (1-5)", "Flagged", "Flag reason"]];
-  committee.forEach((m) => sortedCands.forEach((c) => {
-    const s = S.screening[key(m.name, c.id)];
-    if (s && (s.rating || s.flag || s.reason)) t.screening.push([m.name, c.name, s.rating || null, s.flag ? "Yes" : "", String(s.reason || "").trim()]);
+  t.screening = [["Reviewer", "Reviewer status", "Candidate", "Priority rating (1-5)", "Flagged", "Flag reason"]];
+  memberIds.forEach((id) => sortedCands.forEach((c) => {
+    const s = S.screening[key(id, c.id)];
+    if (s && (s.rating || s.flag || s.reason)) t.screening.push([nameOf(id), mStatus(id), c.name, s.rating || null, s.flag ? "Yes" : "", String(s.reason || "").trim()]);
   }));
   const slotCols = slots.map((x) => slotLabel(x));
   t.availCommittee = [["Committee member", ...slotCols]];
-  committee.forEach((m) => { const a = S.availIv[m.name] || {}; t.availCommittee.push([m.name, ...slots.map((x) => MOD_WORD[a[x.id]] || "")]); });
+  memberIds.filter((id) => { const m = committee.find((x) => x.id === id); return (m && m.role === "interviewer") || Object.keys(S.availIv[id] || {}).length; })
+    .forEach((id) => { const a = S.availIv[id] || {}; t.availCommittee.push([nameOf(id), ...slots.map((x) => MOD_WORD[a[x.id]] || "")]); });
   t.availApplicants = [["Candidate", ...slotCols]];
   sortedCands.filter((c) => !c.removed).forEach((c) => { const a = availForCand(c); t.availApplicants.push([c.name, ...slots.map((x) => MOD_WORD[a[x.id]] || "")]); });
   let res = { panels: [], unschedulable: [] };
   try { res = computePanels(); } catch { /* no times yet */ }
   t.panels = [["Candidate", "Time", "Format", "Panel", "Set by hand"]];
-  res.panels.forEach((p) => t.panels.push([(cand(p.cand) || {}).name || p.cand, slotName(p.slot), MOD_WORD[p.modality] || p.modality, p.members.join(", "), EFF().overrides[p.cand] ? "Yes" : ""]));
+  res.panels.forEach((p) => t.panels.push([(cand(p.cand) || {}).name || p.cand, slotName(p.slot), MOD_WORD[p.modality] || p.modality, p.members.map(nameOf).join(", "), EFF().overrides[p.cand] ? "Yes" : ""]));
   (res.unschedulable || []).forEach((id) => t.panels.push([(cand(id) || {}).name || id, "Not scheduled", "", "", ""]));
-  const qis = new Set();
-  Object.values(S.scores).forEach((s) => Object.keys((s && s.notes) || {}).forEach((q) => qis.add(Number(q))));
-  const qList = [...qis].filter((q) => Number.isFinite(q)).sort((a, b) => a - b);
-  t.scores = [["Reviewer", "Candidate", "Overall score", ...qList.map((q) => `Q${q + 1} notes`)]];
-  committee.forEach((m) => sortedCands.forEach((c) => {
-    const s = S.scores[key(m.name, c.id)];
-    if (s && (s.overall || Object.values(s.notes || {}).some(Boolean))) t.scores.push([m.name, c.name, s.overall || null, ...qList.map((q) => (s.notes || {})[q] || "")]);
+  // Score columns per question id, in the saved order, headed by the question's
+  // text; then any id found in notes that the list no longer has.
+  const QQ = Q();
+  const noted = idsWithNotes(S.scores);
+  const listed = (QQ ? QQ.questions : []).filter((q) => !q.archived || noted.includes(q.id));
+  const extra = noted.filter((id) => !listed.some((q) => q.id === id));
+  const qCols = [...listed.map((q) => ({ id: q.id, head: q.text })),
+    ...extra.map((id) => ({ id, head: `Question no longer on the list (id ${id})` }))];
+  t.scores = [["Reviewer", "Reviewer status", "Candidate", "Overall score", ...qCols.map((q) => q.head)]];
+  memberIds.forEach((id) => sortedCands.forEach((c) => {
+    const s = S.scores[key(id, c.id)];
+    if (s && (s.overall || Object.values(s.notes || {}).some(Boolean))) t.scores.push([nameOf(id), mStatus(id), c.name, s.overall || null, ...qCols.map((q) => (s.notes || {})[q.id] || "")]);
   }));
+  t.questions = [["Question id", "Question", "Shown on the Score tab"]];
+  (QQ ? QQ.questions : []).forEach((q) => t.questions.push([q.id, q.text, q.archived ? "No" : "Yes"]));
+  extra.forEach((id) => t.questions.push([id, "(not on the list now; notes are kept)", "No"]));
   t.ranking = [["Rank", "Candidate", "Average score", "Rater-adjusted", "Scored by", "Panel size"]];
   rank.rows.forEach((r, i) => t.ranking.push([i + 1, r.name, Number(r.raw.toFixed(2)), Number(r.adj.toFixed(2)), r.n, r.expected || null]));
   t.offers = [["Candidate", "Rank", "Status", "Offered on", "Answered on", "Note"]];
   offerRows(rank.rows).forEach((r) => { const o = offerOf(r.id); t.offers.push([r.name, r.rank, OFFER_WORD[o.status] || "Not offered", o.offeredAt || "", o.respondedAt || "", o.note || ""]); });
-  t.committee = [["Committee member", "Role"]];
-  committee.forEach((m) => t.committee.push([m.name, m.name === chair ? "Chair" : "Member"]));
+  t.committee = [["Committee member", "Status", "Role"]];
+  memberIds.forEach((id) => t.committee.push([nameOf(id), mStatus(id), id === chair ? "Chair" : "Member"]));
   t.times = [["Interview time"]]; slots.forEach((x) => t.times.push([slotLabel(x)]));
   const n = offerCounts();
   t.summary = [["Item", "Value"],
@@ -1682,36 +1789,85 @@ function cycleTables() {
     ["Tool", ORG_NAME],
     ["Candidates", S.candidates.length],
     ["On the interview list", activeCands().length],
-    ["Committee members", committee.length],
+    ["Committee members", committee.filter((m) => m.active).length],
     ["Interview times", slots.length],
     ["Panels scheduled", res.panels.length],
     ["Scores submitted", t.scores.length - 1],
     ["Ranking revealed", S.meta.interviewsComplete ? "Yes" : "No"],
     ["Offers made", n.made], ["Accepted", n.accepted], ["Declined", n.declined], ["Awaiting reply", n.offered],
-    ["Not included", "Interview questions (encrypted) and committee members' gender (used only to balance panels)."]];
+    ["Not included", "Committee members' gender (used only to balance panels)."]];
   return t;
 }
 
 
 // ------------------------------------------------------------ 6 · Setup (admin)
 function renderSettings() {
-  const { committee, chair, slots, oneDrive } = EFF();
+  const { committee, interviewers, chair, slots, oneDrive, nameOf } = EFF();
   const committeeBody = `<div class="note">One per line as <b>Name, F</b> or <b>Name, M</b> (self-identified gender, used only to
       build balanced panels, never shown as an M/F label). Saving replaces the whole list.</div>
     <textarea id="commBulk" rows="6" placeholder="Vojdani, M&#10;Marrocco, F">${committee.map((m) => escapeHtml(m.name + ", " + m.gender)).join("\n")}</textarea>
     <div style="margin-top:.5rem"><button class="btn tinted small" onclick="IV.setCommittee(this)">Save committee</button></div>`;
   const chairBody = `<div class="note">The chair is on every panel.</div>
-    <select onchange="IV.setChair(this.value)" aria-label="Panel chair">${committee.map((m) => `<option value="${escapeHtml(m.name)}" ${m.name === chair ? "selected" : ""}>${escapeHtml(m.name)}</option>`).join("")}</select>`;
+    <select onchange="IV.setChair(this.value)" aria-label="Panel chair">${interviewers.map((m) => `<option value="${escapeHtml(m.id)}" ${m.id === chair ? "selected" : ""}>${escapeHtml(m.name)}</option>`).join("")}</select>`;
   const slotsBody = timesEditor(slots);
   const odBody = `<div class="note">Committee members open CVs from here. Stored privately (not in code).</div>
     <input id="odIn" type="text" placeholder="https://..." value="${escapeHtml(oneDrive === "#" ? "" : oneDrive)}" aria-label="OneDrive link"/>
     <div style="margin-top:.5rem"><button class="btn tinted small" onclick="IV.saveOneDrive(this)">Save link</button></div>`;
 
-  $("#settings").innerHTML = `${section("setChair", "Panel chair", chair, chairBody, { open: false, info: "The chair is on every interview panel. Pick from your committee list below." })}
+  const backupBody = `<p class="small" style="margin-top:0">A full copy of the round, read fresh from the database. The backup file
+      can be loaded back into the tool; the Excel file is for reading.</p>
+    <div class="row backup-actions" style="margin-top:.4rem">
+      <button class="btn tinted small" onclick="IV.downloadBackup(this)">Download backup file (for restoring)</button>
+      <button class="btn ghost small" onclick="IV.exportCycle(this)">Download Excel</button></div>
+    <p class="small muted">This file has applicant names and the committee's comments. Save it with the CVs on OneDrive. Don't email it.</p>`;
+  $("#settings").innerHTML = `${section("setChair", "Panel chair", nameOf(chair), chairBody, { open: false, info: "The chair is on every interview panel. Pick from your committee list below." })}
     ${section("setCommittee", "Committee (interviewers)", `${committee.length} members`, committeeBody, { open: false, info: "Your interviewers. One per line as ‘Name, F’ or ‘Name, M’. The F/M is self-identified and used only to build balanced panels. It is never shown as a label. Saving replaces the whole list." })}
     ${section("setSlots", "Interview times", `${slots.length} time${slots.length === 1 ? "" : "s"}`, slotsBody, { open: false, info: "The interview times interviewers and applicants choose from. Add a single time or a block of back-to-back times; edit or remove any time. If people already answered for a time you change, you choose whether to keep their answers or ask them again." })}
     ${section("setOneDrive", "Applications folder (OneDrive)", "", odBody, { open: false, info: "Link to the access-controlled OneDrive folder holding the CVs/cover letters. Committee members open applicant files from here. Stored privately, never in the app's code." })}
+    ${section("setBackup", "Backup", "", backupBody, { open: false, info: "Download everything in the working round. Do this before every release of the tool and before any big change." })}
+    ${section("setHistory", "Change history", "", historyBody(), { open: false, info: "Changes made with the Leadership password, newest first. Undo is offered where the change can still be undone." })}
     ${hint("Applicants are added on the Screen tab, under “Add candidates”.")}`;
+}
+
+// ------------------------------------------------ Setup → Change history (H12)
+// One-shot reads, 50 at a time; never a listener. Names come from ids now.
+function historyBody() {
+  const h = ui.hist;
+  if (!h) return `<p class="muted small">Loading…</p>`;
+  if (h.error) return `<p class="small bad">Couldn't load the change history. ${escapeHtml(h.error)}</p>`;
+  if (!h.entries.length) return `<p class="muted small">No changes recorded yet.</p>`;
+  const done = undoneIds(h.entries);
+  const ctx = { candName: (id) => (cand(id) || {}).name, memberName: mname };
+  const rows = h.entries.map((e) => {
+    const u = canUndo(e, S, done);
+    const act = u.ok ? `<button class="linky" onclick="IV.undoHistory('${escapeHtml(e.id)}',this)">Undo</button>`
+      : u.why ? `<span class="muted small">${escapeHtml(u.why)}</span>` : "";
+    return `<div class="hrow"><div class="grow"><div class="muted small">${escapeHtml(whenFor(e.at))} · ${escapeHtml(whoFor(e, mname))}</div>
+      <div class="small">${escapeHtml(textFor(e, ctx))}</div></div>${act}</div>`;
+  }).join("");
+  return `<div class="hlist">${rows}</div>${h.next ? `<p class="toolline"><button class="linky" onclick="IV.moreHistory(this)">Show more</button></p>` : ""}`;
+}
+function refreshHistoryCard() {
+  const d = document.querySelector('details[data-sec="setHistory"] .sec-body');
+  if (d) d.innerHTML = historyBody();
+}
+// Undo one entry: only if the thing it changed is exactly as the entry left it.
+// The undo is itself logged, pointing back at the entry (so the card can say
+// "Undone." instead of offering it again).
+async function applyUndo(e) {
+  const u = e.undo || {};
+  const mark = hEntry("undo", `Undid: ${e.text}`, { by: byWho(), cand: e.cand, undo: { of: e.id || null } });
+  if (u.kind === "panelOverrides") {
+    const ids = Object.keys(u.before || {});
+    await store.updateConfig((c) => {
+      const cur = { ...(c.panelOverrides || {}) };
+      if (hashOf(Object.fromEntries(ids.map((k) => [k, cur[k] || null]))) !== u.afterHash) throw new Error("Can't undo: changed since.");
+      ids.forEach((k) => { if (u.before[k]) cur[k] = u.before[k]; else delete cur[k]; });
+      return { panelOverrides: cur };
+    }, mark);
+    return;
+  }
+  throw new Error("This change can't be undone here.");
 }
 
 // ---------------------------------------------- Setup → Interview times editor
@@ -1721,7 +1877,7 @@ const tAdd = () => (ui.tAdd = ui.tAdd || { date: "", from: "", to: "", len: "60"
 const pl = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const hhmmOf = (v) => String(v || "").slice(0, 5); // some browsers report "09:00:00"
 // answers per time, counting only people who matter (same basis as the dashboard)
-const answerCounts = () => responseCounts(EFF().committee.map((m) => S.availIv[m.name]), activeCands().map(availForCand));
+const answerCounts = () => responseCounts(EFF().interviewers.map((m) => S.availIv[m.id]), activeCands().map(availForCand));
 // Setup re-renders on every live update. Hold it while the admin is typing in a
 // times form or a save is in flight (a re-render would close pickers, drop a
 // half-typed date, or swap the busy button), then catch up shortly after.
@@ -1970,23 +2126,37 @@ function markSaved() {
   markSaved._t = setTimeout(() => el.classList.add("hidden"), 2200);
 }
 // wrap a store write so it always shows Saving… → ✓ Saved
-async function saved(promise) { markSaving(); try { await promise; markSaved(); } catch (e) { toast("Couldn't save. Check your connection", "err"); } }
+async function saved(promise) { markSaving(); try { await track(promise); markSaved(); } catch (e) { toast("Couldn't save. Check your connection", "err"); } }
+// Writes this page has sent and the server hasn't confirmed (log out waits for
+// them; the self-reload after a new release never happens while any are open).
+let pendingWrites = 0;
+function track(promise) { pendingWrites++; return Promise.resolve(promise).finally(() => { pendingWrites--; }); }
+const unconfirmed = () => pendingWrites > 0 || Object.keys(inflight).length > 0;
 window.IV = {
   toggleFlag: (id) => { const cur = (S.screening[key(ui.member, id)] || {}).flag; saved(store.setScreening(ui.member, id, { flag: !cur, reason: cur ? "" : (S.screening[key(ui.member, id)] || {}).reason || "" })); },
-  saveReason: (id, btn) => withBusy(btn, () => store.setScreening(ui.member, id, { reason: $("#rsn-" + id).value }), "Saved"),
+  saveReason: (id, btn) => withBusy(btn, () => track(store.setScreening(ui.member, id, { reason: $("#rsn-" + id).value })), "Saved"),
   rate: (id, n) => { const cur = (S.screening[key(ui.member, id)] || {}).rating; saved(store.setScreening(ui.member, id, { rating: cur === n ? 0 : n })); },
   addCands: (btn) => withBusy(btn, async () => {
     const t = $("#bulkAdd"); if (!t) return;
     const existing = new Set(S.candidates.map((c) => c.name.trim().toLowerCase()));
     const names = t.value.split("\n").map((s) => s.trim()).filter(Boolean);
     let n = 0;
-    for (const nm of names) { if (!existing.has(nm.toLowerCase())) { existing.add(nm.toLowerCase()); await store.addCandidate(nm); n++; } }
+    for (const nm of names) {
+      if (existing.has(nm.toLowerCase())) continue;
+      existing.add(nm.toLowerCase());
+      await track(store.addCandidate(nm, (_b, p) => hEntry("roster.add", "Added {cand}", { by: byWho(), cand: p.id })));
+      n++;
+    }
     t.value = ""; toast(n ? `Added ${n} candidate${n === 1 ? "" : "s"}` : "No new names", n ? "ok" : "err");
   }),
   removeCand: async (id, v) => {
     const c = cand(id);
     if (v) { const ok = await confirmDialog(`Remove ${c ? c.name : "this candidate"} from the interview list? You can restore them later.`, { title: "Remove candidate", yes: "Remove" }); if (!ok) return; }
-    await store.setCandidateRemoved(id, v); toast(v ? "Removed" : "Restored", "ok");
+    try {
+      await track(store.setCandidateRemoved(id, v, hEntry(v ? "roster.remove" : "roster.restore",
+        v ? "Took {cand} off the list" : "Put {cand} back on the list", { by: byWho(), cand: id })));
+    } catch { toast("Couldn't save. Check your connection", "err"); return; }
+    toast(v ? "Removed" : "Restored", "ok");
   },
   avail: (id, v) => { const cur = (S.availIv[ui.member] || {})[id]; saved(store.setAvail("iv", ui.member, id, cur === v ? null : v)); },
   pickScore: (id) => {
@@ -2004,7 +2174,7 @@ window.IV = {
     ls.set(COLL_SORT_KEY, k);
     renderScreen(); wireSections();
   },
-  note: (qi, val) => saveNoteKeyed(ui.member, ui.scoreCand, qi, val),
+  note: (qid, val) => saveNoteKeyed(ui.member, ui.scoreCand, String(qid), val),
   // Typing saves a valid score after a pause, like notes do — the old buttons
   // saved on tap, and a box that only saved on blur would lose a score typed
   // just before the phone was locked. Who/which candidate is captured NOW, so
@@ -2051,12 +2221,13 @@ window.IV = {
   },
   setComplete: async (v, btn) => {
     if (v) { const ok = await confirmDialog("Mark all interviews complete and reveal the ranking to admins?", { title: "Reveal ranking", yes: "Reveal", danger: false }); if (!ok) return; }
-    return withBusy(btn, () => store.setMeta({ interviewsComplete: v }));
+    return withBusy(btn, () => track(store.setMeta({ interviewsComplete: v },
+      hEntry(v ? "ranking.reveal" : "ranking.hide", v ? "Revealed the ranking" : "Hid the ranking again", { by: byWho() }))));
   },
   // panels
   editPanel: (cid) => { ui.editPanel = ui.editPanel === cid ? null : cid; renderPanels(); },
   toggleMember: (cid, idx, on) => {
-    const name = (EFF().committee[idx] || {}).name; if (!name) return;
+    const name = (EFF().interviewers[idx] || {}).id; if (!name) return;
     ui._draft = ui._draft || {};
     const p = computePanels().panels.find((x) => x.cand === cid);
     const base = (ui._draft[cid] && ui._draft[cid].members) || (EFF().overrides[cid] && EFF().overrides[cid].members) || (p && p.members) || [EFF().chair];
@@ -2085,21 +2256,71 @@ window.IV = {
     // write just this entry onto the latest saved map (never a stale copy of the rest)
     const entry = { slot: String(slot), members, modality };
     try {
-      await withBusy(btn, () => store.updateConfig((c) => ({ panelOverrides: { ...(c.panelOverrides || {}), [cid]: entry } })), "Panel saved");
+      await withBusy(btn, () => track(store.updateConfig((c) => ({ panelOverrides: { ...(c.panelOverrides || {}), [cid]: entry } }),
+        (before, patch) => hEntry("panel.save", "Saved a hand-made panel for {cand}",
+          { by: byWho(), cand: cid, undo: panelUndo(before.panelOverrides, patch.panelOverrides, [cid]) }))), "Panel saved");
     } catch { return; }
     if (ui._draft) delete ui._draft[cid];
     ui.editPanel = null; renderPanels();
   },
   clearOverride: async (cid) => {
     try {
-      await store.updateConfig((c) => { const ov = { ...(c.panelOverrides || {}) }; delete ov[cid]; return { panelOverrides: ov }; });
+      await track(store.updateConfig((c) => { const ov = { ...(c.panelOverrides || {}) }; delete ov[cid]; return { panelOverrides: ov }; },
+        (before, patch) => hEntry("panel.reset", "Went back to the suggested panel for {cand}",
+          { by: byWho(), cand: cid, undo: panelUndo(before.panelOverrides, patch.panelOverrides, [cid]) })));
     } catch { toast("Couldn't save. Check your connection", "err"); return; }
     toast("Reset to auto", "ok"); ui.editPanel = null; renderPanels();
   },
-  clearOverrides: (btn) => withBusy(btn, async () => {
-    const ok = await confirmDialog("Discard all manual panel edits and go back to the auto-suggested panels?", { title: "Reset manual edits", yes: "Reset" });
-    if (!ok) return; await store.setSettings({ panelOverrides: {} }); renderPanels();
+  // H12: "Undo my edits" reset EVERYONE's hand-made panels without saying so.
+  // It now says so, names them, and can be undone (toast for 10 s, or Change
+  // history).
+  resetPanels: async (btn) => {
+    const ov = EFF().overrides, ids = Object.keys(ov);
+    if (!ids.length) return;
+    const names = ids.map((id) => String((cand(id) || {}).name || "an applicant").replace(/^Dr\.?\s+/i, ""));
+    const ok = await confirmDialog(`Go back to the suggested panels? This removes ${ids.length} panel${ids.length === 1 ? "" : "s"} `
+      + `that ${ids.length === 1 ? "was" : "were"} set by hand: ${names.join(", ")}. You can undo this.`,
+      { title: "Reset hand-made panels", yes: "Reset" });
+    if (!ok) return;
+    const hid = newHistoryId();
+    let made = null;
+    try {
+      await withBusy(btn, () => track(store.updateConfig((c) => ({ panelOverrides: {} }), (before, patch) => {
+        const keys = Object.keys(before.panelOverrides || {});
+        made = hEntry("panel.resetAll", `Reset ${keys.length} hand-made panel${keys.length === 1 ? "" : "s"}`,
+          { by: byWho(), id: hid, undo: panelUndo(before.panelOverrides, patch.panelOverrides, keys) });
+        return made;
+      })));
+    } catch { return; }
+    renderPanels();
+    toast("Hand-made panels reset.", "ok", { label: "Undo", run: async () => {
+      try { await track(applyUndo({ ...made, id: hid })); toast("Hand-made panels are back.", "ok"); renderPanels(); }
+      catch (e) { toast((e && e.message) || "Couldn't undo. Check your connection", "err"); }
+    } });
+  },
+  clearOverrides: (btn) => IV.resetPanels(btn),   // the old name, kept for one release
+  // ---- change history
+  loadHistory: async () => {
+    ui.hist = { entries: [], next: null, loading: true };
+    try {
+      const r = await store.listHistory({ limit: 50 });
+      ui.hist = { entries: r.entries, next: r.next };
+    } catch (e) { ui.hist = { entries: [], next: null, error: (e && e.code) || "Check your connection." }; }
+    refreshHistoryCard();
+  },
+  moreHistory: (btn) => withBusy(btn, async () => {
+    const h = ui.hist; if (!h || !h.next) return;
+    const r = await store.listHistory({ after: h.next, limit: 50 });
+    ui.hist = { entries: [...h.entries, ...r.entries], next: r.next };
+    refreshHistoryCard();
   }),
+  undoHistory: (id, btn) => withBusy(btn, async () => {
+    const e = ((ui.hist || {}).entries || []).find((x) => x.id === id);
+    if (!e) return;
+    if (!canUndo(e, S, undoneIds(ui.hist.entries)).ok) throw new Error("Can't undo: changed since.");
+    await track(applyUndo(e));
+    await IV.loadHistory();
+  }, "Undone"),
   printSchedule: () => window.print(),
   // offers
   offerStatus: (id, status, btn) => {
@@ -2113,11 +2334,14 @@ window.IV = {
       else if (!o.respondedAt || !(o.status === "accepted" || o.status === "declined")) patch.respondedAt = today;
     }
     const name = (cand(id) || {}).name || "Candidate";
-    store.setOffer(id, patch).then(() => toast(status ? `${name}: ${OFFER_WORD[status].toLowerCase()}` : `${name}: offer cleared`, "ok"))
+    track(store.setOffer(id, patch, hEntry("offer.set", status ? `Recorded {cand} as ${OFFER_WORD[status].toLowerCase()}` : "Cleared the offer for {cand}",
+      { by: byWho(), cand: id })))
+      .then(() => toast(status ? `${name}: ${OFFER_WORD[status].toLowerCase()}` : `${name}: offer cleared`, "ok"))
       .catch(() => toast("Couldn't save. Check your connection", "err"));
   },
   offerDate: (id, field, value) => {
-    store.setOffer(id, { [field]: value || "", updatedAt: new Date().toISOString() })
+    track(store.setOffer(id, { [field]: value || "", updatedAt: new Date().toISOString() },
+      hEntry("offer.set", "Changed an offer date for {cand}", { by: byWho(), cand: id })))
       .then(() => toast("Date saved", "ok")).catch(() => toast("Couldn't save. Check your connection", "err"));
   },
   offerNoteInput: (id, el) => {
@@ -2129,21 +2353,34 @@ window.IV = {
   },
   offerNoteSave: (id, btn) => withBusy(btn, async () => {
     const v = ((ui.offerNotes || {})[id] ?? offerOf(id).note ?? "").slice(0, 4000);
-    await store.setOffer(id, { note: v, updatedAt: new Date().toISOString() });
+    await track(store.setOffer(id, { note: v, updatedAt: new Date().toISOString() },
+      hEntry("offer.set", "Changed the offer note for {cand}", { by: byWho(), cand: id })));
     if (ui.offerNotes) delete ui.offerNotes[id];
     renderRanking();
   }, "Note saved"),
   // back up the whole cycle
+  // The Excel workbook is built from a FRESH server read too (not page state,
+  // which mixes in this browser's echo), so it matches the backup file.
   exportCycle: (btn) => withBusy(btn, async () => {
-    const t = cycleTables();
+    const st = toState(await store.snapshotRaw());
+    const t = withState(st, cycleTables);
     const bytes = buildXlsx([
       { name: "Summary", rows: t.summary, widths: [26, 70] },
       { name: "Candidates", rows: t.candidates }, { name: "Screening", rows: t.screening },
       { name: "Availability - committee", rows: t.availCommittee }, { name: "Availability - applicants", rows: t.availApplicants },
-      { name: "Panels", rows: t.panels }, { name: "Scores", rows: t.scores }, { name: "Ranking", rows: t.ranking },
+      { name: "Panels", rows: t.panels }, { name: "Scores", rows: t.scores }, { name: "Questions", rows: t.questions, widths: [12, 80, 12] },
+      { name: "Ranking", rows: t.ranking },
       { name: "Offers", rows: t.offers }, { name: "Committee", rows: t.committee }, { name: "Interview times", rows: t.times },
     ]);
     downloadFile(`ed-hiring-backup-${todayIso()}.xlsx`, bytes, XLSX_MIME);
+  }, "Excel downloaded"),
+  // H1a: the restorable backup, from a fresh one-shot read of every round
+  // collection (store.snapshotRaw), never from page memory.
+  downloadBackup: (btn) => withBusy(btn, async () => {
+    const raw = await store.snapshotRaw();
+    const b = await buildBackup(raw, { exportedBy: "leadership", build: RELEASE });
+    const name = backupFileName(b.round.name || `Hiring round ${new Date().getFullYear()}`);
+    downloadFile(name, JSON.stringify(b, null, 1), "application/json");
   }, "Backup downloaded"),
   printCycle: () => {
     const t = cycleTables();
@@ -2188,11 +2425,15 @@ window.IV = {
     downloadFile("schedule.csv", rows.map((r) => r.map(csvCell).join(",")).join("\r\n")); toast("Schedule exported", "ok");
   },
   exportScores: () => {
-    const { committee } = EFF();
+    const { committee, nameOf } = EFF();
+    // every member who has scores, including people who left or are off the list
+    const ids = committee.map((m) => m.id);
+    idsWithInput(S).forEach((id) => { if (!ids.includes(id)) ids.push(id); });
+    const head = (id) => { const st = memberStatus(committee, id); return nameOf(id) + (st === "Left the committee" ? " (left)" : st === "Not on the list now" ? " (not on the list now)" : ""); };
     const adj = {}; rankingRows().rows.forEach((r) => { adj[r.id] = r; });
-    const rows = [["Candidate", "Avg", "Rater-adjusted", "Scored by", "Panel size", ...committee.map((m) => m.name)]];
+    const rows = [["Candidate", "Avg", "Rater-adjusted", "Scored by", "Panel size", ...ids.map(head)]];
     activeCands().forEach((c) => {
-      const per = committee.map((m) => (S.scores[key(m.name, c.id)] || {}).overall || "");
+      const per = ids.map((id) => (S.scores[key(id, c.id)] || {}).overall || "");
       const r = adj[c.id];
       rows.push([c.name, r ? r.raw.toFixed(2) : "", r ? r.adj.toFixed(2) : "", r ? r.n : 0, (r && r.expected) || "", ...per]);
     });
@@ -2201,22 +2442,29 @@ window.IV = {
   // setup
   setCommittee: (btn) => withBusy(btn, async () => {
     const lines = ($("#commBulk").value || "").split("\n").map((l) => l.trim()).filter(Boolean);
-    const list = [];
+    // Keep each person's id (and everything else saved about them) when their
+    // line is still there: input is keyed by id, never by the name typed here.
+    const cur = EFF().committee, used = new Set(), list = [];
     for (const l of lines) {
       const parts = l.split(","); const name = parts[0].trim();
       const gender = (parts[1] || "").trim().toUpperCase().startsWith("F") ? "F" : "M";
-      if (name) list.push({ name, gender });
+      if (!name) continue;
+      const was = cur.find((m) => !used.has(m.id) && m.name.toLowerCase() === name.toLowerCase());
+      const id = was ? was.id : (validMemberId(name) && !cur.some((m) => m.id === name) && !used.has(name) ? name : newMemberId());
+      used.add(id);
+      list.push({ ...(was || {}), id, name, gender });
     }
     if (!list.length) { toast("Add at least one member", "err"); return; }
     // drop members that no longer exist from any saved panel override
-    const names = new Set(list.map((m) => m.name));
-    await store.updateConfig((c) => ({ committee: list,
-      panelOverrides: pruneOverrides(c.panelOverrides, (mem) => mem.filter((n) => names.has(n))) }));
+    const ids = new Set(list.map((m) => m.id));
+    await track(store.updateConfig((c) => ({ committee: toStoredCommittee(list),
+      panelOverrides: pruneOverrides(c.panelOverrides, (mem) => mem.filter((n) => ids.has(n))) }),
+      hEntry("committee.save", `Saved the committee list (${list.length} people)`, { by: byWho() })));
   }, "Committee saved"),
   setChair: async (v) => {
     // swap the old chair for the new one in every saved override, keep chair present
     try {
-      await store.updateConfig((c) => {
+      await track(store.updateConfig((c) => {
         const old = c.chair || CHAIR;
         return { chair: v, panelOverrides: pruneOverrides(c.panelOverrides, (mem) => {
           const set = new Set(mem.filter((n) => n !== old)); set.add(v);
@@ -2228,7 +2476,7 @@ window.IV = {
           if (set.size < mem.length) set.add(old);
           return [...set];
         }) };
-      });
+      }, hEntry("chair.set", "Changed the chair to {member}", { by: byWho(), member: v })));
     } catch { toast("Couldn't save. Check your connection", "err"); rerenderSettings(); } // reset the picker
   },
   // ---- interview times (see timesEditor). Every write goes through
@@ -2252,12 +2500,12 @@ window.IV = {
     if (warns.size && !(await confirmDialog([...warns].join("\n\n") + "\n\nAdd anyway?", { title: "Check these times", yes: "Add anyway", danger: false }))) return;
     let added = 0;
     try {
-      await timesBusy(() => withBusy(btn, () => store.updateTimes(SLOTS, (times, overrides) => {
+      await timesBusy(() => withBusy(btn, () => track(store.updateTimes(SLOTS, (times, overrides) => {
         added = 0; // re-run safe: a transaction may retry this function
         const out = times.slice();
         fresh.forEach((t) => { if (!checkSlot(t, out).errors.length) { out.push(t); added++; } });
         return { times: out, overrides };
-      })));
+      }, () => added ? hEntry("times.add", `Added ${pl(added, "interview time")}`, { by: byWho() }) : null))));
     } catch { return; } // withBusy already showed the error
     if (!added) { toast("Nothing added. Someone else just added those times", "err"); return; }
     const skipped = items.length - added;
@@ -2291,7 +2539,7 @@ window.IV = {
     }
     // timesBusy holds live re-renders until ui.tEdit is cleared below, so our own
     // "Ask again" (which retires this id) isn't mistaken for someone else's removal
-    await timesBusy(() => withBusy(btn, () => store.updateTimes(SLOTS, (times, overrides) => {
+    await timesBusy(() => withBusy(btn, () => track(store.updateTimes(SLOTS, (times, overrides) => {
       const i = times.findIndex((x) => x.id === d.id);
       if (i < 0) throw new Error("That time was just removed by someone else");
       const next = { ...t, id: reask ? newSlotId() : d.id };
@@ -2301,7 +2549,8 @@ window.IV = {
       const out = others.concat(next);
       if (reask) Object.keys(overrides).forEach((c) => { if (String(overrides[c].slot) === d.id) delete overrides[c]; });
       return { times: out, overrides };
-    }), reask ? "Time changed, answers cleared" : "Time updated").then(() => { ui.tEdit = null; ui.setupStale = true; }, () => {}));
+    }, hEntry("times.edit", reask ? `Moved ${slotLabel(orig)} to ${slotLabel(t)} and asked people again` : `Changed ${slotLabel(orig)} to ${slotLabel(t)}`,
+      { by: byWho() }))), reask ? "Time changed, answers cleared" : "Time updated").then(() => { ui.tEdit = null; ui.setupStale = true; }, () => {}));
   },
   tRemove: async (ids) => {
     const cur = EFF().slots.filter((t) => ids.includes(t.id));
@@ -2321,10 +2570,10 @@ window.IV = {
     const gone = new Set(cur.map((t) => t.id));
     try {
       await timesBusy(async () => {
-        await store.updateTimes(SLOTS, (times, overrides) => {
+        await track(store.updateTimes(SLOTS, (times, overrides) => {
           Object.keys(overrides).forEach((c) => { if (gone.has(String(overrides[c].slot))) delete overrides[c]; });
           return { times: times.filter((t) => !gone.has(t.id)), overrides };
-        });
+        }, hEntry("times.remove", `Removed ${what}`, { by: byWho() })));
         if (ui.tEdit && gone.has(ui.tEdit.id)) ui.tEdit = null; // our own removal — no "someone else" notice
         ui.setupStale = true;
       });
@@ -2332,7 +2581,8 @@ window.IV = {
     } catch (e) { toast((e && e.message) || "Couldn't remove. Check your connection", "err"); }
   },
   tRemoveDay: (date) => IV.tRemove(EFF().slots.filter((t) => (isStructured(t) ? t.date : "") === date).map((t) => t.id)),
-  saveOneDrive: (btn) => withBusy(btn, () => store.setSettings({ oneDrive: ($("#odIn").value || "").trim() || "#" }), "Saved"),
+  saveOneDrive: (btn) => withBusy(btn, () => track(store.setSettings({ oneDrive: ($("#odIn").value || "").trim() || "#" },
+    hEntry("settings.save", "Changed the applications folder link", { by: byWho() }))), "Saved"),
 };
 
 window.CAND = {
@@ -2356,7 +2606,19 @@ window.CAND = {
 // "logged out" page. signOut is local (no network), but it is capped at 3s so
 // a stuck SDK can never leave someone unable to log out.
 async function logOut(keys) {
+  // H12: save anything still pausing, give unconfirmed saves up to 5 seconds,
+  // and ask before throwing any away. Then forget this browser's own copies of
+  // your scores and screening (and an applicant's picks).
+  flushPending();
+  const t0 = Date.now();
+  while (unconfirmed() && Date.now() - t0 < 5000) await new Promise((r) => setTimeout(r, 100));
+  if (unconfirmed()) {
+    const ok = await confirmDialog("Some changes haven't reached the server yet. Log out anyway? They will be lost.",
+      { title: "Log out", yes: "Log out anyway" });
+    if (!ok) return;
+  }
   keys.forEach((k) => ss.del(k));
+  if (store) store.clearLocalCopies(); else { ls.del("ed_iv_echo_v1"); ls.del("ed_iv_cand_echo_v1"); }
   if (fbAuth) {
     try {
       await Promise.race([fbAuth.authFns.signOut(fbAuth.auth), new Promise((r) => setTimeout(r, 3000))]);
@@ -2364,6 +2626,63 @@ async function logOut(keys) {
   }
   location.reload();
 }
+
+// Run a render or table builder against another state (a fresh server read, or
+// an archived round) instead of the live one. Synchronous only.
+function withState(st, fn) { const keep = S; S = st; try { return fn(); } finally { S = keep; } }
+
+// ------------------------------------------------- reload notice (section 2.3)
+// version.json is fetched every 10 minutes (and when the tab comes back after
+// that long), never cached. When it names another release, ED and Guest pages
+// show one line; a Leadership page reloads itself, but only when nothing could
+// be lost: nothing pausing or unconfirmed, no dialog open, no field focused, no
+// panel editor or draft open, and session storage working (where it is
+// blocked the sign-in lives in memory and a reload would drop it). At most
+// once per version per tab, so a stale cached page can't reload in a loop.
+const VERSION_EVERY_MS = 10 * 60 * 1000;
+let lastVersionCheck = Date.now();
+async function checkVersion() {
+  lastVersionCheck = Date.now();
+  try {
+    const r = await fetch("version.json", { cache: "no-store" });
+    if (!r.ok) return;
+    const v = String((await r.json()).release || "");
+    if (v && v !== RELEASE) { ui.newVersion = v; renderUpdateLine(); if (ui.role === "admin") tryReload(); }
+  } catch { /* offline: try again next time */ }
+}
+function nothingToLose() {
+  if (flushPending() || unconfirmed()) return false;
+  if (dialogOpen() || setupOpen()) return false;
+  const a = document.activeElement;
+  if (a && a !== document.body && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return false;
+  if (ui.editPanel || (ui._draft && Object.keys(ui._draft).length) || ui.qDraft || ui.commDraft
+      || (ui.offerNotes && Object.keys(ui.offerNotes).length) || ui.tEdit) return false;
+  const t = ui.tAdd; if (t && (t.date || t.from || t.to)) return false;
+  if (ui.closing) return false;
+  return storageWorks("sessionStorage");
+}
+function tryReload() {
+  clearTimeout(tryReload._t);
+  if (!ui.newVersion || ss.get("ed_iv_reloaded_for") === ui.newVersion) return;
+  if (nothingToLose()) { ss.set("ed_iv_reloaded_for", ui.newVersion); location.reload(); return; }
+  tryReload._t = setTimeout(tryReload, 30000);
+}
+// One line under the header for page-level news: a new release, and the
+// allowed-list fight (H14) that only an older open tab can cause.
+function renderUpdateLine() {
+  const el = $("#updateLine"); if (!el) return;
+  const lines = [];
+  if (ui.newVersion) lines.push(`This page was updated. <button class="linky" onclick="location.reload()">Reload</button> to get the latest version.`);
+  if (ui.role === "admin" && ui._allowed && ui._allowed.held)
+    lines.push("Another open Physician Hiring tab is using an older version and keeps changing the applicant list. Reload or close the other tab.");
+  el.innerHTML = lines.map((l) => `<p>${l}</p>`).join("");
+  el.classList.toggle("hidden", !lines.length);
+}
+setInterval(checkVersion, VERSION_EVERY_MS);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && Date.now() - lastVersionCheck >= VERSION_EVERY_MS) checkVersion();
+});
+window.__edCheckVersion = checkVersion;   // lets the sims ask now instead of in 10 minutes
 
 // ------------------------------------------------- instant info tooltips
 let tipEl = null;

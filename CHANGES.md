@@ -24,6 +24,55 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## R1: foundations (members by id, questions in the database, history, backup file) (Oct 16 2026)
+
+Needs rules v2 (R0) published first: every leadership save now writes a history entry,
+which the v1 rules refuse.
+
+- **Members keyed by id (H6, data layer).** `js/members.js`. Every key that names a person is
+  a member id; legacy members' id is their name, which is exactly what every saved document
+  already uses, so nothing moved. The name list, panels, grids, ranking and exports draw names
+  from ids. Saving the committee textarea keeps each person's id. Nothing looks different yet.
+- **Interview questions in Firestore (H2, data layer).** `js/questions.js`,
+  `interviews_meta/questions`. The first Leadership sign-in copies them out of the encrypted
+  `js/data.js` (ids `"0"`..`"n-1"`, the keys every note already has) in a create-only
+  transaction with a history entry. The Score tab reads the document and keys notes by
+  question id; `data.js` stays the fallback (and the role check) until R7.
+- **Change history (H12).** `js/history.js`; every leadership change in the app writes its
+  entry in the same batch or transaction (roster, committee, chair, times, panels, offers,
+  ranking reveal, settings, the question copy). No applicant name is stored. Setup, Change
+  history shows them 50 at a time (one-shot reads). "Undo my edits" on Panels is now "Reset
+  hand-made panels": it names the panels it removes and can be undone from a 10-second
+  toast or from Change history (refused if the panel changed since).
+- **Backup file (H1a).** Ranking and Setup: "Download backup file (for restoring)", one JSON
+  file built from a fresh one-shot read of every round collection (`store.snapshotRaw`),
+  never page state; format in `js/backup.js` (timestamps as `{ __ts }`, SHA-256 checksum of
+  canonical JSON, a closing state is never exported). The Excel workbook is now built from
+  the same fresh read and gains a Questions sheet, score columns headed by question text, and
+  rows for people who left or were taken off the list.
+- **Log out (H12)** saves anything pausing, waits up to 5 seconds for unconfirmed saves (asks
+  before discarding), then clears this browser's copies of scores, screening and picks.
+- **Deploy safety (section 2.3).** Every import carries `?v=R1` (same as `version.json` and
+  `RELEASE`); the page checks `version.json` every 10 minutes and shows "This page was
+  updated..." (Leadership pages reload themselves only when nothing could be lost, once per
+  version). The allowed-list sync stops after 3 "fights" with another tab in 10 minutes and
+  says to reload the other tab; writes caused by this tab's own roster edits are never held.
+- **util.js:** `toast` takes an action button, `flowDialog` (multi-step dialog), `copyText`.
+- **Not done as written:** the design's "module split of app.js" was taken as "new logic goes
+  in new modules"; existing render code stayed in `app.js` (smaller change, same behaviour).
+
+Tests: node `members`, `questions`, `history`, `backup`, `store.snapshot`, `store.questions`,
+`versions` (39). Sim: `sim/foundations.mjs` (7 scenarios, in `npm test`). New emulator
+harness: `sim/emulator.mjs`, `sim/emu.mjs`, `sim/firebase.json`, `make-site.sh --emulator`
+(3 cases: the question copy and roster add under the real rules, an ED rating and score note,
+the backup as a fresh read). Checked: rules and node 229/229; sim 15/15 scenarios, 7/7
+foundations, e2e, score, auth, fuzz 40; stress (plain, latency, flaky); emulator 3/3.
+
+Undo: revert the merge. The questions document, history entries and `addedAt` stay; older
+pages ignore them.
+
+---
+
 ## R0: rules v2, server side for the Oct 2026 hiring items (Oct 16 2026)
 
 One rules release ahead of every page change, fully backward compatible: nothing in it
