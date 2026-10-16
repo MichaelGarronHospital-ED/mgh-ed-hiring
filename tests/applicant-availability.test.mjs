@@ -23,6 +23,7 @@ import { FirestoreStore } from "../js/store.js";
 let env;
 const applicantDb = () => env.authenticatedContext("u-applicant", { email: "applicant@ed-hiring.app" }).firestore();
 const adminDb = () => env.authenticatedContext("u-admin", { email: "admin@ed-hiring.app" }).firestore();
+const committeeDb = () => env.authenticatedContext("u-committee", { email: "committee@ed-hiring.app" }).firestore();
 const AV = "interviews_availCand/ashcombe";
 
 // The store as the applicant page builds it, minus the listeners: applicants
@@ -182,13 +183,59 @@ describe("what the rules deliberately do NOT stop", () => {
     assert.deepEqual(await slotsOf(), { t9: "ip" });
   });
 
-  test("the modality value is not validated", async () => {
-    await assertSucceeds(setDoc(doc(applicantDb(), AV), { slots: { t1: "banana" } }, { merge: true }));
-    assert.equal((await slotsOf()).t1, "banana");
-  });
-
   test("an applicant cannot read their own answers back", async () => {
     await applicantStore().setAvail("cand", "ashcombe", "t1", "ip");
     await assertFails(getDoc(doc(applicantDb(), AV)));
+  });
+});
+
+// ============================================================================
+// The document's shape. Until Oct 2026 the rules accepted any fields here, so
+// a raw client holding the Guest password could park anything in the
+// applicant's document (and a modality like "banana" was pinned above as a
+// known limitation). The rules now allow only { slots: { <id>: ip|zoom|either } }
+// with at most 200 times. That limitation was flipped on purpose.
+describe("only a real availability map can be saved", () => {
+  test("a modality other than in person, Zoom or either is refused", async () => {
+    await assertFails(setDoc(doc(applicantDb(), AV), { slots: { t1: "banana" } }, { merge: true }));
+    await assertFails(setDoc(doc(applicantDb(), AV), { slots: { t1: true } }, { merge: true }));
+    assert.equal(await slotsOf(), undefined);
+  });
+
+  test("any field other than slots is refused", async () => {
+    await assertFails(setDoc(doc(applicantDb(), AV), { slots: { t1: "ip" }, note: "hi" }));
+    await assertFails(setDoc(doc(applicantDb(), AV), { email: "x@example.com" }, { merge: true }));
+  });
+
+  test("slots must be a map", async () => {
+    await assertFails(setDoc(doc(applicantDb(), AV), { slots: "ip" }));
+    await assertFails(setDoc(doc(applicantDb(), AV), { slots: ["t1"] }));
+  });
+
+  test("more than 200 times is refused, 200 is fine", async () => {
+    const many = (n) => Object.fromEntries(Array.from({ length: n }, (_, i) => ["t" + i, "ip"]));
+    await assertSucceeds(setDoc(doc(applicantDb(), AV), { slots: many(200) }));
+    await assertFails(setDoc(doc(applicantDb(), AV), { slots: { t999: "zoom" } }, { merge: true }));
+    assert.equal(Object.keys(await slotsOf()).length, 200);
+  });
+
+  test("the name check probe ({}) still passes on a new and on an existing document", async () => {
+    assert.equal(await applicantStore().checkName("belanger"), true);   // creates {}
+    await applicantStore().setAvail("cand", "ashcombe", "t1", "ip");
+    assert.equal(await applicantStore().checkName("ashcombe"), true);   // existing, untouched
+    assert.deepEqual(await slotsOf(), { t1: "ip" });
+  });
+
+  test("the same shape applies to the committee and leadership", async () => {
+    await assertFails(setDoc(doc(committeeDb(), AV), { slots: { t1: "banana" } }, { merge: true }));
+    await assertFails(setDoc(doc(adminDb(), AV), { slots: { t1: "ip" }, extra: 1 }));
+    await assertSucceeds(setDoc(doc(adminDb(), AV), { slots: { t1: "ip" } }, { merge: true }));
+  });
+
+  test("the committee cannot delete an applicant's availability; leadership can", async () => {
+    await applicantStore().setAvail("cand", "ashcombe", "t1", "ip");
+    await assertFails(deleteDoc(doc(committeeDb(), AV)));
+    await assertFails(deleteDoc(doc(applicantDb(), AV)));
+    await assertSucceeds(deleteDoc(doc(adminDb(), AV)));
   });
 });

@@ -7,11 +7,15 @@ rules_version = '2';
 //  the repo). Rules branch on request.auth.token.email:
 //
 //    admin@ed-hiring.app      — leadership: full read/write, incl. scores/ranking
-//    committee@ed-hiring.app  — reviewers: submit screening/scores/availability,
+//                               and the roster. The only role that can delete.
+//    committee@ed-hiring.app  — reviewers (every ED physician holds this password):
+//                               submit screening/scores/their own availability,
 //                               read the roster + availability, fetch their own
 //                               screening documents by id, but CANNOT list
 //                               screening and cannot read scores at all (so they
-//                               can't see the ranking)
+//                               can't see the ranking). Create and update only:
+//                               they can never delete a document, and they cannot
+//                               change the roster.
 //    applicant@ed-hiring.app  — candidates: read ONLY the public interview slots
 //                               and submit their OWN availability; CANNOT read the
 //                               roster, questions, screening, scores, or panels.
@@ -35,6 +39,10 @@ rules_version = '2';
 //     (the ranking and the collation stay private), applicants cannot read
 //     committee data at all, and the admin code is independent of the staff code
 //     so a reviewer cannot self-elevate to admin.
+//   • "No delete" stops a reviewer hard-deleting anything, but a reviewer can
+//     still OVERWRITE a screening, score or availability document (the same
+//     shared-account limit as above). Every ED physician holds this password,
+//     so the roster is admin-only and deletes are admin-only.
 //   • An applicant could overwrite another applicant's availability doc by typing
 //     THEIR last name (write-without-read). Narrowed but not closed: the surname
 //     must now be on the roster (nameOnRoster below), so only a real applicant's
@@ -74,22 +82,45 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Roster (applicant names) — committee only. Never applicants.
+    // The only shape an availability document may have: { slots: { <timeId>:
+    // "ip" | "zoom" | "either" } } and nothing else. Checked on the document as
+    // it would be AFTER the write, so a merge that adds one time is judged with
+    // the times already saved. The name-check probe in store.js (checkName)
+    // sends `{}`, which leaves the document as it was (or creates an empty one),
+    // so it still passes. 200 times is far above a real round (stale ids from
+    // removed times stay in the map, so it is not just the times on offer now).
+    function availShapeOk() {
+      let d = request.resource.data;
+      let slots = d.get('slots', {});
+      return d.keys().hasOnly(['slots'])
+        && slots is map
+        && slots.size() <= 200
+        && slots.values().hasOnly(['ip', 'zoom', 'either']);
+    }
+
+    // Roster (applicant names): committee reads, only admin writes. Adding,
+    // removing (a soft delete: removed:true) and renaming are all leadership
+    // actions in the app. Never applicants.
     match /interviews_candidates/{doc} {
-      allow read, write: if isCommittee();
+      allow read:  if isCommittee();
+      allow write: if isAdmin();
     }
 
     // Applicant availability — applicants submit (create/update) but CANNOT read
-    // (write-without-read); committee reads to build panels.
+    // (write-without-read); committee reads to build panels. Only admin deletes
+    // (scripts/rename-candidate.mjs moves a document; purge removes one).
     match /interviews_availCand/{doc} {
       allow read:           if isCommittee();
-      allow create, update: if isCommittee() || (isApplicant() && nameOnRoster(doc));
-      allow delete:         if isCommittee();
+      allow create, update: if availShapeOk()
+        && (isCommittee() || (isApplicant() && nameOnRoster(doc)));
+      allow delete:         if isAdmin();
     }
 
-    // Interviewer availability — committee read/write.
+    // Interviewer availability: committee reads and saves; only admin deletes.
+    // Unticking a time is an update (deleteField on one key), not a delete.
     match /interviews_availIv/{doc} {
-      allow read, write: if isCommittee();
+      allow read, create, update: if isCommittee();
+      allow delete:               if isAdmin();
     }
 
     // Screening flags/ratings.
@@ -110,9 +141,10 @@ service cloud.firestore {
     // of one. Closing it properly means per-member accounts (README → "Real
     // access control"). SCORES are NOT treated this way: see below.
     match /interviews_screening/{doc} {
-      allow get:   if isCommittee();
-      allow list:  if isAdmin();
-      allow write: if isCommittee();
+      allow get:            if isCommittee();
+      allow list:           if isAdmin();
+      allow create, update: if isCommittee();   // un-flagging saves flag:false; clearing a rating saves 0
+      allow delete:         if isAdmin();
     }
 
     // Interview scores — reviewers submit (write); admin alone reads, not even
@@ -124,8 +156,9 @@ service cloud.firestore {
     // The Score tab therefore still replays a reviewer's own answers from a
     // per-device mirror (store.js) and says so on screen.
     match /interviews_scores/{doc} {
-      allow read:  if isAdmin();
-      allow write: if isCommittee();
+      allow read:           if isAdmin();
+      allow create, update: if isCommittee();   // clearing a score saves overall:0
+      allow delete:         if isAdmin();
     }
 
     // Meta: config (committee/chair/oneDrive/overrides), state (interviewsComplete),

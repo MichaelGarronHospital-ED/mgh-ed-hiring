@@ -8,6 +8,7 @@
 //      anti-bias guarantee). A reviewer CAN fetch a screening document by id,
 //      which is how their own review follows them between devices.
 //    • only the admin account can change setup (roster, chair, times)
+//    • the ED password (committee) can save but never delete, anywhere
 //
 //  They run against the local Firestore emulator — no real project, no real
 //  data, no credentials. Run with:  npm test     (see README.md)
@@ -18,7 +19,7 @@ import { readFileSync } from "node:fs";
 import {
   initializeTestEnvironment, assertSucceeds, assertFails,
 } from "@firebase/rules-unit-testing";
-import { doc, collection, getDoc, getDocs, setDoc, deleteDoc } from "firebase/firestore";
+import { doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, deleteField } from "firebase/firestore";
 
 let testEnv;
 
@@ -257,10 +258,10 @@ describe("only the admin can change setup", () => {
 describe("reviewers can do their own job", () => {
   // Guard against over-tightening the rules: these must keep working.
 
-  it("CAN read the candidate roster and add candidates", async () => {
+  it("CAN read the candidate roster", async () => {
     await seed(CAND, { name: "Dr Jane Doe", removed: false });
     await assertSucceeds(getDocs(collection(committee(), "interviews_candidates")));
-    await assertSucceeds(setDoc(doc(committee(), "interviews_candidates/c-2"), { name: "Dr B", removed: false }));
+    await assertSucceeds(getDoc(doc(committee(), CAND)));
   });
 
   it("CAN read and write interviewer availability", async () => {
@@ -271,6 +272,86 @@ describe("reviewers can do their own job", () => {
   it("CAN read applicant availability (needed to build panels)", async () => {
     await seed(AVAIL_C, { slots: { 0: "either" } });
     await assertSucceeds(getDocs(collection(committee(), "interviews_availCand")));
+  });
+
+  // Every write a reviewer makes in the app, exactly as store.js sends it
+  // (setDoc with merge). None of them is a delete in the rules' terms: un-ticking
+  // a time is deleteField() on one key, and clearing a rating or a score saves 0.
+  it("CAN flag, un-flag, rate and clear a rating in screening (store.setScreening)", async () => {
+    const ref = doc(committee(), SCREEN);
+    await assertSucceeds(setDoc(ref, { member: "Marrocco", candId: "c-1", flag: true, reason: "" }, { merge: true }));
+    await assertSucceeds(setDoc(ref, { member: "Marrocco", candId: "c-1", reason: "not licensed yet" }, { merge: true }));
+    await assertSucceeds(setDoc(ref, { member: "Marrocco", candId: "c-1", flag: false, reason: "" }, { merge: true }));
+    await assertSucceeds(setDoc(ref, { member: "Marrocco", candId: "c-1", rating: 4 }, { merge: true }));
+    await assertSucceeds(setDoc(ref, { member: "Marrocco", candId: "c-1", rating: 0 }, { merge: true }));
+  });
+
+  it("CAN save, change and clear a score and its notes (store.setScore)", async () => {
+    // a reviewer cannot read scores, so these merges are blind writes
+    const ref = doc(committee(), SCORE);
+    await assertSucceeds(setDoc(ref, { member: "Marrocco", candId: "c-1", overall: 4.2 }, { merge: true }));
+    await assertSucceeds(setDoc(ref, { member: "Marrocco", candId: "c-1", notes: { 0: "clear answer" } }, { merge: true }));
+    await assertSucceeds(setDoc(ref, { member: "Marrocco", candId: "c-1", overall: 3.7 }, { merge: true }));
+    await assertSucceeds(setDoc(ref, { member: "Marrocco", candId: "c-1", overall: 0 }, { merge: true }));
+  });
+
+  it("CAN tick, change and untick their own times (store.setAvail iv)", async () => {
+    const ref = doc(committee(), AVAIL_I);
+    await assertSucceeds(setDoc(ref, { slots: { t1: "ip" } }, { merge: true }));
+    await assertSucceeds(setDoc(ref, { slots: { t2: "zoom" } }, { merge: true }));
+    await assertSucceeds(setDoc(ref, { slots: { t1: "either" } }, { merge: true }));
+    await assertSucceeds(setDoc(ref, { slots: { t1: deleteField() } }, { merge: true }));
+  });
+});
+
+describe("the ED password can save but never delete", () => {
+  // Every ED physician now holds the committee password, not just the 13 on
+  // the committee. So it may create and update the documents reviewers fill in,
+  // but it must never remove one, and it must not touch the applicant list.
+  // Leadership keeps every power it had.
+
+  const committeeDocs = [CAND, SCREEN, SCORE, AVAIL_I, AVAIL_C, CONFIG, PUBLIC, ALLOWED, "interviews_offers/c-1"];
+
+  it("a reviewer CANNOT delete a document in any collection", async () => {
+    for (const path of committeeDocs) {
+      await seed(path, path.startsWith("interviews_avail") ? { slots: { t1: "ip" } } : { x: 1 });
+      await assertFails(deleteDoc(doc(committee(), path)));
+    }
+  });
+
+  it("a reviewer CANNOT add a candidate to the roster", async () => {
+    await assertFails(setDoc(doc(committee(), "interviews_candidates/c-2"), { name: "Dr B", removed: false }));
+  });
+
+  it("a reviewer CANNOT rename, remove or restore a candidate", async () => {
+    await seed(CAND, { name: "Dr Jane Doe", removed: false });
+    await assertFails(updateDoc(doc(committee(), CAND), { name: "Dr Someone Else" }));
+    await assertFails(updateDoc(doc(committee(), CAND), { removed: true }));
+    await assertFails(setDoc(doc(committee(), CAND), { name: "Dr Jane Doe", removed: false }));
+  });
+
+  it("the admin CAN add, rename, remove, restore and delete a candidate", async () => {
+    const ref = doc(admin(), "interviews_candidates/c-2");
+    await assertSucceeds(setDoc(ref, { name: "Dr B", removed: false }));     // store.addCandidate
+    await assertSucceeds(updateDoc(ref, { removed: true }));                 // store.setCandidateRemoved
+    await assertSucceeds(updateDoc(ref, { removed: false }));
+    await assertSucceeds(updateDoc(ref, { name: "Dr Bee" }));                // scripts/rename-candidate.mjs
+    await assertSucceeds(deleteDoc(ref));                                    // scripts/purge-candidate.mjs
+  });
+
+  it("the admin CAN still delete screening, scores and both kinds of availability", async () => {
+    for (const path of [SCREEN, SCORE, AVAIL_I, AVAIL_C]) {
+      await seed(path, path.startsWith("interviews_avail") ? { slots: { t1: "ip" } } : { x: 1 });
+      await assertSucceeds(deleteDoc(doc(admin(), path)));
+    }
+  });
+
+  it("an applicant CANNOT delete anything either", async () => {
+    await seed(ALLOWED, { keys: ["nguyen"] });
+    for (const path of committeeDocs) {
+      await seed(path, path.startsWith("interviews_avail") ? { slots: { t1: "ip" } } : { x: 1 });
+      await assertFails(deleteDoc(doc(applicant(), path)));
+    }
   });
 });
 
