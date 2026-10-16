@@ -24,6 +24,51 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## R0: rules v2, server side for the Oct 2026 hiring items (Oct 16 2026)
+
+One rules release ahead of every page change, fully backward compatible: nothing in it
+does anything until a later page sets a stage, starts a close or writes a new document.
+
+- **Stage gates (H4).** `interviews_meta/state.stages.<screening|availability|scoring>.closed`
+  stops the ED password writing that stage (screening, scores, interviewer and applicant
+  times). Leadership still can. Missing state, or the old `{ interviewsComplete }` shape,
+  means open.
+- **Round gate (H1).** While `state.roundStatus` is `"closing"`, every ED and Guest write
+  is refused (even the name probe).
+- **Applicant reply (H11).** Availability documents may also hold `reply` ("", confirmed,
+  withdrawn) and `replyAt` (a timestamp). After availability closes an applicant can
+  still confirm or withdraw, and change nothing else. The `{}` name probe still passes.
+- **New collections.** `interviews_applicant` (one confirmed time per applicant: Guest
+  may fetch one by id, never list), `interviews_history` (leadership only, append-only,
+  server-stamped, deletable only while a round is closing), `interviews_archive` (the
+  close-round copies: a five-status machine, `saving`, `saved`, `clearing`, `closed`,
+  `abandoned`, with server-stamped `closedAt` and a 30-day floor on `deleteAfter`).
+- **Close lease.** During a close every write to `state` must carry a fresh
+  `lease = { tab, load, at: serverTimestamp() }`; a takeover is refused while the lease is
+  under 5 minutes old by the server's clock; starting a close needs a fresh claim; a
+  stored claim that is missing, malformed or not a map counts as expired. Every attempt
+  write needs a fresh `owner` claim from the page in `closingTab` for the attempt in
+  `closingAttemptId`. Outside a close it always passes.
+- **Leadership first.** `isAdmin()` comes first in every rule, so the extra `get()` of
+  `state` is paid on ED and Guest writes only (one read each).
+
+Tests: `tests/rules-v2.test.mjs` (81, its own project id) covers every probe in the
+design, including the review round 4 and 5 ones run before publishing: a close started
+without a claim, with a client-time claim, and over an old claim; expired, missing and
+malformed stored claims (null, a string, a number, a map without `at`), with and without
+a close running; takeover refused at 4 minutes and accepted at 6 by the server clock;
+the sleeping-laptop writes (a stale page's renew, stop and attempt status change refused
+while another page holds the lease); and a load-bearing copy with `stageOpen()` forced
+true. The guards were mutation-checked by hand. Checked: rules 190/190 (the 109 from
+before, unchanged); sim 15/15 scenarios, e2e, score, auth, fuzz 40 (no page change).
+
+Deploy: tag `rules-v1-2026-10-16` (done locally on the old main), publish with
+`npx firebase-tools deploy --only firestore:rules`, then tag `rules-v2-<date>`.
+Undo: `git show rules-v1-2026-10-16:firestore.rules > firestore.rules` and deploy (only
+while no R1+ page is live).
+
+---
+
 ## Security pass: ED password can't delete, Log out signs out, docs cleaned (Oct 16 2026)
 
 The ED password now goes to every ED physician, not just the 13 on the committee, so
