@@ -148,13 +148,12 @@ const scenarios = {
     return problems;
   },
 
-  // Two applicants with the same surname share one document (known limit) —
-  // pin what actually happens so a change is deliberate.
-  // KNOWN LIMIT, pinned so a change is deliberate: availability is keyed by
-  // surname, so two applicants called Carter write to ONE record and each sees
-  // the other's answers. If this scenario ever fails, someone has given
-  // applicants their own key — that is an improvement: update ../CLAUDE.md and
-  // delete this instead of making it pass again.
+  // Two applicants with the same surname and NO keys yet (live data from before
+  // Oct 2026, or a pair leadership hasn't separated) still share one document.
+  // Since H14 leadership is prompted ("Give them separate answers"), and new
+  // pairs get their own keys when added; that path is pinned in applicants.mjs.
+  // This pins that an unseparated pair behaves exactly as before, so a change
+  // to it is deliberate.
   async sharedSurname(page, url) {
     const st = base();
     st.candidates.push({ id: "c-4", name: "Dr Jonah Carter", removed: false });

@@ -30,6 +30,15 @@ run before applying.
 | `sync-allowed.mjs` | Publish the roster's surnames to the list the security rules check on applicant writes. |
 | `allowed-list.mjs` | Shared helper, not run directly: the one definition of that list, so a rename or purge can't leave the gate out of step. |
 
+## The app does this now (Oct 2026)
+
+Rename, merge and permanent delete are in the app: Screen tab, the applicant's row,
+**More** (Rename; Merge into another entry, with a preview of exactly what moves; Delete
+permanently, for an entry already removed, after typing their last name). Applicants who
+share a surname get their own keys there too. **Use the app.** The scripts below stay as a
+fallback for someone with a terminal; `allowed-list.mjs` uses the same key rule as the app
+(`availKey` when set), so a script run can't fight an open leadership page.
+
 ## Fixing a misspelled name
 
 **Use `rename-candidate.mjs`. Do not remove and re-add the candidate in the app.**

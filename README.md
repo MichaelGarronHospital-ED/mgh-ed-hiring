@@ -282,6 +282,15 @@ it, so every leadership save would fail.
   "Interview list: Auto / On / Off"; your On or Off always wins. Reviewers can raise a
   **concern** (counts) or leave a **note** (never counts, with "I know this applicant
   personally"); "Make this a note" moves a concern's words into a note.
+- **Rename, merge, delete (Screen tab, More).** Rename keeps everything attached (and moves
+  the applicant's interview times if the surname changes). Merge fixes a remove-and-add-again
+  mix-up, with a preview of exactly what moves and an offer to download a backup first.
+  Delete permanently works only on an entry already removed, after typing their last name.
+  No terminal needed; `scripts/` stays as a fallback.
+- **Applicants who share a surname.** The applicant page asks for first and last name. When a
+  second applicant with an existing surname is added, both get their own answers (the page
+  says so); applicants with a unique surname see no difference. If answers were already saved
+  under the shared surname, Panels, Needs attention asks whose they are.
 - **Lock the schedule (Panels)** freezes every panel; later availability changes don't move
   an interview, and Needs attention names anyone no longer free or no longer on the
   committee. You can still edit a locked panel, and unlock.

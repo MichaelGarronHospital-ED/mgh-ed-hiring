@@ -26,9 +26,9 @@
 //  with the server time. There is no "saved but not logged".
 // ============================================================================
 
-import { effectiveSlots, toStored } from "./slots.js?v=R3";
-import { lastKey, ls } from "./util.js?v=R3";
-import { ROUND_COLLECTIONS } from "./backup.js?v=R3";
+import { effectiveSlots, toStored } from "./slots.js?v=R4";
+import { lastKey, candKey, ls } from "./util.js?v=R4";
+import { ROUND_COLLECTIONS } from "./backup.js?v=R4";
 
 export const key = (member, candId) => `${member}~${candId}`;
 
@@ -177,8 +177,11 @@ export class LocalStore extends BaseStore {
   // server: the same answer to "is this surname on the roster?", so the applicant
   // flow can be exercised end-to-end without Firebase.
   async setAllowedNames(keys) { this.state.allowedNames = keys; this._save(); }
+  // H14: an applicant's key is their own availKey when they share a surname.
+  // Like the rules, the saved allowed list decides once it exists.
   async checkName(key) {
-    return this.state.candidates.some((c) => !c.removed && lastKey(c.name) === key);
+    if (Array.isArray(this.state.allowedNames)) return this.state.allowedNames.includes(key);
+    return this.state.candidates.some((c) => !c.removed && candKey(c) === key);
   }
   async setCandidateRemoved(id, removed, history) {
     this.state.candidates = this.state.candidates.map((c) => c.id === id ? { ...c, removed } : c);
@@ -293,6 +296,47 @@ export class LocalStore extends BaseStore {
     this._hist(histOf(history));
     this._save();
   }
+  // H5/H14/H1: apply a plan (candidates.js / backup.js). Copies before deletes.
+  async applyPlan(plan, history) {
+    this._load();
+    const st = this.state;
+    const MAP = { interviews_screening: "screening", interviews_scores: "scores", interviews_offers: "offers", interviews_applicant: "notices" };
+    for (const w of plan.writes || []) {
+      if (MAP[w.coll]) st[MAP[w.coll]] = { ...(st[MAP[w.coll]] || {}), [w.id]: w.data };
+      else if (w.coll === "interviews_availCand") {
+        const { slots, ...rest } = w.data || {};
+        st.availCand = { ...st.availCand, [w.id]: { ...(slots || {}) } };
+        if (Object.keys(rest).length) st.replies = { ...(st.replies || {}), [w.id]: rest };
+      } else if (w.coll === "interviews_availIv") st.availIv = { ...st.availIv, [w.id]: { ...((w.data || {}).slots || {}) } };
+      else if (w.coll === "interviews_candidates") {
+        st.candidates = st.candidates.some((c) => c.id === w.id) ? st.candidates.map((c) => (c.id === w.id ? { id: w.id, ...w.data } : c))
+          : [...st.candidates, { id: w.id, ...w.data }];
+      } else if (w.coll === "interviews_history") st.history = { ...(st.history || {}), [w.id]: w.data };
+      else throw new Error("applyPlan write: " + w.coll);
+    }
+    const nullDel = (p) => Object.fromEntries(Object.entries(p).map(([k, v]) => [k, v === null ? DEL : v]));
+    st.candidates = st.candidates.map((c) => (plan.candidates && plan.candidates[c.id] ? { id: c.id, ...applyPatch(c, nullDel(plan.candidates[c.id])) } : c));
+    if (plan.overrides && Object.keys(plan.overrides).length) {
+      const ov = { ...((st.settings || {}).panelOverrides || {}) };
+      Object.entries(plan.overrides).forEach(([k, v]) => { if (v) ov[k] = v; else delete ov[k]; });
+      st.settings = { ...st.settings, panelOverrides: ov };
+    }
+    if (plan.schedulePanels && Object.keys(plan.schedulePanels).length && st.schedule) {
+      const sp = { ...(st.schedule.panels || {}) };
+      Object.entries(plan.schedulePanels).forEach(([k, v]) => { if (v) sp[k] = v; else delete sp[k]; });
+      st.schedule = { ...st.schedule, panels: sp };
+    }
+    for (const d of plan.deletes || []) {
+      if (MAP[d.coll]) { const m = { ...(st[MAP[d.coll]] || {}) }; delete m[d.id]; st[MAP[d.coll]] = m; }
+      else if (d.coll === "interviews_availCand") { const m = { ...st.availCand }; delete m[d.id]; st.availCand = m; if (st.replies) { const r = { ...st.replies }; delete r[d.id]; st.replies = r; } }
+      else if (d.coll === "interviews_availIv") { const m = { ...st.availIv }; delete m[d.id]; st.availIv = m; }
+      else if (d.coll === "interviews_candidates") st.candidates = st.candidates.filter((c) => c.id !== d.id);
+      else if (d.coll === "interviews_history") { const m = { ...(st.history || {}) }; delete m[d.id]; st.history = m; }
+      else throw new Error("applyPlan delete: " + d.coll);
+    }
+    this._hist(histOf(history));
+    this._save();
+  }
 }
 
 // ---------------------------------------------------------------- firestore
@@ -364,6 +408,8 @@ export class FirestoreStore extends BaseStore {
     });
     if (on("availCand")) watch("availCand", collection(db, "interviews_availCand"), (snap) => {
       this.state.availCand = Object.fromEntries(snap.docs.map((d) => [d.id, d.data().slots || {}]));
+      // the whole documents too (reply, replyAt), so a move copies everything
+      this.state.availRaw = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]));
     });
     if (on("scores")) watch("scores", collection(db, "interviews_scores"), (snap) => {
       this.state.scores = { ...(this._echoScores || {}), ...Object.fromEntries(snap.docs.map((d) => [d.id, d.data()])) };
@@ -749,6 +795,38 @@ export class FirestoreStore extends BaseStore {
   async setCandidates(patches, history) {
     await this._withHistory((b) => Object.entries(patches || {}).forEach(([id, p]) =>
       b.update(this._doc("interviews_candidates", id), this._fsPatch(p))), history);
+  }
+  // H5/H14/H1: apply a plan. One batch when it fits in 450 operations; otherwise
+  // chunks in order, and every copy comes before the delete of its source, so a
+  // failure part way can leave a duplicate but never lose anything.
+  async applyPlan(plan, history, { onProgress } = {}) {
+    const { db, writeBatch } = this._fb;
+    const ops = [];
+    (plan.writes || []).forEach((w) => ops.push((b) => b.set(this._doc(w.coll, w.id), w.data)));
+    Object.entries(plan.candidates || {}).forEach(([id, p]) => {
+      const patch = Object.fromEntries(Object.entries(p).map(([k, v]) => [k, v === null ? DEL : v]));
+      ops.push((b) => b.update(this._doc("interviews_candidates", id), this._fsPatch(patch)));
+    });
+    if (plan.overrides && Object.keys(plan.overrides).length) {
+      const ov = { ...((this.state.settings || {}).panelOverrides || {}) };
+      Object.entries(plan.overrides).forEach(([k, v]) => { if (v) ov[k] = v; else delete ov[k]; });
+      ops.push((b) => b.set(this._doc("interviews_meta", "config"), { panelOverrides: ov }, { mergeFields: ["panelOverrides"] }));
+    }
+    if (plan.schedulePanels && Object.keys(plan.schedulePanels).length && this.state.schedule) {
+      const sp = { ...(this.state.schedule.panels || {}) };
+      Object.entries(plan.schedulePanels).forEach(([k, v]) => { if (v) sp[k] = v; else delete sp[k]; });
+      ops.push((b) => b.set(this._doc("interviews_meta", "schedule"), { panels: sp }, { mergeFields: ["panels"] }));
+    }
+    (plan.deletes || []).forEach((d) => ops.push((b) => b.delete(this._doc(d.coll, d.id))));
+    const h = histOf(history);
+    if (h) ops.push((b) => b.set(...this._histDoc(h)));
+    const CHUNK = 450;
+    for (let i = 0; i < ops.length; i += CHUNK) {
+      const b = writeBatch(db);
+      ops.slice(i, i + CHUNK).forEach((op) => op(b));
+      await b.commit();
+      if (onProgress) onProgress(Math.min(i + CHUNK, ops.length), ops.length);
+    }
   }
   async txDoc(coll, id, mutate, history) {
     const { db, runTransaction } = this._fb;

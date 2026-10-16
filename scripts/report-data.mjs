@@ -121,17 +121,19 @@ const bySurname = new Map();
 for (const c of candidates.filter((c) => !c.removed)) {
   const k = lastKey(c.name);
   if (!bySurname.has(k)) bySurname.set(k, []);
-  bySurname.get(k).push(c.name);
+  bySurname.get(k).push(c);
 }
-for (const [k, names] of bySurname)
-  if (names.length > 1)
-    issues.push(`Duplicate surname "${k}": ${names.join(", ")} — they SHARE one availability doc, ` +
-      `so whoever submits last overwrites the other. Disambiguate before sending the applicant link.`);
+// A pair whose members all have their own availKey (H14, set in the app) is
+// already separated: not an issue.
+for (const [k, group] of bySurname)
+  if (group.length > 1 && !group.every((c) => c.availKey))
+    issues.push(`Duplicate surname "${k}": ${group.map((c) => c.name).join(", ")}: they SHARE one availability doc, ` +
+      `so whoever submits last overwrites the other. In the app: Panels, Needs attention, "Give them separate answers".`);
 
 // Availability submitted under a name nobody on the roster matches: the exact
 // silent-loss case — the applicant saw "Saved" and nobody will ever read it.
-const liveKeys = new Set([...bySurname.keys()]);
-const allKeys = new Set(candidates.map((c) => lastKey(c.name)));
+const liveKeys = new Set(candidates.filter((c) => !c.removed).map((c) => c.availKey || lastKey(c.name)));
+const allKeys = new Set(candidates.map((c) => c.availKey || lastKey(c.name)));
 for (const a of availCand) {
   const picks = Object.keys(a.slots || {}).length;
   // A document with NO times is still evidence: it is only created when someone

@@ -119,15 +119,22 @@ Full design and reference data (committee, candidates, questions, rules) live in
   mirror applicants read).
 - **Never fix a candidate's name by removing and re-adding them.** Screening,
   scores and notes are keyed to the candidate's `c-<uuid>`, and the app's remove
-  is a *soft* delete — so a re-add strands every rating on the old id, invisible
-  in the UI, while the old entry still shows on the Screen tab. Use
-  `scripts/rename-candidate.mjs`, which renames in place and keeps the id. This
-  has already cost one applicant's ratings; `scripts/migrate-candidate.mjs`
-  exists to clean that up.
-- **Applicant availability is keyed by normalized surname** (`lastKey` in
-  `util.js` — ONE definition, shared by the app, the store and the rules'
-  allowed list). Two consequences that keep biting: a surname change moves the
-  document, and two applicants sharing a surname share one document. The rules
+  is a *soft* delete, so a re-add strands every rating on the old id. Since Oct 2026
+  use the app: Screen tab, More, **Rename** (keeps the id, moves availability when
+  the surname key changes) or **Merge into another entry** (the in-app port of
+  `scripts/migrate-candidate.mjs`, with a preview). The scripts stay as a fallback.
+- **Working-round documents are deleted only by Leadership actions that say so
+  (merge, delete permanently) or by the close-round flow, which archives and
+  verifies first.** Every in-app move is a plan from `js/candidates.js` applied by
+  `store.applyPlan`, which writes copies before deleting their sources.
+- **Applicant availability is keyed by `candKey`**: the applicant's own `availKey`
+  when they share a surname with another active applicant (H14, `surname-firstname`,
+  set by the app, never re-keyed), else the normalized surname (`lastKey`). ONE
+  definition (`util.js`), shared by the app, the store, the rules' allowed list and
+  `scripts/allowed-list.mjs`. A surname change moves the document; two applicants
+  sharing a surname share one document only until leadership separates them (new
+  pairs are separated when added; a surname-only document is never guessed, leadership
+  is asked whose it is). The rules
   refuse a write under a surname not on the roster (`/interviews_meta/allowed`,
   fail-closed) so nothing is silently lost — **sync that list before publishing
   rules**, or applicants are locked out. `report-data.mjs --issues` flags both.

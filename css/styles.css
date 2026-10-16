@@ -698,6 +698,17 @@ td.adj { font-variant-numeric:tabular-nums; color:var(--ed-ink-2); }
 .dlform input { min-width:0; }
 @media (max-width:640px) { .tform.dlform { grid-template-columns:1fr; } }
 
+/* ---- applicants: More menu, the two name fields (H5, H14) --------------------- */
+details.more { display:inline-block; position:relative; margin-left:10px; }
+details.more > summary { list-style:none; cursor:pointer; color:var(--ed-accent-ink); font-weight:500; }
+details.more > summary::-webkit-details-marker { display:none; }
+.moremenu { position:absolute; right:0; top:calc(100% + 6px); z-index:20; min-width:220px; display:grid; gap:2px;
+  background:var(--ed-surface); border-radius:var(--ed-r-md); box-shadow:var(--ed-shadow-lg); padding:8px; text-align:left; }
+.moremenu .linky { text-align:left; padding:8px 10px; min-height:40px; }
+.moremenu > span { padding:8px 10px; }
+.candlabel { display:block; text-align:left; margin-top:10px; }
+.candlabel input { margin-top:6px; }
+
 /* ---- mobile field sizing: MUST STAY LAST ---------------------------------
    iOS Safari zooms the whole page whenever a focused field's text is smaller
    than 16px. Several fields here are set smaller for density (the times form,
