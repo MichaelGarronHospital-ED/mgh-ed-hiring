@@ -41,6 +41,9 @@ s = open(p).read()
 pairs = [
   ('  const auth = au.getAuth(app);\n', '  const auth = au.getAuth(app);\n  au.connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });\n'),
   ('  const db = f.getFirestore(app);\n', '  const db = f.getFirestore(app);\n  f.connectFirestoreEmulator(db, "127.0.0.1", 8080);\n'),
+  # the emulator cases reach the store directly, to make the writes an older
+  # page (one without today's client-side guards) would make
+  ('    store = new FirestoreStore(fb, { scopes, echo });\n', '    store = new FirestoreStore(fb, { scopes, echo });\n    window.__edStore = store;\n'),
 ]
 for old, new in pairs:
     if s.count(old) != 1: sys.exit("make-site --emulator: patch target not found in app.js: " + old.strip())

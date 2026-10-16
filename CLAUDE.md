@@ -60,6 +60,10 @@ Full design and reference data (committee, candidates, questions, rules) live in
   (concerns, ratings, scores, exports say "(left)"), and they leave the name list, panels, the
   availability grid and every "waiting on" line. "Screens only" (`role:"screener"`) people get
   the Screen tab alone. The chair must stay an active interviewer.
+- **A closed stage is enforced by the rules, and the page disables its inputs too.** Every
+  stage change, and the booking flag applicants read, goes through `store.updateState` in one
+  commit with its history entry. While the schedule is locked, panels come from
+  `interviews_meta/schedule` only; never recompute or silently move a locked panel.
 - **Questions lock once scoring starts** (any score with a number or a note): only the wording
   may change. Never add, remove or reorder mid-round; notes are filed under the ids.
 - **Score notes are keyed by question id. Legacy ids are `"0"`..`"9"`; never renumber.** The

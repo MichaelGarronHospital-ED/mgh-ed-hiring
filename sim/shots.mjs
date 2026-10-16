@@ -61,5 +61,20 @@ const shots = {
       { state: { ...STATE, scores: { "Chen~c-1": { overall: 4.2 } } } });
     await shoot("name-list", async (p) => { await p.waitForSelector("#memberpick:not(.hidden)"); }, { code: "staffpw" });
   },
+  R3: async () => {
+    const scr = { ...STATE.screening, "Chen~c-1": { flag: true, reason: "Short ED time" }, "Dufour~c-2": { note: "I supervised her elective.", conflict: true } };
+    await shoot("setup-stages-rule", async (p) => { await landAsAdmin(p); await openCard(p, "setStages");
+      await p.evaluate(() => { for (const s of ["setDeadlines", "setRule"]) { const d = document.querySelector(`details[data-sec="${s}"]`); d.open = true; } }); },
+      { state: { ...STATE, meta: { stages: { screening: { closed: true, at: new Date().toISOString() } } } } });
+    await shoot("collation-decisions", async (p) => { await landAsAdmin(p); }, { state: { ...STATE, screening: scr,
+      candidates: STATE.candidates.map((c) => c.id === "c-3" ? { ...c, shortlist: "out", shortlistBy: "leadership" } : c) } });
+    await shoot("reviewer-concern-note", async (p) => { await pickMember(p, "Dufour"); }, { code: "staffpw", state: { ...STATE, screening: scr } });
+    await shoot("reviewer-closed", async (p) => { await pickMember(p, "Dufour"); }, { code: "staffpw",
+      state: { ...STATE, screening: scr, meta: { stages: { screening: { closed: true } } } } });
+    await shoot("panels-locked", async (p) => { await landAsAdmin(p); await tab(p, "panels"); }, { state: { ...STATE,
+      schedule: { locked: true, lockedAt: new Date().toISOString(), panels: { "c-1": { slot: "t0", room: 1, chair: "Abara", members: ["Abara", "Bruns", "Chen"], modality: "ip" } } },
+      availIv: { ...STATE.availIv, Chen: { t1: "ip" } } } });
+    await shoot("panels-unlocked", async (p) => { await landAsAdmin(p); await tab(p, "panels"); });
+  },
 };
 if (shots[rel]) { await shots[rel](); await done(); }
