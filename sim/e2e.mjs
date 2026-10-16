@@ -84,7 +84,7 @@ async function applicantsSubmit(page, availByKey, names) {
   // applicant link
   await page.evaluate(() => document.querySelector("#logout").click());
   await page.waitForFunction("window.__edReady === true", { timeout: 15000 });
-  await signIn(page, "guest2026");
+  await signIn(page, "guestpw");
   await page.waitForSelector("#candview:not(.hidden)");
   for (const full of names) {
     const key = surname(full);

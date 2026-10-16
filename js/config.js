@@ -6,7 +6,8 @@
 // Leave EMPTY ({}) to run in local mode (localStorage, single machine). With a
 // project config set, the tool is multi-device + real-time via Firestore.
 // Project: mgh-ed-hiring (separate from Motion Voting). This web config is public
-// by design — security is the Firestore rules + Anonymous auth.
+// by design. Security is the Firestore rules plus the three email/password role
+// accounts in AUTH below (the passwords live only in the Firebase console).
 export const firebaseConfig = {
   apiKey: "AIzaSyB_Jju69NtcHGeUobul2GuwfMlZiqY6wKs",
   authDomain: "mgh-ed-hiring.firebaseapp.com",
@@ -31,8 +32,9 @@ export const firebaseConfig = {
 export const CANDIDATE_CODE_LOCAL = "";
 
 // ---- 2b. Auth / security model -------------------------------------------
-// mode "anon"  → every client signs in anonymously (baseline; matches the
-//                original open rules). Keeps working with no console setup.
+// mode "anon"  → old model: every client signs in anonymously and the data is
+//                only protected by the page. The published rules refuse it.
+//                Do not use with real data.
 // mode "roles" → Firebase Auth email/password "role accounts". Rules branch on
 //                request.auth.token.email so applicants CANNOT read committee
 //                data and reviewers CANNOT read scores/ranking. Activate this

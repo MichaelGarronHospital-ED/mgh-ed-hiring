@@ -435,7 +435,7 @@ export class FirestoreStore extends BaseStore {
   // Worse, it was invisible: the applicant's own screen replays from the
   // per-device echo, so they still saw their old picks ticked while the server
   // held an empty map and the committee saw "waiting on" them.
-  // Pinned by tests/audit.checkname.test.mjs.
+  // Pinned by tests/applicant-availability.test.mjs.
   async checkName(key) {
     const { setDoc } = this._fb;
     try {

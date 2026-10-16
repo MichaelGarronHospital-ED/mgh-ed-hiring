@@ -20,7 +20,7 @@ no build step and no dependencies.
 cd sim
 npm install
 npx puppeteer browsers install chrome     # once, if you have no Chrome
-npm test                                  # scenarios + one full round + 40 random rounds
+npm test                                  # scenarios + one full round + score + auth + 40 random rounds
 ```
 
 `$CHROME` overrides the browser; otherwise any Chrome in the puppeteer cache or
@@ -32,6 +32,7 @@ the usual system paths is used.
 | `npm run scenarios` | The awkward paths: returning applicants, unknown/removed surnames, editing a time people have answered for, manual panels, double-booking, removals, chair changes, the CSV export. |
 | `npm run fuzz -- 100 1` | 100 random rounds (committee, times, availability, flags) from seed 1. A seed replays exactly. |
 | `npm run score` | The Score tab's typed score: 16 scripted cases (wrong-candidate filing, eaten taps, lost-on-lock, clearing). |
+| `npm run auth` | Sign-in and Log out against a stub Firebase (the other sims never reach Firebase): the sign-in is kept for one tab only, a reload signs back in, Log out signs out of Firebase, and a browser that blocks storage can still sign in. |
 | `npm run stress` | Random panellist behaviour on the Score tab, checked against a model after every pause: plain, with write latency, and with 15% failed writes. `node score-stress.mjs 1 <seed>` replays one; `FULL=1` prints its whole trail. |
 
 `make-site.sh` builds `site/` — a copy of the tool with `config.js`'s

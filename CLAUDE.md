@@ -28,9 +28,9 @@ Full design and reference data (committee, candidates, questions, rules) live in
 - **Run locally:** `python3 -m http.server 8000`, then open http://localhost:8000.
   This talks to the **live** Firebase project and real applicant data: look, don't edit.
   For a safe copy with Firebase switched off, use `sim/make-site.sh` (builds `sim/site/`).
-- **Rules tests:** `cd tests && npm install && npm test` (Firestore emulator; needs Java). 90 tests.
+- **Rules tests:** `cd tests && npm install && npm test` (Firestore emulator; needs Java). 109 tests.
 - **UI simulations:** `cd sim && npm install && npm test`. Any Chrome works; set `$CHROME`
-  to pick one. All pass (15/15 scenarios, e2e, score, fuzz; 2026-10-14). Fixture
+  to pick one. All pass (15/15 scenarios, e2e, score, auth, fuzz; 2026-10-16). Fixture
   interview dates come from `daysAhead()` in `sim/drive.mjs`: never hard-code a
   date, because once it passes the tool adds a "date is in the past" dialog and the
   time-edit scenarios fail (that, not macOS, was the old 13/15).
@@ -49,8 +49,21 @@ Full design and reference data (committee, candidates, questions, rules) live in
 - **Applicant PII never lives in this app.** CVs/cover letters stay in OneDrive;
   the app only links out. Store only names + committee input (flags/ratings/scores).
 - **Two audiences, two identity models.** Committee = trust-based name-pick +
-  passcode admin (like Motion Voting). Candidates = **private tokenized links**,
-  **no public candidate list**.
+  passcode admin (like Motion Voting). Candidates = **one shared Guest password plus
+  their own surname** (the rules check the surname against the roster), **no
+  per-person links and no public candidate list**.
+- **The ED password can save but never delete.** Every ED physician holds it, not
+  just the committee, so in `firestore.rules` the committee account may only create
+  and update (screening, scores, its own availability) and cannot write the roster;
+  every delete and every roster change is admin-only. Nothing in the app needs more:
+  un-ticking a time is `deleteField()` under merge (an update), and clearing a rating
+  or score saves `0`. Keep it that way; a committee write that needs `deleteDoc` is a
+  sign the write is wrong, not the rule. Pinned in `tests/firestore.rules.test.mjs`.
+- **Sign-ins last one tab, and Log out signs out of Firebase.** `signInFor` sets
+  `browserSessionPersistence` (memory only if sessionStorage is blocked) to match the
+  per-tab saved password, and both Log out buttons call `logOut()`, which signs out
+  before reloading. Firebase's default kept the sign-in in the browser for good and
+  let a second tab switch the first tab's account. Pinned by `sim/auth.mjs`.
 - **Admin signs in with no name; `ui.member` can be `null`.** The admin code
   lands as "Admin" (coordinators hold it, not just physicians). Every view that
   files input under `ui.member` — own screening, own availability, the Score
