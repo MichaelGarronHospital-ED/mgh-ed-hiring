@@ -180,7 +180,8 @@ export const cases = {
     await signIn(g, "guestpw");
     await g.waitForFunction(() => /Booking is closed/.test(document.querySelector("#candview").textContent), { timeout: 8000 }).catch(() => {});
     const gt = await g.$eval("#candview", (e) => e.textContent);
-    problems.push(...ok(gt.includes("Booking is closed") && !(await g.$("#candName")), `applicant sees: ${gt.slice(0, 120)}`));
+    // (from R5 the closed page still asks for a name, to show a confirmed time)
+    problems.push(...ok(gt.includes("Booking is closed"), `applicant sees: ${gt.slice(0, 120)}`));
     await closePage(g);
     await p.evaluate(() => [...document.querySelectorAll("#settings button")].find((b) => b.textContent.trim() === "Reopen").click());
     const pub2 = await until(async () => { const d = await emu.getDocument("interviews_public/slots"); return d && d.booking === "open" && d; });

@@ -3550,13 +3550,19 @@ window.CAND = {
   set: (id, v) => {
     const cur = (S.availCand[ui.candLast] || {})[id];
     store.setAvail("cand", ui.candLast, id, cur === v ? null : v)
-      .then(() => toast("Saved", "ok"), (e) => toast(
-        // The name passed at the gate, so a refusal here means the roster
-        // changed underneath them (removed, or renamed). Saying "check your
-        // connection" would send them away thinking they were scheduled.
-        e && e.code === "permission-denied"
-          ? "We can no longer find your name in the applicant list. Please contact us"
-          : "Couldn't save. Check your connection", "err"));
+      .then(() => toast("Saved", "ok"), async (e) => {
+        if (e && e.code === "permission-denied") {
+          // booking may have closed or paused since the page was drawn: ask the
+          // public document once, and show that rather than "not found"
+          let b = "open"; try { b = await store.refreshPublic(); } catch { /* keep */ }
+          if (b !== "open") { renderCandidate(); return; }
+          // The name passed at the gate, so a refusal here means the roster
+          // changed underneath them (removed, or renamed). Saying "check your
+          // connection" would send them away thinking they were scheduled.
+          toast("We can no longer find your name in the applicant list. Please contact us", "err"); return;
+        }
+        toast("Couldn't save. Check your connection", "err");
+      });
   },
   rename: () => { ss.del("ed_iv_cand"); ss.del("ed_iv_cand_disp"); ui.candLast = null; ui.candDisplay = null; ui.noticeKey = null; ui.notice = undefined; renderCandidate(); },
   reply: async (v) => {

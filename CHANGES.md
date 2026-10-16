@@ -58,6 +58,10 @@ the three role-account sign-ins (see the console steps in README).
   (a change arriving during that write was skipped); the local store also listens for the
   browser's storage event (a cross-tab message could arrive before the change was visible).
 
+- **Review fix:** when an applicant's time pick is refused, the page reads the public booking
+  flag once (as the reply buttons already did) and shows "Booking is closed" or "paused" if that
+  is why, rather than "We can no longer find your name".
+
 Tests: `tests/panels.rooms.test.mjs` (identity over 400 rounds, two rooms disjoint and legal,
 no-chair days, brute-force maximum), `tests/ics.test.mjs`, `tests/notify.test.mjs`;
 `sim/notices.mjs` (8 scenarios); `sim/score.mjs` (no pre-selection case) and `score-stress.mjs`
