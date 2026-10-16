@@ -19,6 +19,7 @@ import { effectiveSlots, slotLabel, slotTimeLabel, groupByDate, checkSlot, split
 
 let QUESTIONS = [], SCALE = [], GUIDE = [];
 let store = null, S = null;
+let fbAuth = null;   // { auth, authFns } once Firebase has loaded, so Log out can sign out
 const ui = { role: "committee", isAdmin: false, member: null, tab: "screen", scoreCand: null,
              candLast: null, editPanel: null, openSections: {} };
 const $ = (s) => document.querySelector(s);
@@ -184,6 +185,7 @@ async function initStore(role, typed) {
       err.code = "app/sdk-unreachable"; err.cause = e;
       throw err;
     }
+    fbAuth = { auth: fb.auth, authFns: fb.authFns };
     await signInFor(fb, role, typed); // may throw → surfaced at the gate
     const scopes = role === "candidate"
         ? (AUTH.mode === "roles" ? ["public"] : ["meta"])  // roles: only the PII-free public slots doc; anon: config
@@ -278,6 +280,16 @@ async function signInFor(fb, role, typed) {
   if (AUTH.mode === "roles") {
     const email = role === "candidate" ? AUTH.candidateEmail
       : role === "admin" ? AUTH.adminEmail : AUTH.committeeEmail;
+    // Keep the Firebase sign-in for this tab only, the same as the password it
+    // was made from (sessionStorage, "ed_iv_code"). Firebase's default keeps it
+    // in the browser for good, so closing the tab or pressing Log out left a
+    // shared computer still signed in, and signing in on a second tab with
+    // another password quietly switched the first tab's account too. A reload
+    // in the same tab is unchanged: the saved password signs in again anyway.
+    // A browser that blocks sessionStorage gets memory only (this page load),
+    // never a sign-in that fails because the SDK could not save it.
+    const keep = storageWorks("sessionStorage") ? authFns.browserSessionPersistence : authFns.inMemoryPersistence;
+    await authFns.setPersistence(auth, keep);
     await authFns.signInWithEmailAndPassword(auth, email, typed);
   } else {
     // let a real failure (e.g. Anonymous auth disabled) surface at the gate
@@ -2336,8 +2348,22 @@ window.CAND = {
           : "Couldn't save. Check your connection", "err"));
   },
   rename: () => { ss.del("ed_iv_cand"); ss.del("ed_iv_cand_disp"); ui.candLast = null; ui.candDisplay = null; renderCandidate(); },
-  logout: () => { ["ed_iv_cand", "ed_iv_cand_disp", "ed_iv_code"].forEach((k) => ss.del(k)); location.reload(); },
+  logout: () => logOut(["ed_iv_cand", "ed_iv_cand_disp", "ed_iv_code"]),
 };
+
+// Log out = forget this tab's password AND sign out of Firebase, then reload.
+// It used to do only the first half, so the Firebase sign-in outlived the
+// "logged out" page. signOut is local (no network), but it is capped at 3s so
+// a stuck SDK can never leave someone unable to log out.
+async function logOut(keys) {
+  keys.forEach((k) => ss.del(k));
+  if (fbAuth) {
+    try {
+      await Promise.race([fbAuth.authFns.signOut(fbAuth.auth), new Promise((r) => setTimeout(r, 3000))]);
+    } catch (e) { console.warn("sign-out failed:", e && e.code); }
+  }
+  location.reload();
+}
 
 // ------------------------------------------------- instant info tooltips
 let tipEl = null;
@@ -2385,7 +2411,7 @@ $("#setupClose").onclick = closeSetup;
 $("#settings").addEventListener("focusout", flushSetup); // catch up on held live updates
 $("#setupModal").onclick = (e) => { if (e.target === $("#setupModal")) closeSetup(); };
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.defaultPrevented && setupOpen()) closeSetup(); });
-$("#logout").onclick = () => { ["ed_iv_code", "ed_iv_member", "ed_iv_cand"].forEach((k) => ss.del(k)); location.reload(); };
+$("#logout").onclick = () => logOut(["ed_iv_code", "ed_iv_member", "ed_iv_cand"]);
 // Tells the net in index.html that the module really did load and run. Without
 // this it shows "the page didn't finish loading" after 8 seconds.
 window.__edReady = true;

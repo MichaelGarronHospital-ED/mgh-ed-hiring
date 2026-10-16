@@ -53,7 +53,7 @@ async function asApplicant(page, url, state) {
   }, state);
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.waitForFunction("window.__edReady === true", { timeout: 15000 });
-  await signIn(page, "guest2026");
+  await signIn(page, "guestpw");
   await page.waitForSelector("#candview:not(.hidden)");
 }
 

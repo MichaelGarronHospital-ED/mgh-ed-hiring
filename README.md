@@ -71,8 +71,10 @@ sample candidates. Data does **not** sync across devices in this mode.
 ## Go live (multi-device, real-time)
 1. **Create a Firebase project** — a *separate* one from Motion Voting (this holds
    applicant data). Build → Firestore Database → Create (production mode).
-2. Firestore → **Rules** → paste [`firestore.rules`](firestore.rules) → Publish.
-3. Authentication → **Get started** → enable **Anonymous**.
+2. Authentication → **Get started** → enable **Email/Password** and add the three role
+   accounts (see "Real access control" below). The app signs in with the password the
+   person types; there is no anonymous sign-in.
+3. Firestore → **Rules** → paste [`firestore.rules`](firestore.rules) → Publish.
 4. Project settings → Your apps → Web → copy the config → paste into
    `firebaseConfig` in [`js/config.js`](js/config.js).
 5. Deploy, then open `index.html` as **admin** (the admin code) → the **Setup** tab, and
@@ -127,12 +129,13 @@ b64 = lambda b: base64.b64encode(b).decode()
 print("ENC_CIPHER    =", b64(enc)); print("ENC_WRAP_STAFF =", b64(wS)); print("ENC_WRAP_ADMIN =", b64(wA))
 ```
 
-**Yearly rotation (manual).** The codes can't auto-rotate (the question key is baked
-into the file and the Firebase passwords are static), but bumping the year is a ~2-min
-job: re-run the recipe above with next year's codes (e.g. `erdr2027` / `guest2027`),
-paste the new blobs, push, then update the two Firebase account passwords in the
-console. **Current staff/guest codes carry the `2026` suffix — next bump: the 2027
-hiring round.**
+**Changing a password.** Passwords never change by themselves: the question key is
+baked into `js/data.js` and the Firebase account passwords stay as set. The normal way
+is `set-passwords.py` (see "Passwords" above), which does the re-lock and the Firebase
+accounts in one go. The recipe above is the manual equivalent: re-run it with the new
+ED and Leadership passwords, paste the new values, push, then set the matching Firebase
+account passwords in the console. Pick passwords that are not easy to guess, and never
+write one, or a hint about its pattern, in this public repo.
 
 ## One link, three audiences
 The same `index.html` serves everyone; what you can do depends on the code you type:
@@ -146,11 +149,13 @@ The same `index.html` serves everyone; what you can do depends on the code you t
   scores, or other applicants. (`book.html` now just forwards here.)
 
 ## Real access control (the "roles" security model)
-By default `AUTH.mode` in [`js/config.js`](js/config.js) is `"anon"` — every client
-signs in anonymously (matches the original open rules; no console setup, but the
-data is only protected client-side). To get a **hard, server-enforced** boundary,
-switch to the roles model. The app code is already written for it; you only need to
-do these console steps (they can't be done from the repo):
+`AUTH.mode` in [`js/config.js`](js/config.js) is `"roles"`, and that is how the live
+tool runs: each of the three passwords is the password of one Firebase account, and
+the Firestore rules decide what each account may do, on the server. (The old
+`"anon"` mode, where every visitor signed in anonymously and the data was only
+protected by the page itself, is still in the code but must not be used with real
+data; the published rules refuse anonymous sign-ins.) Setting the roles model up
+from scratch takes these console steps (they can't be done from the repo):
 
 1. **Firebase console → Authentication → Sign-in method →** enable **Email/Password**.
 2. **Authentication → Users → Add user** three times (emails must match
@@ -182,7 +187,7 @@ do these console steps (they can't be done from the repo):
    > real sign-in.
 
 3. **Firestore → Rules →** paste [`firestore.rules`](firestore.rules) → **Publish**.
-4. In [`js/config.js`](js/config.js) set `AUTH.mode = "roles"` and redeploy.
+4. Check that [`js/config.js`](js/config.js) has `AUTH.mode = "roles"` (it does).
 5. Sign in as **admin** once — the app publishes the PII-free list of interview times
    to `/interviews_public/slots` (and again on every edit in Setup → Interview times),
    so applicants can read *only* that.
@@ -191,13 +196,20 @@ What this enforces (server-side, not just UI):
 - Applicants can read **only** the interview slots and write **only** their own
   availability. They **cannot** read the roster, questions, screening, or scores.
 - Reviewers can submit screening/scores/availability and read the roster +
-  availability, but **cannot read anyone's scores/screening** — so the **ranking is
-  admin-only for real**, not just hidden in the UI.
+  availability, but **cannot read anyone's scores** or list the screening, so the
+  **ranking is admin-only for real**, not just hidden in the UI.
+- The ED password (every ED physician has it) can **save but never delete**: no
+  document in any collection, and it **cannot change the applicant list**. Adding,
+  removing and deleting are leadership's.
+- Applicant availability can only hold `slots` (time id → in person / Zoom / either),
+  at most 200 times.
+- A sign-in lasts for that browser tab only. **Log out** signs out of Firebase too.
 
 Honest limits (see the header of `firestore.rules`): reviewers share one committee
 account, so per-**member** write-isolation isn't rule-enforceable (needs per-member
-accounts or custom claims). And an applicant could overwrite another's availability
-by typing their last name. Both are low-impact and documented.
+accounts or custom claims). So a reviewer cannot delete anything, but could still
+overwrite a colleague's screening or score. And an applicant could overwrite another's
+availability by typing their last name. Both are low-impact and documented.
 
 ### Publishing the rules from the command line
 
