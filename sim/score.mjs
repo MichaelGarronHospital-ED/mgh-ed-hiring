@@ -130,8 +130,27 @@ const cand = (page) => page.$eval("select[aria-label='Candidate to score']", (e)
   await p.evaluate(() => { const s = JSON.parse(localStorage.getItem("ed_interviews_v1")); s.candidates.push({ id: "c-c", name: "Cora Dane", removed: false });
     localStorage.setItem("ed_interviews_v1", JSON.stringify(s)); new BroadcastChannel("ed_interviews").postMessage(1); });
   await sleep(300);
-  const opts = await p.$$eval(".scorebar option", (o) => o.map((x) => x.textContent));
+  const opts = await p.$$eval(".scorebar option", (o) => o.filter((x) => x.value).map((x) => x.textContent));
   R("roster change rebuilds picker", opts.length === 3 && (await p.$eval("#overallIn", (e) => e.value)) === "3.3", JSON.stringify(opts)); await p.close(); }
+
+// 13b. H9: the tab opens with nobody chosen (no boxes); › picks the first; a
+// score typed then is filed under that applicant only
+{ const p = await openPage(b, s.url, { log });
+  await p.evaluate(() => { localStorage.clear(); sessionStorage.clear();
+    localStorage.setItem("ed_interviews_v1", JSON.stringify({ candidates: [
+      { id: "c-a", name: "Ada Ashcombe", removed: false }, { id: "c-b", name: "Bram Ellery", removed: false }] })); });
+  await p.reload(); await p.waitForFunction("window.__edReady === true");
+  await signIn(p, "staffpw");
+  const me = (await p.$$eval("#memberSel option", (o) => o.map((x) => x.value).filter(Boolean)))[0];
+  await pickMember(p, me); await tab(p, "score"); p.me = me;
+  const none = await p.evaluate(() => [document.querySelector(".scorebar select").value, !!document.querySelector("#overallIn"), document.querySelectorAll("textarea[id^='note-']").length]);
+  await p.click("button[aria-label^='Next candidate']"); await sleep(150);
+  const picked = await cand(p);
+  await p.click("#overallIn"); await p.type("#overallIn", "4.4"); await p.keyboard.press("Enter"); await sleep(200);
+  const label = await p.$eval("label[for='overallIn']", (e) => e.textContent);
+  R("opens with nobody chosen; › picks the first; files there only", none[0] === "" && !none[1] && none[2] === 0 && picked === "c-a"
+    && (await sc(p, "c-a")).overall === 4.4 && !(await sc(p, "c-b")).overall && label.includes("Overall rating for Ada Ashcombe"),
+    `${JSON.stringify(none)} picked=${picked} label=${label}`); await p.close(); }
 
 // 14. deliberate clear
 { const p = await fresh();

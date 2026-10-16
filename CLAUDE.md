@@ -109,6 +109,18 @@ Full design and reference data (committee, candidates, questions, rules) live in
   requires the chair in the available pool, so a typo or a roster edit that drops
   the chair makes *every* candidate "unschedulable" with no obvious cause. Chair is
   **Kyle Vojdani**, the 13th member (the 12 in DESIGN.md are the others).
+- **Rooms and day chairs (H13).** `autoPanels` takes `chair` as a string, `null` (no chair that
+  day) or a function `(slotId, room) => id | null`, and `opts.rooms = { slotId: 2 }`. A two-room
+  time is two seats; both rooms of a time are built together and never share a person. With a
+  string chair and no rooms the result is EXACTLY the old one: `tests/panels.rooms.test.mjs`
+  checks it against the frozen `tests/fixtures/panels-v1.mjs` over 400 random rounds. Never edit
+  that fixture; the app passes the function only when rooms or day chairs are set.
+- **The Score tab never pre-selects an applicant** (H9), and once the schedule is locked it lists
+  the reviewer's own interviews first ("Show all applicants" to widen). The five `renderScore`
+  rules below still hold; run `npm run stress` after any change there.
+- **Applicants learn about booking only from `interviews_public/slots.booking`** and their own time
+  only from `interviews_applicant/{their key}` (one `get`, never a listener or a list). The page
+  reads `booking` before asking for a name, so a refusal is never reported as an unknown name.
 - **`panels.js` takes `chair` as a required argument** — no default. It previously
   had its own hardcoded `"Vojdani"`, a second source of truth that would silently
   outvote config. Don't reintroduce one.

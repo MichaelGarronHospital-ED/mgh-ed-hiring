@@ -24,6 +24,48 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## R5: two rooms, day chairs, my panels, messages, applicants' confirmed times (Oct 16 2026)
+
+- **Two rooms and day chairs (H13).** `panels.js`: `chair` may be `null` or a function of
+  (time, room); `opts.rooms` makes a time two seats; both rooms are built together (room 1
+  first, then room 2 from the people left, then the other order), never sharing a person; the
+  room-2 applicant waits with reason "two-rooms" if neither order works. `shareOut` uses each
+  panel's own chair and never seats someone in both rooms. With a string chair and no rooms
+  the output is identical to before (pinned against `tests/fixtures/panels-v1.mjs`). Setup:
+  "1 room / 2 rooms" per time, "Chair this day" (usual chair, another interviewer, or "No chair
+  this day"; hand-made panels that day swap chairs as Change chair does), "Room 2 led by".
+  Panels: "Room 2" on the row, the load line names who chaired which days, Needs attention
+  says when two balanced panels can't run at once or someone is in both rooms. `slots.js`
+  keeps `rooms: 2`.
+- **My panels (H9).** The Score tab never pre-selects; once the schedule is locked it lists
+  your own interviews ("Show all applicants" / "Show only my interviews"), "You have no
+  interviews on the schedule" when empty; the score label names the applicant.
+- **Messages and calendar files (H8).** `js/notify.js` (applicant and panel emails, reminders,
+  `mailto` with Bcc and a copy fallback past 1,800 characters; never a dash) and `js/ics.js`
+  (Toronto time with a VTIMEZONE, 75-octet folding, CRLF). Setup, Interview details. Panels:
+  per-row copy and calendar buttons, bulk calendar and emails (with "Lock the schedule first"
+  while not locked). Availability: "Email who we're waiting on".
+- **Applicants' confirmed time (H11).** Panels, "Send times to applicants" (locked only) writes
+  `interviews_applicant/{key}` (no names) for changed applicants and deletes stale ones, with
+  `schedule.publishedAt` and a history entry, in one batch. The applicant page reads `booking`
+  first ("Booking is paused. Please try again later." with no name step; "Booking is closed..."
+  with the name step so a time can still be fetched), re-reads it once after a refusal, then
+  fetches its own notice once: "Your interview", "I'll be there" / "I can't come" (confirm
+  dialog, Undo), the reply date, and "Need a different time? Reply to our email." Leadership:
+  no badge for confirmed, "Withdrew <date>" always, "No reply yet" after the reply date; Needs
+  attention lists both. `book.html` forwards with `#apply`.
+- **Fixes found on the way.** The allowed-list sync now looks again once its own write settles
+  (a change arriving during that write was skipped); the local store also listens for the
+  browser's storage event (a cross-tab message could arrive before the change was visible).
+
+Tests: `tests/panels.rooms.test.mjs` (identity over 400 rounds, two rooms disjoint and legal,
+no-chair days, brute-force maximum), `tests/ics.test.mjs`, `tests/notify.test.mjs`;
+`sim/notices.mjs` (8 scenarios); `sim/score.mjs` (no pre-selection case) and `score-stress.mjs`
+updated; `sim/check.mjs` restates rooms and day chairs and fuzz uses them in every even round;
+emulator `applicantNotice`, `bookingPausedNoProbe`. Checked: see the release commit message.
+
+---
+
 ## R4: applicants who share a surname; rename, merge and delete in the app (Oct 16 2026)
 
 - **Shared surnames (H14).** `util.js`: `firstKey`, `givenKey`, `typedFirstKeys`, `candKey`

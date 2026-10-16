@@ -38,6 +38,7 @@ export async function readPanels(page) {
         name: txtOf(head.querySelector(".name")),
         slotLabel: bits.slice(0, 2).join(" · "),                  // "Thu, Oct 1 · 9:00–10:00 am"
         modality,
+        room: /· Room 2/.test(meta) ? 2 : 1,
         manual: /· edited/.test(meta),
         members: txtOf(row.querySelector(":scope > .members")).split("·").map((s) => s.trim()).filter(Boolean),
         badges: [...row.querySelectorAll(".badge")].map((b) => b.textContent.trim()),

@@ -7,30 +7,32 @@
 //  Firestore rules when AUTH.mode === "roles" (see config.js + firestore.rules).
 // ============================================================================
 import { firebaseConfig, ORG_NAME, CHAIR, COMMITTEE, SLOTS, ONEDRIVE,
-         CANDIDATE_CODE_LOCAL, AUTH, SCREENING_DEADLINE } from "./config.js?v=R4";
-import { decryptContent } from "./data.js?v=R4";
-import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R4";
-import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R4";
-import { autoPanels, buildPanel } from "./panels.js?v=R4";
+         CANDIDATE_CODE_LOCAL, AUTH, SCREENING_DEADLINE } from "./config.js?v=R5";
+import { decryptContent } from "./data.js?v=R5";
+import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R5";
+import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R5";
+import { autoPanels, buildPanel } from "./panels.js?v=R5";
 import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell, lastKey,
-         ss, ls, storageWorks, dialogOpen, flowDialog, candKey, typedFirstKeys, firstKey } from "./util.js?v=R4";
-import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan } from "./candidates.js?v=R4";
+         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R5";
+import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan } from "./candidates.js?v=R5";
 import { effectiveSlots, slotLabel, slotTimeLabel, groupByDate, checkSlot, splitRange, responseCounts,
-         newSlotId, isStructured, fmtDate } from "./slots.js?v=R4";
+         newSlotId, isStructured, fmtDate } from "./slots.js?v=R5";
 import { normalizeCommittee, interviewers as interviewersOf, pickable as pickableOf, memberName, memberStatus,
-         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R4";
+         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R5";
 import { fromLegacy, normalizeQuestions, liveQuestions, idsWithNotes, scoringStarted, checkEdit, newQuestionId,
-         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R4";
+         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R5";
 import { entry as hEntry, newHistoryId, panelUndo, shortlistUndo, screeningUndo, canUndo, undoneIds, textFor, whoFor, whenFor,
-         hashOf, toDate } from "./history.js?v=R4";
-import { buildBackup, backupFileName, toState } from "./backup.js?v=R4";
+         hashOf, toDate } from "./history.js?v=R5";
+import { buildBackup, backupFileName, toState } from "./backup.js?v=R5";
+import { icsEvent, icsCalendar } from "./ics.js?v=R5";
+import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R5";
 import { STAGES, STAGE_WORD, stageOpen, stageClosedAt, roundOpen, bookingFor, thresholdOf, isOnList, closePlan, reopenPlan,
-         lockEntry } from "./stages.js?v=R4";
+         lockEntry } from "./stages.js?v=R5";
 
 // The release this page is. Must equal version.json and every "?v=" in every
 // import (tests/versions.test.mjs). A page that sees a different version.json
 // was updated underneath it (section "Reload notice" below).
-const RELEASE = "R4";
+const RELEASE = "R5";
 
 // Interview questions (H2): the saved document (interviews_meta/questions) when
 // there is one, else what the typed password decrypted from the old js/data.js
@@ -66,8 +68,20 @@ function EFF() {
     nameOf: (id) => memberName(committee, id),
     chair: s.chair || CHAIR, slots, oneDrive: s.oneDrive || ONEDRIVE,
     overrides: s.panelOverrides || {}, slotIds: slots.map((t) => t.id),
-    deadlines: s.deadlines || {}, threshold: thresholdOf(s) };
+    deadlines: s.deadlines || {}, threshold: thresholdOf(s),
+    // H13: two-room times and per-day chairs. chairFor(slotId, room) is the
+    // chair that panel needs: the day's chair (or none), or the room-2 lead.
+    days: s.days || {}, rooms: Object.fromEntries(slots.filter((t) => t.rooms === 2).map((t) => [t.id, 2])),
+    chairFor: (slotId, room = 1) => {
+      const t = slots.find((x) => x.id === String(slotId));
+      const day = ((s.days || {})[(t && t.date) || ""]) || {};
+      if (room === 2) return day.room2Chair && day.room2Chair !== "none" ? day.room2Chair : null;
+      return day.chair === "none" ? null : day.chair || s.chair || CHAIR;
+    },
+    interviewInfo: s.interviewInfo || {} };
 }
+// Rooms or day chairs in use? Without them panels are built exactly as before.
+const roomsInUse = () => { const e = EFF(); return Object.keys(e.rooms).length > 0 || Object.values(e.days).some((d) => d && (d.chair || d.room2Chair)); };
 // H4: is this stage open (and the round not closing)? Reads the state document.
 const isOpen = (name) => stageOpen(S && S.meta, name);
 const locked = () => !!(S && S.schedule && S.schedule.locked);
@@ -658,7 +672,7 @@ function render() {
 // settings, not navigating away).
 function openSetup() {
   // always open with every card collapsed
-  ["setChair", "setCommittee", "setQuestions", "setStages", "setDeadlines", "setRule", "setSlots", "setOneDrive", "setBackup", "setHistory"].forEach((k) => delete ui.openSections[k]);
+  ["setChair", "setCommittee", "setQuestions", "setStages", "setDeadlines", "setRule", "setInfo", "setSlots", "setOneDrive", "setBackup", "setHistory"].forEach((k) => delete ui.openSections[k]);
   ui.hist = null;   // the history card reads fresh each time Setup opens
   renderSettings(); wireSections();
   $("#setupModal").classList.remove("hidden");
@@ -1189,15 +1203,16 @@ function renderAvailability() {
   // answers "how far along is this?" without being opened.
   const { interviewers: committee } = EFF();
   const ivIn = committee.filter((m) => liveAnswers(S.availIv[m.id]).length).length;
-  const waiting = (names) => names.length
+  const waiting = (names, kind) => names.length
     ? `<p class="small muted" style="margin-top:.7rem">Waiting on ${names.map((n) => escapeHtml(n)).join(", ")}</p>`
+      + (ui.isAdmin && kind ? `<p class="toolline"><button class="linky small" onclick="IV.emailWaiting('${kind}')">Email who we're waiting on</button></p>` : "")
     : `<p class="small ok" style="margin-top:.7rem">✓ Everyone has answered</p>`;
 
   const grid = availGrid();
   if (grid) {
     const ivNot = committee.filter((m) => !liveAnswers(S.availIv[m.id]).length).map((m) => m.name);
     html += section("avgrid", "Who's available when", `${ivIn} of ${committee.length} interviewers`,
-      grid + waiting(ivNot),
+      grid + waiting(ivNot, "iv"),
       { open: !ui.isAdmin || !ui.member,
         info: "Every interviewer against every interview time. The Panel column says whether a balanced panel could actually run then. It uses the same rules as the Panels tab, so a ✓ there means a panel really is possible." });
   }
@@ -1207,8 +1222,10 @@ function renderAvailability() {
     const candIn = cands.filter((c) => liveAnswers(availForCand(c)).length).length;
     const candNot = cands.filter((c) => !liveAnswers(availForCand(c)).length).map((c) => c.name);
     const cg = candGrid();
+    const confirmLine = S.schedule && S.schedule.publishedAt
+      ? `<p class="toolline"><button class="linky small" onclick="IV.emailWaiting('confirm')">Applicants who haven't confirmed</button></p>` : "";
     if (cg) html += section("candgrid", "When can the applicants come", `${candIn} of ${cands.length} applicants`,
-      cg + waiting(candNot),
+      cg + waiting(candNot, "apps") + confirmLine,
       { open: true,
         info: "Every applicant against every interview time, with the interview each one is currently scheduled for ringed. The Usable column shows how many applicants offered that hour and whether a balanced panel could run then, which shows where to add times." });
   }
@@ -1217,22 +1234,36 @@ function renderAvailability() {
 
 // ------------------------------------------------------------- 3 · Score
 function renderScore() {
-  const list = activeCands().slice().sort((a, b) => a.name.localeCompare(b.name));
+  // H9: once the schedule is locked, "Your interviews" only (applicants whose
+  // locked panel includes you), with a quiet link to show everyone. Before
+  // that, everyone on the interview list. Nobody is ever pre-selected.
+  const all = activeCands().slice().sort((a, b) => a.name.localeCompare(b.name));
+  const lockedNow = locked();
+  const mine = lockedNow ? all.filter((c) => { const p = (S.schedule.panels || {})[c.id]; return p && (p.members || []).includes(ui.member); }) : all;
+  const list = !lockedNow || ui.scoreAll ? all : mine;
   const scOpen = isOpen("scoring");
-  const head = hint(scOpen ? "Notes per question, then one overall rating."
-    : roundOpen(S.meta) ? "Scoring is closed. Your answers are saved." : "Leadership is closing this round. Changes are paused.");
+  const toggle = lockedNow ? `<p class="toolline scoretoggle"><button class="linky" onclick="IV.scoreShowAll(${ui.scoreAll ? "false" : "true"})">${ui.scoreAll ? "Show only my interviews" : "Show all applicants"}</button></p>` : "";
+  const head = hint(!scOpen ? (roundOpen(S.meta) ? "Scoring is closed. Your answers are saved." : "Leadership is closing this round. Changes are paused.")
+    : lockedNow ? "Notes per question, then one overall rating." : "Notes per question, then one overall rating. The schedule isn't final yet, so everyone is listed.");
   const dis = scOpen ? "" : ' disabled aria-disabled="true"';
   // Questions by id, in the saved order (H2). Notes are keyed by question id;
   // legacy ids are "0".."9", exactly the keys every older note already has.
   const QQ = Q(), QUESTIONS = liveQuestions(QQ), SCALE = QQ ? QQ.scale : [], GUIDE = QQ ? QQ.guide : [];
   if (!QUESTIONS.length) { delete $("#score").dataset.sig; $("#score").innerHTML = head + empty(ICON.star, "No questions yet", "The interview questions aren't set up yet."); return; }
-  if (!list.length) { delete $("#score").dataset.sig; $("#score").innerHTML = head + empty(ICON.star, "No candidates to score", "Candidates on the interview list will appear here."); return; }
-  if (!ui.scoreCand || !list.some((c) => c.id === ui.scoreCand)) ui.scoreCand = list[0].id;
+  if (!list.length) {
+    delete $("#score").dataset.sig;
+    $("#score").innerHTML = head + (lockedNow && !ui.scoreAll && all.length
+      ? `<div class="card">${empty(ICON.star, "No interviews for you", "You have no interviews on the schedule.")}</div>${toggle}`
+      : empty(ICON.star, "No candidates to score", "Candidates on the interview list will appear here."));
+    return;
+  }
+  if (ui.scoreCand && !list.some((c) => c.id === ui.scoreCand)) ui.scoreCand = null;
   const me = ui.member, cid = ui.scoreCand;
-  const rec = myScore(me, cid);
+  const rec = cid ? myScore(me, cid) : { notes: {} };
   const scored = (c) => !!myScore(me, c.id).overall;
-  const at = list.findIndex((c) => c.id === cid);
-  const jump = (d) => { const t = list[at + d]; return t
+  const at = cid ? list.findIndex((c) => c.id === cid) : -1;
+  // with nothing chosen, › picks the first and ‹ does nothing
+  const jump = (d) => { const t = at < 0 ? (d > 0 ? list[0] : null) : list[at + d]; return t
     ? `<button class="btn ghost small" onclick="IV.pickScore('${t.id}')" aria-label="${d < 0 ? "Previous" : "Next"} candidate: ${escapeHtml(t.name)}">${d < 0 ? ICON.prev : ICON.next}</button>`
     : `<button class="btn ghost small" disabled aria-hidden="true">${d < 0 ? ICON.prev : ICON.next}</button>`; };
   // A "scored" tick in the picker turns thirteen identical names into a
@@ -1254,11 +1285,15 @@ function renderScore() {
   const root = $("#score");
   // the wording, scale and guidance count too: an edit in Setup redraws the tab
   // (flushing anything still pausing first), never leaves the old text up
-  const sig = [me, cid, list.map((c) => c.id).join(","), QUESTIONS.map((q) => q.id).join(","), SCALE.length, scOpen,
+  const sig = [me, cid || "", list.map((c) => c.id).join(","), QUESTIONS.map((q) => q.id).join(","), SCALE.length, scOpen, !!ui.scoreAll,
     hashOf({ t: QUESTIONS.map((q) => q.text), s: SCALE, g: GUIDE })].join("|");
   // About to rebuild: land anything still pausing first, then start over so
   // `rec` is read after it (the saves may already have re-entered here).
   if (root.dataset.sig !== sig && flushPending()) return renderScore();
+  if (root.dataset.sig === sig && !cid && $("#scorePick")) {
+    $("#scoreNotice").innerHTML = myInputNotice(list, (c) => myScore(me, c.id), true);
+    return;
+  }
   if (root.dataset.sig === sig && $("#overallIn")) {
     const act = document.activeElement;
     $("#scoreNotice").innerHTML = myInputNotice(list, (c) => myScore(me, c.id), true);
@@ -1278,13 +1313,21 @@ function renderScore() {
     return;
   }
   root.dataset.sig = sig;
+  const picker = `<div class="prow scorebar"><div class="row center">
+        <select id="scorePick" class="grow" onchange="IV.pickScore(this.value)" aria-label="Candidate to score">
+          <option value="" disabled ${cid ? "" : "selected"}>Choose who you are scoring</option>${list.map((c) =>
+          `<option value="${c.id}" ${c.id === cid ? "selected" : ""}>${escapeHtml(c.name)}${scored(c) ? " ✓" : ""}</option>`).join("")}</select>
+        <span class="scorenav">${jump(-1)}${jump(1)}</span></div></div>`;
+  if (!cid) {
+    root.innerHTML = head + `<div id="scoreNotice">${myInputNotice(list, (c) => myScore(me, c.id), true)}</div>`
+      + `<div class="card flush list">${picker}</div>${toggle}`;
+    return;
+  }
+  const cname = (cand(cid) || {}).name || "";
   root.innerHTML = head
     + `<div id="scoreNotice">${myInputNotice(list, (c) => myScore(me, c.id), true)}</div>`
     + `<div class="card flush list">
-      <div class="prow scorebar"><div class="row center">
-        <select class="grow" onchange="IV.pickScore(this.value)" aria-label="Candidate to score">${list.map((c) =>
-          `<option value="${c.id}" ${c.id === cid ? "selected" : ""}>${escapeHtml(c.name)}${scored(c) ? " ✓" : ""}</option>`).join("")}</select>
-        <span class="scorenav">${jump(-1)}${jump(1)}</span></div></div>
+      ${picker}
       ${QUESTIONS.map((q, i) => {
         const filled = String((rec.notes || {})[q.id] || "").trim();
         // numbered from 1 for the human reading it; the note itself is keyed by
@@ -1292,12 +1335,13 @@ function renderScore() {
         return `<div class="prow qrow ${filled ? "done" : ""}"><div class="q">${escapeHtml(q.text)}</div>
           <textarea id="note-${q.id}" oninput="IV.note('${q.id}',this.value)" placeholder="Notes" aria-label="Notes for question ${i + 1}"${dis}>${escapeHtml((rec.notes || {})[q.id] || "")}</textarea></div>`;
       }).join("")}
-      <div class="prow"><div class="row center"><label class="grow name" for="overallIn">Overall rating${infoIcon(scaleText)}</label>
+      <div class="prow"><div class="row center"><label class="grow name" for="overallIn">Overall rating for ${escapeHtml(cname)}${infoIcon(scaleText)}</label>
         <span class="overall"><input id="overallIn" type="text" inputmode="decimal" autocomplete="off" placeholder="1.0–5.0" value="${ov}"
           data-me="${escapeHtml(me)}" data-cid="${escapeHtml(cid)}" aria-describedby="overallMsg"
           oninput="IV.scoreTyped(this.value,this.dataset)" onblur="IV.score(this.value,this.dataset)" onkeydown="if(event.key==='Enter')this.blur()"${dis}/><span class="muted">/ 5</span></span></div>
         <div id="overallMsg" class="small muted" style="margin-top:.45rem">${escapeHtml(label)}</div></div>
     </div>
+    ${toggle}
     ${GUIDE.length ? section("guide", "Guidance for panelists", "", `<ul class="small">${GUIDE.map((g) => `<li>${escapeHtml(g)}</li>`).join("")}</ul>`) : ""}`;
 }
 
@@ -1316,12 +1360,14 @@ function parseScore(raw) {
 // ------------------------------------------------------ 4 · Panels (admin)
 // validate a panel's members against the current committee (size, chair present,
 // balanced = ≥1 who identifies female + ≥1 male). Returns flags + warnings.
-function validatePanel(members, slot, modality) {
-  const { interviewers: committee, chair, nameOf } = EFF();
+function validatePanel(members, slot, modality, room = 1) {
+  const { interviewers: committee, nameOf } = EFF();
+  // H13: the chair this panel needs (the day's chair, the room-2 lead, or none)
+  const chair = slot == null ? EFF().chair : EFF().chairFor(slot, room);
   const gmap = {}; committee.forEach((m) => { gmap[m.id] = m.gender; });
   const present = members.filter((m) => gmap[m]);            // still on the committee
   const size = present.length, sizeOk = size >= 3 && size <= 5;
-  const chairOk = present.includes(chair);
+  const chairOk = chair === null || present.includes(chair);
   const balanced = present.some((m) => gmap[m] === "F") && present.some((m) => gmap[m] === "M");
   const warns = [];
   if (!chairOk) warns.push("chair not on panel");
@@ -1362,12 +1408,14 @@ function computePanels() {
   if (locked()) return lockedPanels(interviewers);
   const candidates = {};
   activeCands().forEach((c) => { candidates[c.id] = { avail: availForCand(c) }; });
-  const res = autoPanels(candidates, interviewers, slotIds, chair);
+  const eff = EFF();
+  const res = roomsInUse() ? autoPanels(candidates, interviewers, slotIds, eff.chairFor, { rooms: eff.rooms })
+    : autoPanels(candidates, interviewers, slotIds, chair);
   // apply overrides: {candId:{slot,members,modality}}. An override may schedule an
   // otherwise-unschedulable candidate, or replace an auto panel. Overrides are
   // re-validated (never trusted blindly) and stale members are dropped.
   const byCand = {};
-  res.panels.forEach((p) => { byCand[p.cand] = { ...p, valid: validatePanel(p.members, p.slot, p.modality) }; });
+  res.panels.forEach((p) => { byCand[p.cand] = { room: 1, chair: eff.chairFor(p.slot, 1), ...p, valid: validatePanel(p.members, p.slot, p.modality, p.room || 1) }; });
   let unsched = res.unschedulable.slice();
   const lostTime = []; // manual panels whose time was removed → fall back to auto
   Object.entries(overrides).forEach(([cid, ov]) => {
@@ -1375,25 +1423,35 @@ function computePanels() {
     if (!ov || !ov.members || !ov.members.length) return;
     if (!slotIds.includes(String(ov.slot))) { lostTime.push(cid); return; }
     const avail = candidates[cid] ? candidates[cid].avail : {};
-    // always include the current chair; keep only current committee members
+    // always include the chair this panel needs; keep only current committee members
     const names = new Set(committee.map((m) => m.id));
+    const room = ov.room === 2 && eff.rooms[String(ov.slot)] === 2 ? 2 : 1;
+    const ch = eff.chairFor(ov.slot, room);
     let members = ov.members.filter((m) => names.has(m));
-    if (names.has(chair) && !members.includes(chair)) members = [chair, ...members];
+    if (ch !== null && names.has(ch) && !members.includes(ch)) members = [ch, ...members];
     const modality = ov.modality || (avail[ov.slot] === "zoom" ? "zoom" : avail[ov.slot] === "ip" ? "ip" : "ip");
-    byCand[cid] = { cand: cid, slot: ov.slot, members, modality, manual: true, valid: validatePanel(members, ov.slot, modality) };
+    byCand[cid] = { cand: cid, slot: ov.slot, room, chair: ch, members, modality, manual: true, valid: validatePanel(members, ov.slot, modality, room) };
     unsched = unsched.filter((x) => x !== cid);
   });
-  const panels = Object.values(byCand).sort((a, b) => slotIds.indexOf(a.slot) - slotIds.indexOf(b.slot));
+  const panels = Object.values(byCand).sort((a, b) => slotIds.indexOf(a.slot) - slotIds.indexOf(b.slot) || (a.room || 1) - (b.room || 1));
   // Two candidates at one time. The auto-matcher cannot produce this — it
   // matches one candidate per slot by construction — but a manual override can,
   // and nothing else notices: validatePanel only ever sees one panel. Left
   // unsaid, it surfaces as two applicants turning up for the same hour.
   const bySlot = {};
-  panels.forEach((p) => { (bySlot[String(p.slot)] = bySlot[String(p.slot)] || []).push(p.cand); });
-  const doubleBooked = Object.entries(bySlot).filter(([, cs]) => cs.length > 1)
-    .map(([slot, cands]) => ({ slot, cands }));
+  panels.forEach((p) => { (bySlot[String(p.slot)] = bySlot[String(p.slot)] || []).push(p); });
+  // H13: more applicants than rooms at a time, or two panels in the same room
+  const doubleBooked = Object.entries(bySlot).filter(([slot, ps]) => ps.length > (eff.rooms[slot] || 1)
+      || new Set(ps.map((p) => p.room || 1)).size < ps.length)
+    .map(([slot, ps]) => ({ slot, cands: ps.map((p) => p.cand) }));
+  // H13: one person on both rooms' panels at once
+  const bothRooms = Object.entries(bySlot).filter(([, ps]) => ps.length > 1).map(([slot, ps]) => {
+    const seen = new Set(), twice = new Set();
+    ps.forEach((p) => p.members.forEach((m) => { if (seen.has(m)) twice.add(m); seen.add(m); }));
+    return { slot, members: [...twice] };
+  }).filter((x) => x.members.length);
   return { panels, unschedulable: unsched, understaffed: res.understaffed, interviewers, lostTime,
-           doubleBooked, panelSize: res.panelSize, why: res.why || {} };
+           doubleBooked, bothRooms, panelSize: res.panelSize, why: res.why || {} };
 }
 
 // H4: once the schedule is locked, panels come from interviews_meta/schedule
@@ -1407,7 +1465,7 @@ function lockedPanels(interviewers) {
     if (!active.has(cid) || !p || !p.members) return;
     if (!slotIds.includes(String(p.slot))) { lostTime.push(cid); return; }
     panels.push({ cand: cid, slot: String(p.slot), room: p.room || 1, chair: p.chair, members: p.members.slice(),
-      modality: p.modality, locked: true, valid: validatePanel(p.members, p.slot, p.modality) });
+      modality: p.modality, locked: true, valid: validatePanel(p.members, p.slot, p.modality, p.room || 1) });
     p.members.forEach((m) => {
       const who = committee.find((x) => x.id === m);
       if (!who || !who.active || who.role !== "interviewer") { leftOn[m] = (leftOn[m] || 0) + 1; return; }
@@ -1419,9 +1477,16 @@ function lockedPanels(interviewers) {
   const unschedulable = activeCands().filter((c) => !panels.some((p) => p.cand === c.id)).map((c) => c.id);
   const why = Object.fromEntries(unschedulable.map((id) => [id, { reason: "locked", slots: [] }]));
   const bySlot = {};
-  panels.forEach((p) => { (bySlot[p.slot] = bySlot[p.slot] || []).push(p.cand); });
-  const doubleBooked = Object.entries(bySlot).filter(([, cs]) => cs.length > 1).map(([slot, cands]) => ({ slot, cands }));
-  return { panels, unschedulable, understaffed: [], interviewers, lostTime, doubleBooked,
+  panels.forEach((p) => { (bySlot[p.slot] = bySlot[p.slot] || []).push(p); });
+  const rooms = EFF().rooms;
+  const doubleBooked = Object.entries(bySlot).filter(([slot, ps]) => ps.length > (rooms[slot] || 1) || new Set(ps.map((p) => p.room || 1)).size < ps.length)
+    .map(([slot, ps]) => ({ slot, cands: ps.map((p) => p.cand) }));
+  const bothRooms = Object.entries(bySlot).filter(([, ps]) => ps.length > 1).map(([slot, ps]) => {
+    const seen = new Set(), twice = new Set();
+    ps.forEach((p) => p.members.forEach((m) => { if (seen.has(m)) twice.add(m); seen.add(m); }));
+    return { slot, members: [...twice] };
+  }).filter((x) => x.members.length);
+  return { panels, unschedulable, understaffed: [], interviewers, lostTime, doubleBooked, bothRooms,
     panelSize: Math.max(3, ...panels.map((p) => p.members.length)), why,
     lockIssues: { notFree, left: Object.entries(leftOn).map(([member, n]) => ({ member, n, name: nameOf(member) })) } };
 }
@@ -1476,6 +1541,10 @@ function unschedulableLine(id, res) {
   const w = res.why[id] || { reason: "no-panel", slots: [] };
   if (w.reason === "no-answer")
     return `${who} hasn't picked any interview times yet. Chase them, or set a time by hand.`;
+  if (w.reason === "two-rooms") {
+    const t = EFF().slots.find((x) => x.id === String((w.slots || [])[0]));
+    return `${who}: ${t ? `at ${escapeHtml(slotTimeLabel(t))} on ${escapeHtml(fmtDate(t.date))} ` : ""}there aren't enough interviewers for two balanced panels at once.`;
+  }
   if (w.reason === "locked")
     return `${who} has no interview in the locked schedule. Set one by hand, or unlock the schedule.`;
   if (w.reason === "contested") {
@@ -1522,6 +1591,17 @@ function needsAttention(res) {
   by("no-panel").forEach((id) => items.push(`${unschedulableLine(id, res)} ${editLink(id, "Set a time")}`));
   by("contested").forEach((id) => items.push(`${unschedulableLine(id, res)} ${editLink(id, "Set a time")}`));
   by("locked").forEach((id) => items.push(`${unschedulableLine(id, res)} ${editLink(id, "Set a time")}`));
+  by("two-rooms").forEach((id) => items.push(`${unschedulableLine(id, res)} ${editLink(id, "Set a time")}`));
+  const withdrew = res.panels.filter((p) => { const c = cand(p.cand); return c && replyOf(c).reply === "withdrawn"; });
+  if (withdrew.length) items.push(`${withdrew.map((p) => `<b>${escapeHtml(shortName(p.cand))}</b>`).join(", ")} `
+    + `${withdrew.length === 1 ? "has" : "have"} withdrawn. Decide whether to offer the time to someone else.`);
+  if (replyLate() && S.schedule && S.schedule.publishedAt) {
+    const late = res.panels.filter((p) => { const c = cand(p.cand); return c && !replyOf(c).reply; });
+    if (late.length) items.push(`${late.map((p) => `<b>${escapeHtml(shortName(p.cand))}</b>`).join(", ")} `
+      + `${late.length === 1 ? "hasn't" : "haven't"} confirmed, and the date to confirm has passed.`);
+  }
+  (res.bothRooms || []).forEach((x) => items.push(`${x.members.map((m) => `<b>${escapeHtml(mname(m))}</b>`).join(", ")} `
+    + `${x.members.length === 1 ? "is" : "are"} on both rooms' panels at ${escapeHtml(slotName(x.slot))}.`));
   // H14: answers saved under a surname two applicants now share: ask whose they
   // are (never guess). And a pair found in live data that has no keys yet.
   sharedDocs(planState(), (S.settings || {}).keptSurnameDocs || []).forEach((d) => items.push(
@@ -1548,6 +1628,16 @@ function needsAttention(res) {
     <ul class="small">${items.map((t) => `<li>${t}</li>`).join("")}</ul>${openEditor}</div>`;
 }
 
+// H11: the quiet rule: no badge for "Confirmed"; "Withdrew Feb 22" always;
+// "No reply yet" only once the reply date has passed (and times were sent).
+function replyBadge(cid) {
+  const c = cand(cid); if (!c) return "";
+  const r = replyOf(c);
+  if (r.reply === "withdrawn") return `<div class="badges"><span class="badge bad">${ICON.warn}Withdrew${r.at ? " " + escapeHtml(dayOf(r.at)) : ""}</span></div>`;
+  if (!r.reply && replyLate() && S.schedule && S.schedule.publishedAt) return `<div class="badges"><span class="badge">No reply yet</span></div>`;
+  return "";
+}
+
 function renderPanels() {
   const { interviewers: committee, chair, slots, overrides, nameOf: memName } = EFF();
   const nameOf = (id) => (cand(id) || {}).name || id;
@@ -1566,6 +1656,13 @@ function renderPanels() {
     <button class="linky" onclick="IV.printSchedule()">Print</button>
     ${!locked() && Object.keys(overrides).length ? `<button class="linky" onclick="IV.resetPanels(this)">Reset hand-made panels</button>` : ""}
   </p>`;
+  // H8/H11: messages and calendar files for everyone at once; sending times to
+  // applicants only once the schedule is locked.
+  if (res.panels.length) html += `<p class="toolline">
+      <button class="linky" onclick="IV.downloadIcs('all')">Calendar file for all interviews</button>
+      <button class="linky" onclick="IV.copyAllInvites()">Copy all applicant emails</button>
+      ${locked() ? `<button class="linky" onclick="IV.publishNotices(this)">Send times to applicants</button>` : ""}
+    </p>${locked() ? "" : `<p class="hint">These follow the suggested panels, which can still change. Lock the schedule first.</p>`}`;
 
   // Who is actually doing the interviews. Counted from the panels ON SCREEN —
   // auto and manual together — rather than from the builder's own tally, because
@@ -1588,7 +1685,7 @@ function renderPanels() {
           : ""}.
         Availability wins over fairness where they conflict: someone free for only one time can only ever
         sit on that one panel, and every panel still has to stay balanced.</div>
-      <p class="small"><b>${escapeHtml(memName(chair))}</b>: all ${n} panel${n === 1 ? "" : "s"} (chair).</p>
+      ${chairLine(res.panels, memName)}
       <div>${chips}</div>
       ${unused.length ? idleInterviewers(unused, res)
         : `<p class="ok small" style="margin-top:.55rem">✓ Every interviewer is on at least one panel.</p>`}`;
@@ -1613,11 +1710,17 @@ function renderPanels() {
     let row = `<div class="prow${editing ? " open" : ""}">
       <div class="row center"><div class="grow">
           <div class="name">${escapeHtml(nameOf(p.cand))}</div>
-          <div class="small muted">${escapeHtml(slotName(p.slot))} · ${p.modality === "ip" ? "in person" : "Zoom"}${p.manual && !p.locked ? " · edited" : ""}</div>
+          <div class="small muted">${escapeHtml(slotName(p.slot))}${p.room === 2 ? " · Room 2" : ""} · ${p.modality === "ip" ? "in person" : "Zoom"}${p.manual && !p.locked ? " · edited" : ""}</div>
         </div>
         <button class="btn ghost small" onclick="IV.editPanel('${p.cand}')">${editing ? "Done" : "Edit"}</button></div>
       <div class="small members">${p.members.map((m) => escapeHtml(memName(m))).join(" · ")}</div>
-      ${faults.length ? `<div class="badges">${faults.map((w) => `<span class="badge bad">${ICON.warn}${escapeHtml(w)}</span>`).join("")}</div>` : ""}`;
+      ${faults.length ? `<div class="badges">${faults.map((w) => `<span class="badge bad">${ICON.warn}${escapeHtml(w)}</span>`).join("")}</div>` : ""}
+      ${replyBadge(p.cand)}
+      <div class="panelacts">
+        <button class="linky small" onclick="IV.copyInvite('${p.cand}','applicant')">Copy email to applicant</button>
+        <button class="linky small" onclick="IV.copyInvite('${p.cand}','panel')">Copy email to panel</button>
+        <button class="linky small" onclick="IV.downloadIcs('${p.cand}')">Calendar file</button>
+        <button class="linky small" onclick="IV.downloadIcs('${p.cand}',true)">Calendar file for the applicant</button></div>`;
     if (editing) row += panelEditor(p);
     return row + `</div>`;
   }).join("");
@@ -1628,19 +1731,49 @@ function renderPanels() {
   $("#panels").innerHTML = html;
 }
 
+// H13: "Vojdani chairs 8 panels. Rosenstein chairs 2, on Mar 3."
+function chairLine(panels, memName) {
+  const by = {};
+  panels.forEach((p) => {
+    const ch = p.chair === undefined ? EFF().chair : p.chair;
+    const t = EFF().slots.find((x) => x.id === String(p.slot));
+    const k = ch === null ? "" : ch;
+    (by[k] = by[k] || { n: 0, days: new Set() }).n++;
+    if (t && t.date) by[k].days.add(t.date);
+  });
+  const main = EFF().chair;
+  const parts = Object.entries(by).sort(([a], [b]) => (a === main ? -1 : b === main ? 1 : a.localeCompare(b))).map(([id, v]) =>
+    id === "" ? `${v.n} panel${v.n === 1 ? " has" : "s have"} no chair`
+      : `${escapeHtml(memName(id))} chairs ${v.n} panel${v.n === 1 ? "" : "s"}${id !== main && v.days.size ? `, on ${[...v.days].map((d) => escapeHtml(fmtDate(d))).join(", ")}` : ""}`);
+  if (parts.length === 1 && by[main]) return `<p class="small"><b>${escapeHtml(memName(main))}</b>: all ${panels.length} panel${panels.length === 1 ? "" : "s"} (chair).</p>`;
+  return `<p class="small">${parts.join(". ")}.</p>`;
+}
+
+// H11: an applicant's reply to their published time ({ reply, replyAt }), read
+// from the availability documents leadership already listens to.
+const replyOf = (c) => { const k = candKey(c); const r = (S.availRaw ? S.availRaw[k] : (S.replies || {})[k]) || {}; return { reply: r.reply || "", at: r.replyAt || null }; };
+const replyLate = () => { const d = EFF().deadlines.reply; return !!d && daysUntil(d) < 0; };
+
 // inline editor for one panel: choose slot + toggle members (chair locked on)
 function panelEditor(p) {
-  const { interviewers: committee, chair } = EFF();
+  const { interviewers: committee } = EFF();
+  // H13: the chair this panel needs (the day's chair, the room-2 lead, or none)
+  const edRoom = (ui._draft && ui._draft[p.cand] && ui._draft[p.cand].room) || p.room || 1;
+  const chair = p.slot != null ? EFF().chairFor(p.slot, edRoom) : EFF().chair;
   const c = cand(p.cand);
   const avail = c ? availForCand(c) : {};
   // their available times (in date order), else every time; always keep the current one
   const live = liveAnswers(avail);
   const slotChoices = EFF().slotIds.filter((id) => !live.length || live.includes(id) || id === String(p.slot));
-  const members = new Set(p.members && p.members.length ? p.members : [chair]);
-  members.add(chair);
+  const members = new Set(p.members && p.members.length ? p.members : (chair ? [chair] : []));
+  if (chair) members.add(chair);
   const slotSel = `<select id="ovslot-${p.cand}" aria-label="Slot">
     ${slotChoices.map((s) => `<option value="${s}" ${String(p.slot) === String(s) ? "selected" : ""}>${escapeHtml(slotName(s))}${avail[s] ? " · " + avail[s] : ""}</option>`).join("")}</select>`;
   const curMod = p.modality || (avail[p.slot] === "zoom" ? "zoom" : "ip");
+  // H13: which room, when this time runs two
+  const curRoom = (ui._draft && ui._draft[p.cand] && ui._draft[p.cand].room) || p.room || 1;
+  const roomSel = EFF().rooms[String(p.slot)] === 2 ? `<span class="muted small">Room</span><span class="seg" role="group" aria-label="Room">
+    ${[1, 2].map((r) => `<button type="button" class="${curRoom === r ? "on" : ""}" aria-pressed="${curRoom === r}" onclick="IV.setOvRoom('${p.cand}',${r},this)">Room ${r}</button>`).join("")}</span>` : "";
   const modSel = `<span class="seg" id="ovmod-${p.cand}" role="group" aria-label="Modality">
     ${["ip", "zoom"].map((mv) => `<button type="button" class="${curMod === mv ? "on" : ""}" aria-pressed="${curMod === mv}" onclick="IV.setOvMod('${p.cand}','${mv}',this)">${mv === "ip" ? "In person" : "Zoom"}</button>`).join("")}</span>`;
   // pass the committee INDEX (not the name) so names with quotes/apostrophes
@@ -1651,7 +1784,7 @@ function panelEditor(p) {
       onchange="IV.toggleMember('${p.cand}',${idx},this.checked)" style="margin-right:.35rem"/>${escapeHtml(m.name)}${isChair ? " (chair)" : ""}</label>`;
   }).join("");
   return `<div class="peditor">
-    <div class="row center" style="gap:.5rem; flex-wrap:wrap"><span class="muted small">Time</span>${slotSel}<span class="muted small">Modality</span>${modSel}</div>
+    <div class="row center" style="gap:.5rem; flex-wrap:wrap"><span class="muted small">Time</span>${slotSel}<span class="muted small">Modality</span>${modSel}${roomSel}</div>
     <div class="muted small" style="margin:.6rem 0 .3rem">Members (chair always included)</div>
     <div>${memToggles}</div>
     <div class="adminbar"><button class="btn tinted small" onclick="IV.savePanel('${p.cand}',this)">Save panel</button>
@@ -1968,6 +2101,11 @@ function renderSettings() {
       Set 0 to decide each applicant yourself.</p>
     ${isOpen("screening") ? "" : `<p class="note">Screening is closed, so this has no effect on the list that was saved when it closed.</p>`}
     <button class="btn tinted small" onclick="IV.saveThreshold(this)">Save rule</button>`;
+  const ii = EFF().interviewInfo;
+  const infoBody = `<label class="ed-label" for="idLoc">In-person location</label><input id="idLoc" type="text" value="${escapeHtml(ii.location || "")}" placeholder="ED admin office, 2nd floor"/>
+    <label class="ed-label" for="idZoom" style="margin-top:10px">Zoom link</label><input id="idZoom" type="text" value="${escapeHtml(ii.zoomLink || "")}" placeholder="https://..."/>
+    <label class="ed-label" for="idContact" style="margin-top:10px">Contact for applicants</label><input id="idContact" type="text" value="${escapeHtml(ii.contact || "")}" placeholder="MGHEmergencyDepartmentAdministration@tehn.ca"/>
+    <div style="margin-top:.6rem"><button class="btn tinted small" onclick="IV.saveInfo(this)">Save details</button></div>`;
   const committeeBody = committeeEditor();
   const questionsBody = questionsEditor();
   const nQ = liveQuestions(Q()).length;
@@ -1990,6 +2128,7 @@ function renderSettings() {
     ${section("setStages", "Round stages", STAGES.filter((n) => !isOpen(n)).map((n) => STAGE_WORD[n] + " closed").join(", "), stagesBody, { open: false, info: "Close each stage when its deadline passes. A closed stage can't be changed with the ED password (the server refuses it). You can reopen a stage." })}
     ${section("setDeadlines", "Deadlines", "", deadlinesBody, { open: false, info: "The screening date drives the countdown everyone sees. The others are used in reminders and in what applicants see." })}
     ${section("setRule", "Screening rule", `off at ${th || "no"} concern${th === 1 ? "" : "s"}`, ruleBody, { open: false, info: "How many concerns take an applicant off the interview list automatically. Your On or Off decision on the Screen tab always wins." })}
+    ${section("setInfo", "Interview details", "", infoBody, { open: false, info: "Used in every email and calendar file the tool writes for you, and in what applicants see." })}
     ${section("setSlots", "Interview times", `${slots.length} time${slots.length === 1 ? "" : "s"}`, slotsBody, { open: false, info: "The interview times interviewers and applicants choose from. Add a single time or a block of back-to-back times; edit or remove any time. If people already answered for a time you change, you choose whether to keep their answers or ask them again." })}
     ${section("setOneDrive", "Applications folder (OneDrive)", "", odBody, { open: false, info: "Link to the access-controlled OneDrive folder holding the CVs/cover letters. Committee members open applicant files from here. Stored privately, never in the app's code." })}
     ${section("setBackup", "Backup", "", backupBody, { open: false, info: "Download everything in the working round. Do this before every release of the tool and before any big change." })}
@@ -2102,6 +2241,29 @@ function refreshHistoryCard() {
   const d = document.querySelector('details[data-sec="setHistory"] .sec-body');
   if (d) d.innerHTML = historyBody();
 }
+// H8: what the messages need, from Setup and the current page address.
+function msgCtx() {
+  const info = EFF().interviewInfo, dl = EFF().deadlines;
+  return { applicantLink: new URL("index.html#apply", location.href).href, staffLink: new URL("index.html", location.href).href,
+    location: info.location || "", zoomLink: info.zoomLink || "", contact: info.contact || "", replyBy: dl.reply || "", availabilityBy: dl.availability || "" };
+}
+function panelMsg(p) {
+  const c = cand(p.cand) || { name: "the applicant" };
+  const t = EFF().slots.find((x) => x.id === String(p.slot));
+  return { name: c.name, slot: t || { label: slotName(p.slot) }, room: p.room || 1, modality: p.modality,
+    chairName: p.chair ? mname(p.chair) : null, memberNames: p.members.map(mname) };
+}
+function icsFor(p, forApplicant) {
+  const t = EFF().slots.find((x) => x.id === String(p.slot));
+  if (!t || !isStructured(t)) return null;
+  const m = panelMsg(p), ctx = msgCtx();
+  const where = p.modality === "zoom" ? (ctx.zoomLink || "Zoom") : [ctx.location, p.room === 2 ? "room 2" : ""].filter(Boolean).join(", ");
+  return icsEvent({ uid: `${p.slot}-${p.room || 1}-${p.cand}@mgh-ed-hiring`, date: t.date, start: t.start, end: t.end,
+    summary: forApplicant ? "Interview with the MGH Emergency Department" : `ED physician interview: ${salutation(m.name)}`,
+    description: forApplicant ? "" : `Panel: ${[m.chairName ? `${m.chairName} (chair)` : null, ...m.memberNames.filter((x) => x !== m.chairName)].filter(Boolean).join(", ")}`,
+    location: where });
+}
+
 // H14: give every active applicant who shares a surname their own key (and say
 // so). Never moves an existing surname-only document: Needs attention asks whose.
 async function separateShared(announce) {
@@ -2220,14 +2382,36 @@ function timesEditor(slots) {
         <button class="btn ghost small" onclick="IV.tEditCancel()">Cancel</button></div></div>`;
     const c = answersText(counts[t.id]);
     const b = booked[t.id] ? `<span class="pill neutral">Panel booked</span>` : "";
+    const two = t.rooms === 2;
+    const roomSeg = isStructured(t) ? `<span class="seg roomseg" role="group" aria-label="Rooms for ${escapeHtml(slotLabel(t))}">
+        <button type="button" class="${two ? "" : "on"}" aria-pressed="${!two}" onclick="IV.setRooms('${t.id}',1)">1 room</button>
+        <button type="button" class="${two ? "on" : ""}" aria-pressed="${two}" onclick="IV.setRooms('${t.id}',2)">2 rooms</button></span>` : "";
     return `<div class="trow"><div class="grow"><span class="ttime">${escapeHtml(slotTimeLabel(t))}</span>
-        <span class="muted small">${c ? escapeHtml(c) + " answered" : "no answers yet"}</span> ${b}</div>
+        <span class="muted small">${c ? escapeHtml(c) + " answered" : "no answers yet"}</span> ${b} ${roomSeg}</div>
       <button class="linky" onclick="IV.tEdit('${t.id}')" aria-label="Edit ${escapeHtml(slotLabel(t))}">Edit</button>
       <button class="linky danger" onclick="IV.tRemove(['${t.id}'])" aria-label="Remove ${escapeHtml(slotLabel(t))}">Remove</button></div>`;
+  };
+  // H13: who chairs each day, and who leads room 2 on a day with two-room times
+  const { interviewers: ivs, chair: usual, days } = EFF();
+  const dayCtl = (g) => {
+    if (!g.date) return "";
+    const d = days[g.date] || {};
+    const cur = d.chair === "none" ? "none" : d.chair || "";
+    const sel = `<label class="small daychair">Chair this day:
+      <select onchange="IV.setDayChair('${g.date}',this.value)" aria-label="Chair on ${escapeHtml(g.title)}">
+        <option value="" ${cur === "" ? "selected" : ""}>${escapeHtml(mname(usual))} (usual chair)</option>
+        ${ivs.filter((m) => m.id !== usual).map((m) => `<option value="${escapeHtml(m.id)}" ${cur === m.id ? "selected" : ""}>${escapeHtml(m.name)}</option>`).join("")}
+        <option value="none" ${cur === "none" ? "selected" : ""}>No chair this day</option></select></label>${infoIcon("If the chair can't come on a day, pick who leads that day's panels, or choose no chair.")}`;
+    const lead = g.items.some((t) => t.rooms === 2) ? `<label class="small daychair">Room 2 led by:
+      <select onchange="IV.setDayLead('${g.date}',this.value)" aria-label="Room 2 lead on ${escapeHtml(g.title)}">
+        <option value="none" ${!d.room2Chair || d.room2Chair === "none" ? "selected" : ""}>No lead</option>
+        ${ivs.map((m) => `<option value="${escapeHtml(m.id)}" ${d.room2Chair === m.id ? "selected" : ""}>${escapeHtml(m.name)}</option>`).join("")}</select></label>` : "";
+    return `<div class="dayctl">${sel}${lead}</div>`;
   };
   const list = groupByDate(slots).map((g) => `<div class="tgroup">
       <div class="tgroup-h"><b>${escapeHtml(g.title)}</b> <span class="muted small">· ${pl(g.items.length, "time")}</span>
         <button class="linky danger small" onclick="IV.tRemoveDay('${g.date}')">Remove day</button></div>
+      ${dayCtl(g)}
       ${g.items.map(row).join("")}</div>`).join("")
     || `<div class="muted small" style="padding:.4rem 0">No interview times yet. Add some below. Interviewers and applicants will see “times not posted yet” until you do.</div>`;
   const a = tAdd();
@@ -2250,7 +2434,7 @@ function timesEditor(slots) {
 // Re-render Setup while it's open without losing focus/typing in plain fields.
 function rerenderSettings() {
   const act = document.activeElement, id = act && act.id;
-  const keep = {}; ["odIn", "dlScreening", "dlAvailability", "dlReply", "thIn"].forEach((k) => { const el = document.getElementById(k); if (el && el.value !== el.defaultValue) keep[k] = el.value; });
+  const keep = {}; ["odIn", "dlScreening", "dlAvailability", "dlReply", "thIn", "idLoc", "idZoom", "idContact"].forEach((k) => { const el = document.getElementById(k); if (el && el.value !== el.defaultValue) keep[k] = el.value; });
   const sel = act && typeof act.selectionStart === "number" ? [act.selectionStart, act.selectionEnd] : null;
   if (ui.tEdit && !EFF().slotIds.includes(ui.tEdit.id)) { ui.tEdit = null; toast("The time you were editing was just removed by someone else", "err"); }
   renderSettings(); wireSections();
@@ -2266,24 +2450,29 @@ function proceedCandidate() {
   $("#candview").classList.remove("hidden");
   renderCandidate();
 }
-// H4 (review): what the public times document says about booking. Read before
-// asking for a name, so a closed availability stage is never reported to an
-// applicant as an unknown name.
+// H11 (review M6): what the public times document says about booking. The
+// applicant page reads it BEFORE asking for a name or probing, so a refusal is
+// never mistaken for an unknown name.
 const bookingNow = () => (S && S.publicInfo && S.publicInfo.booking) || (S && S.booking) || "open";
+const MONTH = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const monthDay = (at) => { const d = toDate(at); return d ? `${MONTH[d.getMonth()]} ${d.getDate()}` : ""; };
+
 function renderCandidate() {
   ui._candBooking = bookingNow();
   const el = $("#candview");
   const slots = effectiveSlots(S.settings, SLOTS);
-  if (bookingNow() === "closed") {
+  const booking = bookingNow();
+  if (booking === "paused") {
     el.innerHTML = `<div class="overlay"><div class="overlay-box"><div class="logo" aria-hidden="true">ED</div>
-      <h2>Interview availability</h2>${empty(ICON.calendar, "Booking is closed", "If you need to change your times, reply to our email.")}
-      <p><button class="linky" onclick="CAND.logout()">Log out</button></p></div></div>`;
+      <h2>Interview availability</h2><p class="muted">Booking is paused. Please try again later.</p>
+      <p style="margin-top:16px"><button class="linky" onclick="CAND.logout()">Log out</button></p></div></div>`;
     return;
   }
   if (!ui.candLast) {
     el.innerHTML = `<div class="overlay"><div class="overlay-box"><div class="logo" aria-hidden="true">ED</div>
-      <h2>Interview availability</h2><p class="muted">Enter your name to pick the times that work for you.
-        You won't see any other applicants or committee information.</p>
+      <h2>Interview availability</h2><p class="muted">${booking === "closed"
+        ? "Booking is closed. If you need to change your times, reply to our email. If you have an interview time, enter your name to see it."
+        : "Enter your name to pick the times that work for you. You won't see any other applicants or committee information."}</p>
       <form id="candForm">
         <label class="ed-label candlabel" for="candFirst">First name<input id="candFirst" type="text" autocomplete="given-name" autofocus/></label>
         <label class="ed-label candlabel" for="candName">Last name<input id="candName" type="text" autocomplete="family-name"/></label>
@@ -2311,7 +2500,13 @@ function renderCandidate() {
         btn.disabled = false; btn.textContent = "Continue"; return;
       }
       btn.disabled = false; btn.textContent = "Continue";
+      // the flag can be a moment behind: re-read it once before saying "can't find"
+      if (!k && booking === "open") {
+        let b = "open"; try { b = await store.refreshPublic(); } catch { /* keep open */ }
+        if (b !== "open") { renderCandidate(); return; }
+      }
       if (!k) {
+        const err = $("#candErr") || { set innerHTML(v) {} };   // the form may have been redrawn meanwhile
         err.innerHTML = `We can't find <b>${escapeHtml((first ? first + " " : "") + v)}</b> in our applicant list. ` +
           `Please check the spelling, or try the last name exactly as it appears on your application. ` +
           `Use your names exactly as on your application. ` +
@@ -2330,6 +2525,15 @@ function renderCandidate() {
     || (ui.candLast ? ui.candLast.charAt(0).toUpperCase() + ui.candLast.slice(1) : "");
   // read by the SAME normalized key we write under (ui.candLast), not the display name
   const map = S.availCand[ui.candLast] || {};
+  // H11: their published interview time, fetched ONCE per name (a get by their
+  // own key; never a listener, never a list)
+  if (ui.noticeKey !== ui.candLast) {
+    ui.noticeKey = ui.candLast; ui.notice = undefined;
+    const k = ui.candLast;
+    store.getMyNotice(k).then((n) => { if (ui.noticeKey === k) { ui.notice = n; renderCandidate(); } },
+      () => { if (ui.noticeKey === k) { ui.notice = null; renderCandidate(); } });
+  }
+  const notice = ui.notice;
   // The only page anyone outside the department sees. It asks for one thing, so
   // it shows one thing: who we think you are, the times, and a line saying it
   // saves itself. The identity card and the boxed instructions that used to sit
@@ -2339,12 +2543,39 @@ function renderCandidate() {
         <p class="muted">${escapeHtml(who)} · <button class="linky" onclick="CAND.rename()">Not you?</button></p></div>
       <button class="linky" onclick="CAND.logout()">Log out</button></div></header>
     <main style="max-width:600px">
-      ${slots.length ? `<h2 class="pagetitle">When can you interview?</h2>
+      ${notice === undefined ? `<p class="hint">Loading…</p>` : notice ? noticeCard(notice)
+        : booking === "closed" ? `<div class="card">${empty(ICON.calendar, "Booking is closed", "If you need to change your times, reply to our email.")}</div>`
+        : slots.length ? `<h2 class="pagetitle">When can you interview?</h2>
         ${hint("Choose in person, Zoom or either for every time you can make. In person is preferred.")}
         <div class="card"><div class="slotgrid">${slotRows(slots, map, "CAND.set")}</div></div>
         <p class="hint">Saved as you tap. Come back and change it any time. We'll confirm your final time by email.</p>`
         : `<div class="card">${empty(ICON.calendar, "Times not posted yet", "The interview times haven't been published yet. Please check back soon.")}</div>`}
     </main>`;
+}
+
+// H11: the applicant's published time, and their reply. They can't read their
+// reply back from the server (write-only), so this device remembers it.
+function noticeCard(n) {
+  const when = whenText({ date: n.date, start: n.start, end: n.end, label: n.label });
+  const where = n.format === "zoom"
+    ? (n.zoomLink ? `By Zoom. Link: <a href="${escapeHtml(n.zoomLink)}" target="_blank" rel="noopener">${escapeHtml(n.zoomLink)}</a>` : "By Zoom. We will send the Zoom link before the interview.")
+    : `In person at ${escapeHtml(n.location || "the Emergency Department")}.`;
+  const r = store.replyEcho(ui.candLast) || {};
+  const past = n.replyBy && daysUntil(n.replyBy) < 0;
+  const status = r.reply === "confirmed" ? `<p class="ok">Thank you. You confirmed on ${escapeHtml(monthDay(r.at))}.</p>`
+    : r.reply === "withdrawn" ? `<p>You have withdrawn. If this was a mistake, tap Undo.</p>
+        <button class="btn ghost replybtn" onclick="CAND.reply('')">Undo</button>` : "";
+  const ask = past ? `<p>The date to confirm has passed. Please reply to our email.</p>`
+    : n.replyBy && r.reply !== "withdrawn" && r.reply !== "confirmed" ? `<p>Please confirm by ${escapeHtml(longDate(n.replyBy))}.</p>` : "";
+  return `<h2 class="pagetitle">Your interview</h2>
+    <div class="card noticecard">
+      <p><b>${escapeHtml(when)}.</b> ${where}</p>
+      ${ask}${status}
+      ${r.reply === "withdrawn" ? "" : `<div class="replybtns">
+        <button class="btn filled replybtn" onclick="CAND.reply('confirmed')">I'll be there</button>
+        <button class="btn ghost replybtn" onclick="CAND.reply('withdrawn')">I can't come</button></div>`}
+    </div>
+    <p class="hint">Need a different time? Reply to our email.</p>`;
 }
 
 // ---------------------------------------------------------- handlers (window)
@@ -2500,6 +2731,8 @@ window.IV = {
     renderScreen(); wireSections();
   },
   note: (qid, val) => saveNoteKeyed(ui.member, ui.scoreCand, String(qid), val),
+  // H9: "Show all applicants" / "Show only my interviews" (per session, not stored)
+  scoreShowAll: (v) => { ui.scoreAll = !!v; renderScore(); wireSections(); },
   // Typing saves a valid score after a pause, like notes do — the old buttons
   // saved on tap, and a box that only saved on blur would lose a score typed
   // just before the phone was locked. Who/which candidate is captured NOW, so
@@ -2639,6 +2872,128 @@ window.IV = {
       toast("Moved to a note", "ok");
     } catch (e) { toast((e && e.message) || "Couldn't save. Check your connection", "err"); }
   },
+  // ---- H13: day chairs and two-room times
+  setDayChair: async (date, v) => {
+    try {
+      await track(store.updateConfig((c) => {
+        const days = { ...(c.days || {}) }, d = { ...(days[date] || {}) };
+        const usual = c.chair || CHAIR;
+        const old = d.chair === "none" ? null : d.chair || usual;
+        if (!v) delete d.chair; else d.chair = v;
+        const now = v === "none" ? null : v || usual;
+        days[date] = d;
+        if (!Object.keys(d).length) delete days[date];
+        // hand-made panels that day: the same swap as changing the chair, and
+        // never shrink a panel (the old chair stays as a member if needed)
+        const onDay = new Set(effectiveSlots(c, SLOTS).filter((t) => t.date === date).map((t) => t.id));
+        const ov = {};
+        Object.entries(c.panelOverrides || {}).forEach(([cid, o]) => {
+          if (!o || !o.members || !onDay.has(String(o.slot)) || o.room === 2 || now === null || now === old) { ov[cid] = o; return; }
+          const set = new Set(o.members.filter((n) => n !== old)); set.add(now);
+          if (set.size < o.members.length && old) set.add(old);
+          ov[cid] = { ...o, members: [...set] };
+        });
+        return { days, panelOverrides: ov };
+      }, hEntry("day.set", `Changed who chairs on ${fmtDate(date)}`, { by: byWho(), ...(v && v !== "none" ? { member: v } : {}) })));
+    } catch { toast("Couldn't save. Check your connection", "err"); }
+    rerenderSettings();
+  },
+  setDayLead: async (date, v) => {
+    try {
+      await track(store.updateConfig((c) => {
+        const days = { ...(c.days || {}) }, d = { ...(days[date] || {}) };
+        if (!v || v === "none") delete d.room2Chair; else d.room2Chair = v;
+        days[date] = d; if (!Object.keys(d).length) delete days[date];
+        return { days };
+      }, hEntry("day.set", `Changed who leads room 2 on ${fmtDate(date)}`, { by: byWho() })));
+    } catch { toast("Couldn't save. Check your connection", "err"); }
+    rerenderSettings();
+  },
+  setRooms: async (id, n) => {
+    const t = EFF().slots.find((x) => x.id === id); if (!t || (t.rooms === 2) === (n === 2)) return;
+    try {
+      await timesBusy(() => track(store.updateTimes(SLOTS, (times, overrides) => {
+        const out = times.map((x) => { if (x.id !== id) return x; const y = { ...x }; if (n === 2) y.rooms = 2; else delete y.rooms; return y; });
+        if (n !== 2) Object.keys(overrides).forEach((c) => { if (String(overrides[c].slot) === id && overrides[c].room === 2) { const o = { ...overrides[c] }; delete o.room; overrides[c] = o; } });
+        return { times: out, overrides };
+      }, hEntry("times.edit", `Set ${slotLabel(t)} to ${n === 2 ? "2 rooms" : "1 room"}`, { by: byWho() }))));
+    } catch { toast("Couldn't save. Check your connection", "err"); }
+  },
+  saveInfo: (btn) => withBusy(btn, async () => {
+    const v = (id) => (($("#" + id) || {}).value || "").trim();
+    const info = { location: v("idLoc"), zoomLink: v("idZoom"), contact: v("idContact") };
+    await track(store.updateConfig(() => ({ interviewInfo: info }), hEntry("settings.save", "Changed the interview details", { by: byWho() })));
+  }, "Details saved").catch(() => {}),
+  // ---- H8: messages and calendar files (no email service; nothing stored)
+  copyInvite: async (cid, kind) => {
+    const p = computePanels().panels.find((x) => x.cand === cid); if (!p) return;
+    const m = kind === "panel" ? panelInvite(panelMsg(p), msgCtx()) : applicantInvite(panelMsg(p), msgCtx());
+    const r = await copyText(asText(m), { title: kind === "panel" ? "Email to the panel" : "Email to the applicant" });
+    if (r === "copied") toast(kind === "panel" ? "Copied. Paste it into a new email to the panel."
+      : `Copied. Paste it into a new email to ${panelMsg(p).name}.`, "ok");
+  },
+  copyAllInvites: async () => {
+    const ps = computePanels().panels;
+    if (!ps.length) return;
+    const text = ps.map((p) => { const m = applicantInvite(panelMsg(p), msgCtx()); return `To: ${panelMsg(p).name}\n${asText(m)}`; }).join("\n\n\n");
+    const r = await copyText(text, { title: "All applicant emails" });
+    if (r === "copied") toast(`Copied ${ps.length} email${ps.length === 1 ? "" : "s"}. Paste each into its own email.`, "ok");
+  },
+  downloadIcs: (which, forApplicant) => {
+    const ps = computePanels().panels.filter((p) => which === "all" || p.cand === which);
+    const events = ps.map((p) => icsFor(p, !!forApplicant)).filter(Boolean);
+    if (!events.length) { toast("This time has no date, so there is no calendar file.", "err"); return; }
+    const one = which !== "all" ? cand(which) : null;
+    downloadFile(one ? `interview-${lastKey(one.name) || "applicant"}${forApplicant ? "-applicant" : ""}.ics` : "interviews.ics",
+      icsCalendar(events), "text/calendar;charset=utf-8");
+  },
+  emailWaiting: (kind) => {
+    const ctx = msgCtx();
+    if (kind === "iv") {
+      const people = EFF().interviewers.filter((m) => !liveAnswers(S.availIv[m.id]).length);
+      const msg = availabilityReminder("interviewers", ctx);
+      const withEmail = people.filter((m) => m.email), without = people.filter((m) => !m.email);
+      const link = mailtoLink({ bcc: withEmail.map((m) => m.email), subject: msg.subject, body: msg.body });
+      flowDialog((ctl) => ctl.step({ title: "Email who we're waiting on",
+        html: `<p>${people.length ? `Waiting on ${people.map((m) => escapeHtml(m.name)).join(", ")}.` : "Everyone has answered."}</p>
+          ${without.length ? `<p class="small">No email saved for ${without.map((m) => escapeHtml(m.name)).join(", ")}. Copy the message instead.</p>` : ""}
+          ${withEmail.length && !link ? `<p class="small">Too many people for one email link. Copy the message and the addresses instead.</p>` : ""}`,
+        buttons: [{ label: "Close", kind: "ghost", run: (k) => k.close() },
+          { label: "Copy the message", kind: "tinted", run: async (k) => { if (await copyText(asText(msg) + (withEmail.length ? `\n\nBcc: ${withEmail.map((m) => m.email).join(", ")}` : "")) === "copied") toast("Copied", "ok"); } },
+          ...(withEmail.length && link ? [{ label: "Open email", kind: "filled", run: (k) => { window.location.href = link; k.close(); } }] : [])] }));
+      return;
+    }
+    const list = kind === "confirm"
+      ? computePanels().panels.map((p) => cand(p.cand)).filter((c) => c && !replyOf(c).reply)
+      : activeCands().filter((c) => !liveAnswers(availForCand(c)).length);
+    const msg = availabilityReminder(kind === "confirm" ? "confirm" : "applicants", ctx);
+    flowDialog((ctl) => ctl.step({ title: kind === "confirm" ? "Applicants who haven't confirmed" : "Email who we're waiting on",
+      html: `<p>${list.length ? `${list.map((c) => escapeHtml(c.name)).join(", ")}.` : "Nobody."}</p>
+        <p class="small muted">We never store applicant emails. Copy the reminder and send it from your own email.</p>`,
+      buttons: [{ label: "Close", kind: "ghost", run: (k) => k.close() },
+        { label: "Copy reminder", kind: "filled", run: async () => { if (await copyText(asText(msg)) === "copied") toast("Copied", "ok"); } }] }));
+  },
+  // ---- H11: show each scheduled applicant their time when they sign in
+  publishNotices: async (btn) => {
+    if (!locked()) return;
+    const ps = computePanels().panels;
+    const ctx = msgCtx();
+    const desired = {};
+    ps.forEach((p) => {
+      const c = cand(p.cand), t = EFF().slots.find((x) => x.id === String(p.slot));
+      if (!c || !t) return;
+      desired[candKey(c)] = { date: t.date || "", start: t.start || "", end: t.end || "", label: t.label || "", format: p.modality,
+        room: p.room || 1, location: ctx.location, zoomLink: ctx.zoomLink, replyBy: ctx.replyBy };
+    });
+    const n = Object.keys(desired).length;
+    if (!(await confirmDialog(`Show each scheduled applicant their interview time when they sign in? ${n} applicant${n === 1 ? "" : "s"}. `
+      + "You still need to email them; use Copy all applicant emails.", { title: "Send times to applicants", yes: "Send times", danger: false }))) return;
+    await withBusy(btn, async () => {
+      const r = await track(store.publishNotices(desired, (_before, res) => hEntry("notices.publish",
+        `Sent interview times to applicants (${res.sent} new, ${res.updated} changed, ${res.removed} removed)`, { by: byWho() })));
+      toast(`Sent: ${r.sent} new, ${r.updated} changed, ${r.removed} removed`, "ok");
+    }).catch(() => {});
+  },
   // ---- the schedule lock (H4)
   lockSchedule: async (btn) => {
     const res = computePanels(), n = res.panels.length, un = res.unschedulable.length;
@@ -2662,9 +3017,15 @@ window.IV = {
     const name = (EFF().interviewers[idx] || {}).id; if (!name) return;
     ui._draft = ui._draft || {};
     const p = computePanels().panels.find((x) => x.cand === cid);
-    const base = (ui._draft[cid] && ui._draft[cid].members) || (EFF().overrides[cid] && EFF().overrides[cid].members) || (p && p.members) || [EFF().chair];
-    const set = new Set(base); if (on) set.add(name); else set.delete(name); set.add(EFF().chair);
+    const room = (ui._draft[cid] && ui._draft[cid].room) || (p && p.room) || 1;
+    const ch = p ? EFF().chairFor(p.slot, room) : EFF().chair;
+    const base = (ui._draft[cid] && ui._draft[cid].members) || (EFF().overrides[cid] && EFF().overrides[cid].members) || (p && p.members) || (ch ? [ch] : []);
+    const set = new Set(base); if (on) set.add(name); else set.delete(name); if (ch) set.add(ch);
     ui._draft[cid] = { ...(ui._draft[cid] || {}), members: [...set] };
+  },
+  setOvRoom: (cid, r, btn) => {
+    ui._draft = ui._draft || {}; ui._draft[cid] = { ...(ui._draft[cid] || {}), room: r };
+    renderPanels();
   },
   setOvMod: (cid, mv, btn) => {
     ui._draft = ui._draft || {}; ui._draft[cid] = { ...(ui._draft[cid] || {}), modality: mv };
@@ -2675,7 +3036,7 @@ window.IV = {
     const slotSel = $("#ovslot-" + cid);
     const p = computePanels().panels.find((x) => x.cand === cid);
     const draft = (ui._draft && ui._draft[cid]) || {};
-    const members = draft.members || (EFF().overrides[cid] && EFF().overrides[cid].members) || (p && p.members) || [EFF().chair];
+    const members = draft.members || (EFF().overrides[cid] && EFF().overrides[cid].members) || (p && p.members) || [EFF().chair].filter(Boolean);
     const slot = slotSel ? slotSel.value : (p ? p.slot : EFF().slotIds[0]);
     const modality = draft.modality || (p && p.modality) || (EFF().overrides[cid] && EFF().overrides[cid].modality) || "ip";
     if (!slot) { toast("Pick a time first", "err"); return; }
@@ -2686,12 +3047,16 @@ window.IV = {
       if (!ok) return;
     }
     // write just this entry onto the latest saved map (never a stale copy of the rest)
-    const entry = { slot: String(slot), members, modality };
+    const room = EFF().rooms[String(slot)] === 2 ? (draft.room || (p && p.room) || 1) : 1;
+    const v2 = validatePanel(members, slot, modality, room);
+    if (!v2.chairOk && !(await confirmDialog("This panel doesn't include the chair for that time and room. Save it anyway?",
+      { title: "No chair", yes: "Save anyway", danger: false }))) return;
+    const entry = { slot: String(slot), members, modality, ...(room === 2 ? { room: 2 } : {}) };
     if (locked()) {
       // H4: while locked, Edit edits the locked panel itself
       try {
         await withBusy(btn, () => track(store.updateSchedule((sch) => ({ ...(sch || {}), panels: { ...((sch || {}).panels || {}),
-          [cid]: { ...entry, room: 1, chair: EFF().chair } } }),
+          [cid]: { ...entry, room, chair: EFF().chairFor(slot, room) } } }),
           hEntry("schedule.edit", "Changed the locked panel for {cand}", { by: byWho(), cand: cid }))), "Panel saved");
       } catch { return; }
       if (ui._draft) delete ui._draft[cid];
@@ -3193,7 +3558,27 @@ window.CAND = {
           ? "We can no longer find your name in the applicant list. Please contact us"
           : "Couldn't save. Check your connection", "err"));
   },
-  rename: () => { ss.del("ed_iv_cand"); ss.del("ed_iv_cand_disp"); ui.candLast = null; ui.candDisplay = null; renderCandidate(); },
+  rename: () => { ss.del("ed_iv_cand"); ss.del("ed_iv_cand_disp"); ui.candLast = null; ui.candDisplay = null; ui.noticeKey = null; ui.notice = undefined; renderCandidate(); },
+  reply: async (v) => {
+    if (v === "withdrawn") {
+      const go = await flowDialog((ctl) => ctl.step({ title: "Withdraw from the interview?",
+        html: "<p>We will tell the hiring team. If you only need a different time, reply to our email instead.</p>",
+        buttons: [{ label: "Keep my interview", kind: "ghost", run: (k) => k.close(false) },
+          { label: "Withdraw", kind: "danger", run: (k) => k.close(true) }] }));
+      if (!go) return;
+    }
+    try { await store.setReply(ui.candLast, v); }
+    catch (e) {
+      if (e && e.code === "permission-denied") {
+        let b = "open"; try { b = await store.refreshPublic(); } catch { /* keep */ }
+        if (b !== "open") { renderCandidate(); return; }
+        toast("We can no longer find your name in the applicant list. Please contact us", "err"); return;
+      }
+      toast("Couldn't save. Check your connection", "err"); return;
+    }
+    toast(v === "confirmed" ? "Thank you. See you then." : v === "withdrawn" ? "You have withdrawn." : "Your interview is back.", "ok");
+    renderCandidate();
+  },
   logout: () => logOut(["ed_iv_cand", "ed_iv_cand_disp", "ed_iv_code"]),
 };
 

@@ -29,7 +29,9 @@ function norm1(x, i) {
   if (typeof x === "string") return x.trim() ? { id: String(i), date: "", start: "", end: "", label: x.trim() } : null;
   if (!x || typeof x !== "object") return null;
   const id = ID_RE.test(String(x.id || "")) ? String(x.id) : String(i);
-  return { id, date: x.date || "", start: x.start || "", end: x.end || "", label: x.label || "" };
+  const t = { id, date: x.date || "", start: x.start || "", end: x.end || "", label: x.label || "" };
+  if (x.rooms === 2) t.rooms = 2;                 // H13: two interviews at once
+  return t;
 }
 
 // normalize + de-duplicate ids (first wins) + chronological order; undated
@@ -59,8 +61,9 @@ export function effectiveSlots(settings, defaults) {
   return normalizeSlots(s.slots && s.slots.length ? s.slots : defaults);
 }
 // what to write back: plain objects, no derived fields
-export const toStored = (list) => list.map(({ id, date, start, end, label }) =>
-  isStructured({ date, start, end }) ? { id, date, start, end } : { id, label: label || "" });
+// `rooms` is kept only when it is 2 (H13); 1 room is the default and not written.
+export const toStored = (list) => list.map(({ id, date, start, end, label, rooms }) =>
+  isStructured({ date, start, end }) ? { id, date, start, end, ...(rooms === 2 ? { rooms: 2 } : {}) } : { id, label: label || "" });
 
 // ---- formatting -----------------------------------------------------------
 export function fmtTime(t) {

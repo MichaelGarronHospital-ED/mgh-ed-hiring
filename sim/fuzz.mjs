@@ -58,9 +58,28 @@ export function scenario(seed) {
     committee.forEach((m) => { if (r() < 0.06) screening[`${m.name}~${c.id}`] = { flag: true, reason: "" }; });
   });
 
+  // H13: every other round runs some times in two rooms and changes who chairs
+  // on some days (another member, or nobody). Odd seeds stay exactly as before.
+  const rooms = {}, days = {};
+  if (seed % 2 === 0) {
+    times.forEach((t) => { if (r() < 0.3) { t.rooms = 2; rooms[t.id] = 2; } });
+    [...new Set(times.map((t) => t.date))].forEach((d) => {
+      const x = r();
+      const day = x < 0.15 ? { chair: "none" } : x < 0.3 ? { chair: pick(r, committee).name } : {};
+      if (times.some((t) => t.date === d && t.rooms === 2) && r() < 0.6) day.room2Chair = pick(r, committee).name;
+      if (Object.keys(day).length) days[d] = day;
+    });
+  }
+  const dateOf = Object.fromEntries(times.map((t) => [t.id, t.date]));
+  const chairFor = seed % 2 === 0 ? (s, room) => {
+    const d = days[dateOf[s]] || {};
+    if (room === 2) return d.room2Chair && d.room2Chair !== "none" ? d.room2Chair : null;
+    return d.chair === "none" ? null : d.chair || chair;
+  } : null;
+
   return { state: { candidates, screening, availIv, availCand, scores: {}, meta: { interviewsComplete: false },
-    settings: { committee, chair, times, oneDrive: "#", panelOverrides: {} }, publicInfo: {}, allowedNames: null },
-    committee, chair, slotIds };
+    settings: { committee, chair, times, oneDrive: "#", panelOverrides: {}, ...(Object.keys(days).length ? { days } : {}) }, publicInfo: {}, allowedNames: null },
+    committee, chair, slotIds, rooms, chairFor: Object.keys(rooms).length || Object.keys(days).length ? chairFor : null };
 }
 
 async function round(page, url, sc) {
@@ -79,7 +98,7 @@ async function round(page, url, sc) {
     committee: sc.committee, chair: sc.chair, schedule: shown.schedule,
     unschedulable: shown.unschedulable, understaffed: shown.understaffed,
     manualIds: new Set(shown.schedule.filter((p) => p.manual).map((p) => p.cand)),
-    slotIds: sc.slotIds,
+    slotIds: sc.slotIds, rooms: sc.rooms, chairFor: sc.chairFor, reasons: shown.reasons || {},
   });
 
   const active = activeCandidates(sc.state, sc.committee);
@@ -89,6 +108,7 @@ async function round(page, url, sc) {
     "no-answer": /picked any times yet/,
     "infeasible": /no time they can do yields a balanced panel/,
     "contested": /already taken/,
+    "two-rooms": /two balanced panels at once/,
   };
   const misdiagnosed = Object.entries(res.diagnosis)
     .filter(([id, why]) => !SHOULD_SAY[why].test(says[id] || ""))
