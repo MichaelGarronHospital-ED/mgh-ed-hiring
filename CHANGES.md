@@ -61,6 +61,13 @@ which the v1 rules refuse.
 - **Not done as written:** the design's "module split of app.js" was taken as "new logic goes
   in new modules"; existing render code stayed in `app.js` (smaller change, same behaviour).
 
+- **Review fixes:** the allowed-surname sync counts a "fight" only when the saved list changed
+  since this tab last looked (to something it did not write) while its own roster stayed the
+  same; ordinary snapshots and the retry timer never count, so a tab held back writes again
+  (it used to stop for good). Calls are gathered for 250 ms, and the page looks again once a
+  write settles, so a roster edit made during a write is not missed (`tests/allowed-sync.test.mjs`).
+  README lists the known gaps while a page from before Oct 2026 is still open.
+
 Tests: node `members`, `questions`, `history`, `backup`, `store.snapshot`, `store.questions`,
 `versions` (39). Sim: `sim/foundations.mjs` (7 scenarios, in `npm test`). New emulator
 harness: `sim/emulator.mjs`, `sim/emu.mjs`, `sim/firebase.json`, `make-site.sh --emulator`

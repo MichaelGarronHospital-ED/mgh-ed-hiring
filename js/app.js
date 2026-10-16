@@ -298,39 +298,47 @@ function maybeMigrateQuestions() {
 // would otherwise rewrite it back and forth all day. So:
 //   - a write made because THIS tab's roster changed since its last write is
 //     never counted and never held back;
-//   - only a "fight" counts: the saved list changed to something this tab did
-//     not write while this tab's roster stayed the same. After 3 fights in 10
-//     minutes this tab stops rewriting and tells Leadership to reload the other
-//     tab, and a timer tries again when the 10 minutes are up.
+//   - only a "fight" counts: the saved list CHANGED since this tab last looked,
+//     to something this tab did not write, while this tab's roster stayed the
+//     same. An ordinary snapshot (the list unchanged) never counts, and neither
+//     does the retry timer. After 3 fights in 10 minutes this tab stops
+//     rewriting and tells Leadership to reload the other tab, and a timer
+//     writes again once the 10 minutes are up.
+//   - calls are gathered for 250 ms, and once a write settles the page looks
+//     again, so a roster edit made while a write was in flight is never missed.
 const ALLOWED_WINDOW_MS = 10 * 60 * 1000;
 const rosterSig = () => S.candidates.map((c) => `${c.id}:${c.name}:${c.removed ? 1 : 0}`).sort().join("|");
-function syncAllowedNames() {
+function syncAllowedNames(fromTimer = false) {
+  clearTimeout(syncAllowedNames._t);
+  syncAllowedNames._t = setTimeout(() => { if (S && ui.role === "admin") syncAllowedNow(fromTimer); }, 250);
+}
+function syncAllowedNow(fromTimer) {
   const want = [...new Set(S.candidates.filter((c) => !c.removed).map((c) => lastKey(c.name)).filter(Boolean))].sort();
   if (!want.length) return;                 // never publish an empty list: that would lock every applicant out
-  const have = S.allowedNames;
+  const g = ui._allowed = ui._allowed || { last: null, lastSeen: undefined, fights: [], held: false, timer: null };
+  const have = S.allowedNames, haveSig = have ? have.join("|") : null;
+  const seenChanged = g.lastSeen !== undefined && haveSig !== g.lastSeen;
+  g.lastSeen = haveSig;
   if (have && have.length === want.length && want.every((k, i) => have[i] === k)) {
-    if (ui._allowed && ui._allowed.held) { ui._allowed.held = false; renderUpdateLine(); }
+    if (g.held) { g.held = false; renderUpdateLine(); }
     return;
   }
   if (ui._syncingNames) return;
-  const g = ui._allowed = ui._allowed || { last: null, fights: [], held: false, timer: null };
   const roster = rosterSig(), now = Date.now();
-  if (g.last && g.last.roster === roster) {             // our roster didn't move: someone else changed it
-    g.fights = g.fights.filter((t) => now - t < ALLOWED_WINDOW_MS);
-    g.fights.push(now);
-    if (g.fights.length >= 3) {
-      if (!g.held) { g.held = true; renderUpdateLine(); }
-      clearTimeout(g.timer);
-      g.timer = setTimeout(() => { if (S) syncAllowedNames(); }, g.fights[0] + ALLOWED_WINDOW_MS - now + 50);
-      return;
-    }
+  g.fights = g.fights.filter((t) => now - t < ALLOWED_WINDOW_MS);
+  if (!fromTimer && seenChanged && g.last && g.last.roster === roster && haveSig !== g.last.list) g.fights.push(now);
+  if (!fromTimer && g.fights.length >= 3) {
+    if (!g.held) { g.held = true; renderUpdateLine(); }
+    clearTimeout(g.timer);
+    g.timer = setTimeout(() => syncAllowedNames(true), g.fights[0] + ALLOWED_WINDOW_MS - now + 50);
+    return;
   }
   if (g.held) { g.held = false; renderUpdateLine(); }
   ui._syncingNames = true;
   g.last = { roster, list: want.join("|") };
   store.setAllowedNames(want)
     .catch((e) => console.warn("allowed-name sync failed:", e && e.code))
-    .finally(() => { ui._syncingNames = false; });
+    .finally(() => { ui._syncingNames = false; syncAllowedNames(); });
 }
 
 async function loadFirestore() {

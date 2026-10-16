@@ -267,6 +267,17 @@ it, so every leadership save would fail.
 - **When a new version goes live**, an open page notices within 10 minutes and shows "This
   page was updated. Reload to get the latest version." A Leadership page reloads itself
   instead, but only when nothing typed could be lost.
+- **Known gaps while a page from before Oct 2026 is still open** (it never shows that line,
+  so reload every open tab on release day). Low risk, but known:
+  - An old page saving the committee from its text box drops each person's id, role, status
+    and email. Anyone added with the new editor (an id like `m-...`) would then lose the link
+    to what they entered until it is put back from the JSON backup; people from before keep
+    theirs (their id is their name).
+  - An old page editing interview times drops "2 rooms".
+  - An old page counts concerns with a fixed threshold of 2 and ignores Leadership's On or
+    Off decisions.
+  - An old page saving during a closed stage gets "Couldn't save. Check your connection"
+    (the server refuses it).
 
 ## After the interviews: offers and the backup
 
