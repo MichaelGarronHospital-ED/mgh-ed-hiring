@@ -24,6 +24,45 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## Security pass: ED password can't delete, Log out signs out, docs cleaned (Oct 16 2026)
+
+The ED password now goes to every ED physician, not just the 13 on the committee, so
+what that account can do was narrowed to what the app actually uses.
+
+- **Rules (`firestore.rules`): the committee account can save but never delete.**
+  Screening, scores and both kinds of availability are now create/update for the
+  committee and delete for admin only. The roster (`interviews_candidates`) is
+  admin-only to write: adding and removing candidates were already leadership-only
+  in the app. Every committee write the app makes still works: flag, un-flag,
+  reason, rating and clearing a rating (saves 0), score and clearing a score (saves
+  0), notes, and ticking or unticking a time (unticking is `deleteField()` under
+  merge, an update). Leadership keeps every power it had.
+- **Applicant availability has a fixed shape.** Only `slots`, each value in person /
+  Zoom / either, at most 200 times. Applies to every writer. The `{}` name-check
+  probe still passes. The test that pinned "the modality value is not validated" as
+  a known limitation was flipped on purpose.
+- **Log out signs out of Firebase.** Both Log out buttons used to clear the tab's
+  saved password and reload, leaving the Firebase sign-in stored in the browser.
+  They now call `signOut` first (capped at 3s). The sign-in is also kept for this tab
+  only (`browserSessionPersistence`, memory only if the browser blocks storage), to
+  match the password, which already lived per tab. This also stops a sign-in on a
+  second tab switching the first tab's account. A reload in the same tab still signs
+  straight back in.
+- **Docs.** README no longer describes yearly code rotation or gives example codes
+  that hint at the password pattern; the anonymous sign-in steps were replaced with
+  the roles model the tool actually runs (README, `js/config.js`). CLAUDE.md now says
+  applicants use the Guest password plus their surname, not tokenized links. The sim's
+  stand-in guest code is now `guestpw`, like `adminpw` / `staffpw`.
+
+New checks: `sim/auth.mjs` (in `npm test`) drives the gate against a stub Firebase and
+fails on the old code. Checked: rules 109/109; sim 15/15 scenarios, e2e, score, auth
+7/7, fuzz 40 rounds clean.
+
+**To take effect** the rules must be published (README → "Publishing the rules"). The
+live page works with both the old and new rules, so either can go first.
+
+---
+
 ## Three shared passwords: ED, Leadership, Guest (Oct 14 2026)
 
 The ED tools now share three passwords (MGH-ED-Tools/README.md). For hiring they replace
