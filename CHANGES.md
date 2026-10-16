@@ -24,6 +24,57 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## R6: close the round, past rounds, keep-until, restore from a file (Oct 16 2026)
+
+- **Close the round (H1c).** `js/rounds.js`. Setup, This round: name the round, "Close this
+  round". First half: pause (`roundStatus: "closing"`, a lease claim, `booking: "paused"`), a fresh
+  snapshot saved as a new `interviews_archive` attempt in parts of at most 900,000 UTF-8 bytes,
+  read back and checksum-checked, then "Now save the backup" (tick "I saved the backup") and the
+  typed round name. Second half: `clearing`, then for each of the eight `CLEAR_COLLECTIONS`, a
+  fresh read and deletes in chunks of up to 450, each document re-read in the transaction and
+  deleted only if identical to its copy; then ONE finish batch (config times, slots, panels, days,
+  deadlines emptied; allowed and schedule reset; public times emptied and booking open; the
+  attempt `closed` with `closedAt` by the server and `deleteAfter` from the keep setting; a new
+  open round; one history entry). Committee, chair, settings, questions and passwords untouched.
+- **Ownership.** Every write goes through `closeTx` (state and attempt re-read; this page's id and
+  load nonce must hold the lease; the attempt must have the expected status). Heartbeat every 30
+  seconds only while the close is alive; idle auto-stop after 30 minutes in the first half only;
+  a wake check before any timer acts and on focus; a duplicated tab's older copy stands down
+  ("This close is continuing in another copy of this page."); a reloaded page carries on.
+- **Other pages.** Leadership pages are read-only while the lease is fresh ("Leadership (another
+  page) is closing the round now."); once it hasn't changed for 5 minutes on their own clock they
+  offer "Finish closing" and "Stop closing" (or "Stop closing and put everything back"), each a
+  takeover the server refuses while the lease is under 5 minutes old. Put-back writes back every
+  missing document from the copy (history marked restored), checks, then reopens.
+- **Kept items** (changed after the copy) are never deleted, listed in `keptFromClose` (at most
+  200; more stops the close with Finish or Stop offered), quarantined from every view, backup and
+  the allowed list, and resolved by "Download and delete them" (type the round name) or "Keep
+  them in this round". A new close can't start until then.
+- **Past rounds (H1c):** download backup or Excel, print, Bring back (replace restore, attempt
+  marked `restoredAt`), Delete permanently after `deleteAfter` (typed name; parts, then the
+  attempt), "Unfinished copies (safe to delete)". **Keep closed rounds for:** 1, 2, 3, 5, 7 years
+  or by hand, with "Also apply to the past rounds already closed?".
+- **Restore (H1b):** `planRestore` (pure, always against a fresh read): checks (format, version,
+  checksum, ids, 1 MB per document, 10,000 documents), shape pre-checks for what the rules check,
+  a preview table, "missing items only" (this round's file only; members referenced but gone
+  come back as Left the committee; question ids with notes come back archived; Setup never
+  overwritten) and "replace" (empty round only; config merged; state open with a new round id
+  and `broughtBackFrom`; booking from the restored stages; history restored with original times).
+- **Not done exactly as written:** history entries written after the copy are left in place in
+  the new round's history rather than listed as kept (the rules only let history be deleted
+  while a round is closing, and they are a log); the test-only timing override and controller
+  access exist in the sim and emulator copies only (`make-site.sh` patches them in).
+
+Tests: `tests/close-scope.test.mjs` (with `tests/helpers/memfirestore.mjs`), R6 cases in
+`tests/backup.test.mjs`; `sim/rounds.mjs` (6 scenarios); emulator: quiet close then bring back
+(ED rating saves at once) and close again, killed mid-parts and finished elsewhere, killed
+mid-clear and put back (round and meta exactly as before), frozen chunk refused after takeover,
+sleeping laptop (wake check, `closeTx` and the rules each on their own), reload and duplicated
+tab, 6-minute clock skew, kept item during clearing, restore missing items. Checked: see the
+release commit message.
+
+---
+
 ## R5: two rooms, day chairs, my panels, messages, applicants' confirmed times (Oct 16 2026)
 
 - **Two rooms and day chairs (H13).** `panels.js`: `chair` may be `null` or a function of

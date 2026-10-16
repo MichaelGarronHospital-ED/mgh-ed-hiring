@@ -26,9 +26,31 @@
 //  with the server time. There is no "saved but not logged".
 // ============================================================================
 
-import { effectiveSlots, toStored } from "./slots.js?v=R5";
-import { lastKey, candKey, ls } from "./util.js?v=R5";
-import { ROUND_COLLECTIONS } from "./backup.js?v=R5";
+import { effectiveSlots, toStored } from "./slots.js?v=R6";
+import { lastKey, candKey, ls } from "./util.js?v=R6";
+import { ROUND_COLLECTIONS, quarantineSet } from "./backup.js?v=R6";
+
+// R6 (review 3 m2): documents kept by a close because they changed after the
+// copy belong to no round until leadership decides. Every view leaves them out.
+const QUAR_FIELDS = [["screening", "interviews_screening"], ["scores", "interviews_scores"], ["availIv", "interviews_availIv"],
+  ["availCand", "interviews_availCand"], ["availRaw", "interviews_availCand"], ["offers", "interviews_offers"], ["notices", "interviews_applicant"]];
+function quarantineView(state) {
+  const q = quarantineSet(((state || {}).meta || {}).keptFromClose);
+  if (!q.size) return state;
+  const has = (c, id) => q.has(`${c}/${id}`);
+  const v = { ...state, candidates: (state.candidates || []).filter((c) => !has("interviews_candidates", c.id)) };
+  QUAR_FIELDS.forEach(([f, c]) => { if (v[f]) v[f] = Object.fromEntries(Object.entries(v[f]).filter(([id]) => !has(c, id))); });
+  return v;
+}
+function quarantineRaw(raw) {
+  const q = quarantineSet((((raw || {}).interviews_meta || {}).state || {}).keptFromClose);
+  if (!q.size) return raw;
+  const out = { ...raw };
+  Object.keys(out).forEach((c) => { out[c] = Object.fromEntries(Object.entries(out[c] || {}).filter(([id]) => !q.has(`${c}/${id}`))); });
+  return out;
+}
+// Thrown when this page no longer holds the close (review 3 M1).
+export class TookOver extends Error { constructor() { super("Another Leadership page took over closing. Nothing more was changed from this page."); this.code = "took-over"; } }
 
 export const key = (member, candId) => `${member}~${candId}`;
 
@@ -69,9 +91,9 @@ class BaseStore {
   // The UI branches on it rather than promising "on any device" and being wrong
   // for however long it takes someone to paste the rules into the console.
   screeningReadBack = true;
-  getState() { return this.state; }
-  subscribe(cb) { this._subs.add(cb); cb(this.state); return () => this._subs.delete(cb); }
-  _emit() { for (const cb of this._subs) cb(this.state); }
+  getState() { return quarantineView(this.state); }
+  subscribe(cb) { this._subs.add(cb); cb(quarantineView(this.state)); return () => this._subs.delete(cb); }
+  _emit() { const v = quarantineView(this.state); for (const cb of this._subs) cb(v); }
   async syncPublicSlots() { /* no-op except on Firestore */ }
   // Forget this browser's own copies of scores, screening and an applicant's
   // picks (H12, at log out). The server copy is untouched.
@@ -173,7 +195,7 @@ export class LocalStore extends BaseStore {
     if (st.passwordsMeta) meta.passwords = st.passwordsMeta;
     raw.interviews_meta = meta;
     raw.interviews_history = st.history || {};
-    return raw;
+    return quarantineRaw(raw);
   }
   // -- mutations
   async addCandidate(name, history) {
@@ -259,6 +281,9 @@ export class LocalStore extends BaseStore {
     this._save();
   }
   now() { return new Date().toISOString(); }
+  tsFromMillis(ms) { return new Date(ms).toISOString(); }
+  // a backup value back into what this store keeps ({ __ts } becomes an ISO string)
+  decode(v) { return JSON.parse(JSON.stringify(v), (k, x) => (x && typeof x === "object" && typeof x.__ts === "string" && Object.keys(x).length === 1 ? x.__ts : x)); }
   // H4: one change to interviews_meta/state (fields replaced whole), with the
   // public booking flag and candidate patches in the same commit.
   async updateState(mutate, history, extra = {}) {
@@ -306,6 +331,112 @@ export class LocalStore extends BaseStore {
     this._hist(histOf(history));
     this._save();
   }
+  // ---- R6: the close (local twin of the Firestore version, with the rules'
+  // lease and ownership checks restated so the sims exercise the same logic)
+  async readCollections(names) { const raw = await this._rawAll(); return Object.fromEntries(names.map((n) => [n, raw[n] || {}])); }
+  async _rawAll() {
+    const keep = this.state.meta && this.state.meta.keptFromClose;
+    if (keep && keep.length) { const m = this.state.meta; this.state.meta = { ...m, keptFromClose: [] }; const r = await this.snapshotRaw(); this.state.meta = m; return r; }
+    return this.snapshotRaw();
+  }
+  async getStateFresh() { this._load(); return JSON.parse(JSON.stringify(this.state.meta || {})); }
+  _claim(ctx) { return { tab: ctx.tab, load: ctx.load, at: new Date(this.now2()).toISOString() }; }
+  now2() { return Date.now() + (this._skew || 0); }
+  async startClose(ctx, attemptId) {
+    this._load();
+    const st = this.state.meta || {};
+    if (st.closingTab || st.roundStatus === "closing") throw new TookOver();
+    if ((st.keptFromClose || []).length) throw new Error("Decide about the kept items first.");
+    this.state.meta = { ...st, roundStatus: "closing", closingAttemptId: attemptId, closingStartedAt: new Date().toISOString(),
+      closingTab: ctx.tab, lease: this._claim(ctx) };
+    this.state.booking = "paused";
+    this._save();
+    return st;
+  }
+  async reclaim(ctx) {
+    this._load();
+    const st = this.state.meta || {};
+    if (st.closingTab !== ctx.tab) throw new TookOver();
+    this.state.meta = { ...st, lease: this._claim(ctx) };
+    this._save();
+    return this.state.meta;
+  }
+  async takeover(ctx, attemptId, staleMs = 5 * 60000) {
+    this._load();
+    const st = this.state.meta || {};
+    if (st.roundStatus !== "closing" || (st.closingAttemptId || null) !== (attemptId || null)) throw new TookOver();
+    const at = st.lease && Date.parse(st.lease.at);
+    if (at && this.now2() - at < staleMs) { const e = new Error("The close is still running on another page."); e.code = "permission-denied"; throw e; }
+    this.state.meta = { ...st, closingTab: ctx.tab, lease: this._claim(ctx) };
+    this._save();
+    return this.state.meta;
+  }
+  async closeTx(ctx, expect, fn) {
+    this._load();
+    const st = this.state.meta || {};
+    const archive = this.state.archive || {};
+    const att = ctx.attemptId ? archive[ctx.attemptId] || null : null;
+    if (st.closingTab !== ctx.tab || !st.lease || st.lease.load !== ctx.load || (st.closingAttemptId || null) !== (ctx.attemptId || null)) throw new TookOver();
+    if (expect && !expect.includes(att ? att.status : "missing")) throw new TookOver();
+    const claim = this._claim(ctx);
+    const ops = [];
+    let next = { ...st };
+    const w = {
+      claim, st, att,
+      state: (patch) => { next = applyPatch(next, patch); },
+      stateReplace: (d) => { next = { ...d }; },
+      attempt: (patch, id = ctx.attemptId) => ops.push(() => { const a = (this.state.archive || {})[id]; this.state.archive = { ...(this.state.archive || {}), [id]: { ...(a || {}), ...patch, owner: claim } }; }),
+      attemptCreate: (id, d) => ops.push(() => { this.state.archive = { ...(this.state.archive || {}), [id]: { ...d, owner: claim, _chunks: {} } }; }),
+      attemptDelete: (id) => ops.push(() => { const a = { ...(this.state.archive || {}) }; delete a[id]; this.state.archive = a; }),
+      part: (i, json) => ops.push(() => { const a = this.state.archive[ctx.attemptId]; a._chunks = { ...(a._chunks || {}), [i]: { i, json } }; }),
+      set: (coll, id, data, opts) => ops.push(() => this._applyOne({ coll, id, data, merge: !!opts })),
+      del: (coll, id) => ops.push(() => this._applyOne({ coll, id, del: true })),
+      get: async (coll, id) => { const raw = await this._rawAll(); return (raw[coll] || {})[id] || null; },
+      history: (e) => ops.push(() => this._hist(e)),
+    };
+    const r = await fn(w);
+    ops.forEach((op) => op());
+    this.state.meta = { ...next, lease: claim };
+    this._save();
+    return r;
+  }
+  // one write or delete in Firestore terms, on the local state
+  _applyOne({ coll, id, data, del, merge }) {
+    const st = this.state;
+    if (coll === "interviews_meta") {
+      const key = { config: "settings", state: "meta", schedule: "schedule", questions: "questions", passwords: "passwordsMeta" }[id];
+      if (id === "allowed") { st.allowedNames = del ? null : (data.keys || []); return; }
+      if (key) { st[key] = del ? (key === "settings" ? {} : null) : merge ? { ...(st[key] || {}), ...data } : data; return; }
+      return;
+    }
+    if (coll === "interviews_public") { if (!del) { st.booking = data.booking; if ("times" in data) st.settings = { ...st.settings, times: data.times }; } return; }
+    if (del) return this.applyPlanSync({ deletes: [{ coll, id }] });
+    return this.applyPlanSync({ writes: [{ coll, id, data }] });
+  }
+  applyPlanSync(plan) {
+    const keepHist = this._hist; this._hist = () => {};
+    const save = this._save, load = this._load; this._save = () => {}; this._load = () => {};
+    try { this.applyPlan(plan); } finally { this._save = save; this._load = load; this._hist = keepHist; }
+  }
+  // (the parts of a saved copy live under _chunks here; a subcollection in Firestore)
+  async listArchive() { this._load(); return Object.entries(this.state.archive || {}).map(([id, a]) => { const { _chunks, ...rest } = a; return { id, ...rest }; }); }
+  async readAttempt(id) { this._load(); const a = (this.state.archive || {})[id]; if (!a) return null; const { _chunks, ...rest } = a; return rest; }
+  async readParts(id) { this._load(); const a = (this.state.archive || {})[id]; return a ? Object.values(a._chunks || {}) : []; }
+  async deleteArchive(id) { this._load(); const a = { ...(this.state.archive || {}) }; delete a[id]; this.state.archive = a; this._save(); }
+  async updateArchive(id, patch, history) {
+    this._load();
+    const a = (this.state.archive || {})[id]; if (!a) return;
+    this.state.archive = { ...this.state.archive, [id]: applyPatch(a, patch) };
+    this._hist(histOf(history));
+    this._save();
+  }
+  async keptDecision(deleteThem, list, history) {
+    this._load();
+    if (deleteThem) this.applyPlanSync({ deletes: list.filter((k) => k.coll !== "interviews_history") });
+    this.state.meta = { ...(this.state.meta || {}), keptFromClose: [] };
+    this._hist(histOf(history));
+    this._save();
+  }
   // ---- H11 (local twins of the applicant notice and reply)
   async getMyNotice(key) { this._load(); return (this.state.notices || {})[key] || null; }
   async setReply(key, reply) {
@@ -337,6 +468,7 @@ export class LocalStore extends BaseStore {
     const st = this.state;
     const MAP = { interviews_screening: "screening", interviews_scores: "scores", interviews_offers: "offers", interviews_applicant: "notices" };
     for (const w of plan.writes || []) {
+      if (w.coll === "interviews_meta" || w.coll === "interviews_public") { this._applyOne({ ...w, merge: !!w.mergeFields }); continue; }
       if (MAP[w.coll]) st[MAP[w.coll]] = { ...(st[MAP[w.coll]] || {}), [w.id]: w.data };
       else if (w.coll === "interviews_availCand") {
         const { slots, ...rest } = w.data || {};
@@ -576,7 +708,13 @@ export class FirestoreStore extends BaseStore {
     const snaps = await Promise.all(ROUND_COLLECTIONS.map((n) => getDocs(collection(db, n))));
     const raw = {};
     ROUND_COLLECTIONS.forEach((n, i) => { raw[n] = Object.fromEntries(snaps[i].docs.map((d) => [d.id, d.data()])); });
-    return raw;
+    return quarantineRaw(raw);
+  }
+  // Some collections, fresh and unfiltered (the close's clear and put-back steps).
+  async readCollections(names) {
+    const { db, collection, getDocs } = this._fb;
+    const snaps = await Promise.all(names.map((n) => getDocs(collection(db, n))));
+    return Object.fromEntries(names.map((n, i) => [n, Object.fromEntries(snaps[i].docs.map((d) => [d.id, d.data()]))]));
   }
   clearLocalCopies() {
     super.clearLocalCopies();
@@ -797,6 +935,14 @@ export class FirestoreStore extends BaseStore {
     });
   }
   now() { return this._fb.serverTimestamp(); }
+  tsFromMillis(ms) { return this._fb.Timestamp.fromMillis(ms); }
+  decode(v) {
+    const T = this._fb.Timestamp;
+    const walk = (x) => (x === null || typeof x !== "object" ? x : Array.isArray(x) ? x.map(walk)
+      : typeof x.__ts === "string" && Object.keys(x).length === 1 ? T.fromDate(new Date(x.__ts))
+      : Object.fromEntries(Object.entries(x).map(([k, y]) => [k, walk(y)])));
+    return walk(v);
+  }
   _fsPatch(patch) {
     const { deleteField } = this._fb;
     return Object.fromEntries(Object.entries(patch || {}).map(([k, v]) => [k, isDel(v) ? deleteField() : v]));
@@ -839,7 +985,8 @@ export class FirestoreStore extends BaseStore {
   async applyPlan(plan, history, { onProgress } = {}) {
     const { db, writeBatch } = this._fb;
     const ops = [];
-    (plan.writes || []).forEach((w) => ops.push((b) => b.set(this._doc(w.coll, w.id), w.data)));
+    (plan.writes || []).forEach((w) => ops.push((b) => (w.mergeFields ? b.set(this._doc(w.coll, w.id), w.data, { mergeFields: w.mergeFields })
+      : b.set(this._doc(w.coll, w.id), w.data))));
     Object.entries(plan.candidates || {}).forEach(([id, p]) => {
       const patch = Object.fromEntries(Object.entries(p).map(([k, v]) => [k, v === null ? DEL : v]));
       ops.push((b) => b.update(this._doc("interviews_candidates", id), this._fsPatch(patch)));
@@ -865,6 +1012,119 @@ export class FirestoreStore extends BaseStore {
       if (onProgress) onProgress(Math.min(i + CHUNK, ops.length), ops.length);
     }
   }
+  // ---- R6: the close-round flow. EVERY write it makes goes through closeTx
+  // (review 3 M1): a transaction that re-reads state and the attempt and goes
+  // on only if this page (tab AND load) holds the close and the attempt has the
+  // status this step expects; every state write carries a fresh lease claim
+  // and every attempt write a fresh owner claim (the rules check both).
+  async getStateFresh() {
+    const { getDoc } = this._fb;
+    const snap = await getDoc(this._doc("interviews_meta", "state"));
+    return snap.exists() ? snap.data() : {};
+  }
+  _claim(ctx) { return { tab: ctx.tab, load: ctx.load, at: this._fb.serverTimestamp() }; }
+  async startClose(ctx, attemptId) {
+    const { db, runTransaction, serverTimestamp } = this._fb;
+    const stRef = this._doc("interviews_meta", "state");
+    return runTransaction(db, async (tx) => {
+      const snap = await tx.get(stRef);
+      const st = snap.exists() ? snap.data() : {};
+      if (st.closingTab || st.roundStatus === "closing") throw new TookOver();
+      if ((st.keptFromClose || []).length) throw new Error("Decide about the kept items first.");
+      tx.set(stRef, { roundStatus: "closing", closingAttemptId: attemptId, closingStartedAt: serverTimestamp(), closingTab: ctx.tab, lease: this._claim(ctx) },
+        { mergeFields: ["roundStatus", "closingAttemptId", "closingStartedAt", "closingTab", "lease"] });
+      tx.set(this._doc("interviews_public", "slots"), { booking: "paused" }, { mergeFields: ["booking"] });
+      return st;
+    });
+  }
+  // After a reload (same page id, new load nonce): a holder write with the new claim.
+  async reclaim(ctx) {
+    const { db, runTransaction } = this._fb;
+    const stRef = this._doc("interviews_meta", "state");
+    return runTransaction(db, async (tx) => {
+      const snap = await tx.get(stRef);
+      const st = snap.exists() ? snap.data() : {};
+      if (st.closingTab !== ctx.tab) throw new TookOver();
+      tx.set(stRef, { lease: this._claim(ctx) }, { mergeFields: ["lease"] });
+      return st;
+    });
+  }
+  // Take over a stale close. The rules refuse it while the lease is under 5
+  // minutes old by the server's clock (permission-denied).
+  async takeover(ctx, attemptId) {
+    const { db, runTransaction } = this._fb;
+    const stRef = this._doc("interviews_meta", "state");
+    return runTransaction(db, async (tx) => {
+      const snap = await tx.get(stRef);
+      const st = snap.exists() ? snap.data() : {};
+      if (st.roundStatus !== "closing" || (st.closingAttemptId || null) !== (attemptId || null)) throw new TookOver();
+      tx.set(stRef, { closingTab: ctx.tab, lease: this._claim(ctx) }, { mergeFields: ["closingTab", "lease"] });
+      return st;
+    });
+  }
+  async closeTx(ctx, expect, fn) {
+    const { db, runTransaction, doc } = this._fb;
+    const stRef = this._doc("interviews_meta", "state");
+    const attRef = ctx.attemptId ? this._doc("interviews_archive", ctx.attemptId) : null;
+    return runTransaction(db, async (tx) => {
+      const [ss, as] = await Promise.all([tx.get(stRef), attRef ? tx.get(attRef) : Promise.resolve(null)]);
+      const st = ss.exists() ? ss.data() : {};
+      const att = as && as.exists() ? as.data() : null;
+      const lease = st.lease && typeof st.lease === "object" ? st.lease : {};
+      if (st.closingTab !== ctx.tab || lease.load !== ctx.load || (st.closingAttemptId || null) !== (ctx.attemptId || null)) throw new TookOver();
+      if (expect && !expect.includes(att ? att.status : "missing")) throw new TookOver();
+      const claim = this._claim(ctx);
+      let wroteState = false;
+      const w = {
+        claim, st, att,
+        state: (patch) => { wroteState = true; tx.set(stRef, { ...this._fsPatch(patch), lease: claim }, { mergeFields: [...Object.keys(patch), "lease"] }); },
+        stateReplace: (d) => { wroteState = true; tx.set(stRef, { ...d, lease: claim }); },
+        attempt: (patch, id = ctx.attemptId) => tx.set(this._doc("interviews_archive", id), { ...patch, owner: claim }, { mergeFields: [...Object.keys(patch), "owner"] }),
+        attemptCreate: (id, d) => tx.set(this._doc("interviews_archive", id), { ...d, owner: claim }),
+        attemptDelete: (id) => tx.delete(this._doc("interviews_archive", id)),
+        part: (i, json) => tx.set(doc(db, "interviews_archive", ctx.attemptId, "parts", String(i)), { i, json }),
+        set: (coll, id, data, opts) => (opts ? tx.set(this._doc(coll, id), data, opts) : tx.set(this._doc(coll, id), data)),
+        del: (coll, id) => tx.delete(this._doc(coll, id)),
+        get: async (coll, id) => { const x = await tx.get(this._doc(coll, id)); return x.exists() ? x.data() : null; },
+        history: (e) => tx.set(...this._histDoc(e)),
+      };
+      const r = await fn(w);
+      if (!wroteState) tx.set(stRef, { lease: claim }, { mergeFields: ["lease"] });
+      return r;
+    });
+  }
+  async listArchive() {
+    const { db, collection, getDocs } = this._fb;
+    return (await getDocs(collection(db, "interviews_archive"))).docs.map((d) => ({ id: d.id, ...d.data() }));
+  }
+  async readAttempt(id) {
+    const { getDoc } = this._fb;
+    const s = await getDoc(this._doc("interviews_archive", id));
+    return s.exists() ? s.data() : null;
+  }
+  async readParts(id) {
+    const { db, collection, getDocs } = this._fb;
+    return (await getDocs(collection(db, "interviews_archive", id, "parts"))).docs.map((d) => d.data());
+  }
+  // Parts first, then the attempt (the rules allow it only for copies, or a
+  // closed round past its keep-until date).
+  async deleteArchive(id) {
+    const { db, collection, getDocs, writeBatch, deleteDoc } = this._fb;
+    const parts = await getDocs(collection(db, "interviews_archive", id, "parts"));
+    if (parts.docs.length) { const b = writeBatch(db); parts.docs.forEach((d) => b.delete(d.ref)); await b.commit(); }
+    await deleteDoc(this._doc("interviews_archive", id));
+  }
+  async updateArchive(id, patch, history) {
+    await this._withHistory((b) => b.update(this._doc("interviews_archive", id), patch), history);
+  }
+  // "Download and delete them" / "Keep them in this round" for kept items.
+  async keptDecision(deleteThem, list, history) {
+    await this._withHistory((b) => {
+      if (deleteThem) list.filter((k) => k.coll !== "interviews_history").forEach((k) => b.delete(this._doc(k.coll, k.id)));
+      b.set(this._doc("interviews_meta", "state"), { keptFromClose: [] }, { mergeFields: ["keptFromClose"] });
+    }, history);
+  }
+
   // ---- H11: applicant notices and replies
   // The applicant's own notice: ONE get by their own key (never a listener,
   // never a list; the rules allow nothing else).

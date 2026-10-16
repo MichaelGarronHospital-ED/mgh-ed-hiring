@@ -730,6 +730,19 @@ details.more > summary::-webkit-details-marker { display:none; }
   .panelacts .linky { min-height:40px; text-align:left; }
 }
 
+/* ---- close the round, past rounds, restore (H1) ------------------------------ */
+.roundline p { background:var(--ed-amber-tint); color:var(--ed-amber); }
+.roundline .linky { color:inherit; }
+/* another Leadership page is closing the round: this one is read-only */
+body.closing-elsewhere #app, body.closing-elsewhere #settings { pointer-events:none; opacity:.6; }
+.filepick { display:inline-flex; align-items:center; cursor:pointer; }
+.rsmode { display:flex; align-items:center; gap:8px; margin:6px 0; }
+.rsmode input { width:auto; min-height:0; margin:0; }
+.rstable { width:100%; border-collapse:collapse; font-size:var(--ed-text-sm); margin:8px 0; }
+.rstable th, .rstable td { padding:6px 8px; border-top:1px solid var(--ed-line-soft); text-align:right; }
+.rstable th:first-child { text-align:left; font-weight:600; }
+.rstable thead th { color:var(--ed-ink-2); font-weight:600; font-size:var(--ed-text-xs); vertical-align:bottom; }
+
 /* ---- mobile field sizing: MUST STAY LAST ---------------------------------
    iOS Safari zooms the whole page whenever a focused field's text is smaller
    than 16px. Several fields here are set smaller for density (the times form,

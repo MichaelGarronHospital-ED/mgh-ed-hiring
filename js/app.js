@@ -7,32 +7,33 @@
 //  Firestore rules when AUTH.mode === "roles" (see config.js + firestore.rules).
 // ============================================================================
 import { firebaseConfig, ORG_NAME, CHAIR, COMMITTEE, SLOTS, ONEDRIVE,
-         CANDIDATE_CODE_LOCAL, AUTH, SCREENING_DEADLINE } from "./config.js?v=R5";
-import { decryptContent } from "./data.js?v=R5";
-import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R5";
-import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R5";
-import { autoPanels, buildPanel } from "./panels.js?v=R5";
+         CANDIDATE_CODE_LOCAL, AUTH, SCREENING_DEADLINE } from "./config.js?v=R6";
+import { decryptContent } from "./data.js?v=R6";
+import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R6";
+import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R6";
+import { autoPanels, buildPanel } from "./panels.js?v=R6";
 import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell, lastKey,
-         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R5";
-import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R5";
+         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R6";
+import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R6";
 import { effectiveSlots, slotLabel, slotTimeLabel, groupByDate, checkSlot, splitRange, responseCounts,
-         newSlotId, isStructured, fmtDate } from "./slots.js?v=R5";
+         newSlotId, isStructured, fmtDate } from "./slots.js?v=R6";
 import { normalizeCommittee, interviewers as interviewersOf, pickable as pickableOf, memberName, memberStatus,
-         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R5";
+         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R6";
 import { fromLegacy, normalizeQuestions, liveQuestions, idsWithNotes, scoringStarted, checkEdit, newQuestionId,
-         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R5";
+         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R6";
 import { entry as hEntry, newHistoryId, panelUndo, shortlistUndo, screeningUndo, canUndo, undoneIds, textFor, whoFor, whenFor,
-         hashOf, toDate } from "./history.js?v=R5";
-import { buildBackup, backupFileName, toState } from "./backup.js?v=R5";
-import { icsEvent, icsCalendar } from "./ics.js?v=R5";
-import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R5";
+         hashOf, toDate } from "./history.js?v=R6";
+import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS } from "./backup.js?v=R6";
+import { createRounds, pageId } from "./rounds.js?v=R6";
+import { icsEvent, icsCalendar } from "./ics.js?v=R6";
+import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R6";
 import { STAGES, STAGE_WORD, stageOpen, stageClosedAt, roundOpen, bookingFor, thresholdOf, isOnList, closePlan, reopenPlan,
-         lockEntry } from "./stages.js?v=R5";
+         lockEntry } from "./stages.js?v=R6";
 
 // The release this page is. Must equal version.json and every "?v=" in every
 // import (tests/versions.test.mjs). A page that sees a different version.json
 // was updated underneath it (section "Reload notice" below).
-const RELEASE = "R5";
+const RELEASE = "R6";
 
 // Interview questions (H2): the saved document (interviews_meta/questions) when
 // there is one, else what the typed password decrypted from the old js/data.js
@@ -298,6 +299,7 @@ async function initStore(role, typed) {
     }
     if (ui.role === "admin") syncAllowedNames();
     if (ui.role === "admin") maybeMigrateQuestions();
+    if (ui.role === "admin" && rounds) renderRoundLine();
   });
   S = store.getState();
 }
@@ -352,6 +354,7 @@ function syncAllowedNames(fromTimer = false) {
   syncAllowedNames._t = setTimeout(() => { syncAllowedNames._since = 0; if (S && ui.role === "admin") syncAllowedNow(fromTimer); }, wait);
 }
 function syncAllowedNow(fromTimer) {
+  if (!roundOpen(S.meta)) return;          // paused while a round is closing
   const want = [...new Set(S.candidates.filter((c) => !c.removed).map(candKey).filter(Boolean))].sort();
   if (!want.length) return;                 // never publish an empty list: that would lock every applicant out
   const g = ui._allowed = ui._allowed || { last: null, lastSeen: undefined, fights: [], held: false, timer: null };
@@ -595,6 +598,7 @@ function wireSections() {
     d.addEventListener("toggle", () => {
       ui.openSections[d.dataset.sec] = d.open;
       if (d.dataset.sec === "setHistory" && d.open && !ui.hist) IV.loadHistory();
+      if (d.dataset.sec === "setPast" && d.open && !ui.past) IV.loadPast();
     });
   });
 }
@@ -672,7 +676,9 @@ function render() {
 // settings, not navigating away).
 function openSetup() {
   // always open with every card collapsed
-  ["setChair", "setCommittee", "setQuestions", "setStages", "setDeadlines", "setRule", "setInfo", "setSlots", "setOneDrive", "setBackup", "setHistory"].forEach((k) => delete ui.openSections[k]);
+  ["setChair", "setCommittee", "setQuestions", "setStages", "setDeadlines", "setRule", "setInfo", "setSlots", "setOneDrive", "setRound", "setPast",
+   "setRetention", "setRestore", "setBackup", "setHistory"].forEach((k) => delete ui.openSections[k]);
+  ui.past = null;
   ui.hist = null;   // the history card reads fresh each time Setup opens
   renderSettings(); wireSections();
   $("#setupModal").classList.remove("hidden");
@@ -2131,6 +2137,10 @@ function renderSettings() {
     ${section("setInfo", "Interview details", "", infoBody, { open: false, info: "Used in every email and calendar file the tool writes for you, and in what applicants see." })}
     ${section("setSlots", "Interview times", `${slots.length} time${slots.length === 1 ? "" : "s"}`, slotsBody, { open: false, info: "The interview times interviewers and applicants choose from. Add a single time or a block of back-to-back times; edit or remove any time. If people already answered for a time you change, you choose whether to keep their answers or ask them again." })}
     ${section("setOneDrive", "Applications folder (OneDrive)", "", odBody, { open: false, info: "Link to the access-controlled OneDrive folder holding the CVs/cover letters. Committee members open applicant files from here. Stored privately, never in the app's code." })}
+    ${section("setRound", "This round", (S.meta && S.meta.roundName) || "", roundBody(), { open: false, info: "Name the round, and close it when hiring is done. Closing moves everything to Past rounds, which only Leadership can see." })}
+    ${section("setPast", "Past rounds", ui.past && ui.past.due ? `${ui.past.due} can now be deleted` : "", pastBody(), { open: false, info: "Closed rounds. Download them again, bring one back, or delete one for good after the keep-until date." })}
+    ${section("setRetention", "Keep closed rounds for", retentionLabel(), retentionBody(), { open: false, info: "Set by the department. Check with leadership before changing." })}
+    ${section("setRestore", "Restore from a backup file", "", restoreBody(), { open: false, info: "Load a backup file back in. You see exactly what would be added before anything is written." })}
     ${section("setBackup", "Backup", "", backupBody, { open: false, info: "Download everything in the working round. Do this before every release of the tool and before any big change." })}
     ${section("setHistory", "Change history", "", historyBody(), { open: false, info: "Changes made with the Leadership password, newest first. Undo is offered where the change can still be undone." })}
     ${hint("Applicants are added on the Screen tab, under “Add candidates”.")}`;
@@ -2217,6 +2227,95 @@ function questionsEditor() {
     <p class="small muted" style="margin:.3rem 0 0">One per line.</p>
     <div class="adminbar" style="margin-top:.6rem"><button class="btn tinted small" onclick="IV.saveQuestions(this)">Save questions</button>
       ${ui.qDraft ? `<button class="btn ghost small" onclick="IV.qDiscard()">Discard changes</button>` : ""}</div>`;
+}
+
+
+// ------------------------------------------------ Setup → rounds (H1, R6)
+const RETENTION = [[12, "1 year"], [24, "2 years"], [36, "3 years"], [60, "5 years"], [84, "7 years"], [0, "Until we delete them by hand"]];
+const retentionNow = () => { const m = (S.settings || {}).retentionMonths; return Number.isInteger(m) && m > 0 ? m : 0; };
+const retentionLabel = () => (RETENTION.find(([m]) => m === retentionNow()) || [0, ""])[1];
+const longDay = (at) => { const d = toDate(at); return d ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : ""; };
+function roundBody() {
+  const st = S.meta || {};
+  const kept = st.keptFromClose || [];
+  const keptBlock = kept.length ? `<div class="note warnbox"><b class="warn">${ICON.warn} ${kept.length} item${kept.length === 1 ? " was" : "s were"} kept from the closed round
+      because someone changed ${kept.length === 1 ? "it" : "them"} after the copy was saved.</b>
+      <div class="row backup-actions" style="margin-top:.5rem"><button class="btn tinted small" onclick="IV.keptDelete(this)">Download and delete them</button>
+      <button class="btn ghost small" onclick="IV.keptKeep(this)">Keep them in this round</button></div></div>` : "";
+  return `<label class="ed-label" for="rnName">Round name</label>
+    <input id="rnName" type="text" value="${escapeHtml(st.roundName || "")}" placeholder="Hiring round ${new Date().getFullYear()}"/>
+    <div class="row backup-actions" style="margin-top:.5rem"><button class="btn tinted small" onclick="IV.saveRoundName(this)">Save name</button>
+      <button class="btn ghost small danger" onclick="IV.closeRound()" ${kept.length ? "disabled" : ""}>Close this round</button></div>
+    ${kept.length ? `<p class="small muted">First decide what to do with the ${kept.length} item${kept.length === 1 ? "" : "s"} kept from the last close.</p>` : ""}
+    ${keptBlock}`;
+}
+function pastBody() {
+  const p = ui.past;
+  if (!p) return `<p class="muted small">Loading…</p>`;
+  if (p.error) return `<p class="small bad">Couldn't load past rounds. ${escapeHtml(p.error)}</p>`;
+  const now = Date.now();
+  const closed = p.list.filter((a) => a.status === "closed").sort((a, b) => (toDate(b.closedAt) || 0) - (toDate(a.closedAt) || 0));
+  const copies = p.list.filter((a) => a.status !== "closed" && a.id !== (S.meta || {}).closingAttemptId);
+  const rows = closed.map((a) => {
+    const until = a.deleteAfter ? toDate(a.deleteAfter) : null, due = until && until.getTime() <= now;
+    const n = (a.counts || {}).interviews_candidates;
+    return `<div class="hrow"><div class="grow"><div><b>${escapeHtml(a.name || "Hiring round")}</b></div>
+        <div class="small muted">closed ${escapeHtml(longDay(a.closedAt))}${n != null ? ` · ${n} applicant${n === 1 ? "" : "s"}` : ""} · ${until ? `kept until ${escapeHtml(longDay(a.deleteAfter))}` : "kept until deleted by hand"}${a.restoredAt ? " · brought back once" : ""}</div>
+        <div class="panelacts" style="display:flex">
+          <button class="linky small" onclick="IV.pastDownload('${a.id}')">Download backup file</button>
+          <button class="linky small" onclick="IV.pastExcel('${a.id}')">Download Excel</button>
+          <button class="linky small" onclick="IV.pastPrint('${a.id}')">Print summary</button>
+          <button class="linky small" onclick="IV.pastBringBack('${a.id}')">Bring back</button>
+          ${due ? `<button class="linky small danger" onclick="IV.pastDelete('${a.id}')">Delete permanently</button>`
+            : `<span class="small muted">${until ? `Can be deleted after ${escapeHtml(longDay(a.deleteAfter))}` : "Set how long to keep closed rounds to allow deleting"}</span>`}</div></div></div>`;
+  }).join("");
+  return `${rows ? `<div class="hlist">${rows}</div>` : `<p class="muted small">No closed rounds yet.</p>`}
+    ${copies.length ? `<details class="raters"><summary>Unfinished copies (safe to delete): ${copies.length}</summary>
+      <div class="hlist">${copies.map((a) => `<div class="hrow"><div class="grow small">${escapeHtml(a.name || "Copy")} · ${escapeHtml(a.status)}${a.startedAt ? " · " + escapeHtml(longDay(a.startedAt)) : ""}</div>
+        <button class="linky small danger" onclick="IV.pastDeleteCopy('${a.id}')">Delete</button></div>`).join("")}</div></details>` : ""}`;
+}
+function retentionBody() {
+  const cur = retentionNow();
+  return `<select id="retSel" onchange="IV.setRetention(this.value)" aria-label="Keep closed rounds for">${RETENTION.map(([m, l]) =>
+    `<option value="${m}" ${m === cur ? "selected" : ""}>${l}</option>`).join("")}</select>
+    <p class="small muted">Nothing is ever deleted automatically. After this time, Past rounds offers "Delete permanently".</p>`;
+}
+function restoreBody() {
+  const r = ui.restore;
+  const pick = `<label class="btn tinted small filepick">${r ? "Choose another file" : "Choose file"}<input type="file" id="rsFile" accept=".json,application/json" onchange="IV.restoreFile(this)" hidden/></label>`;
+  if (!r) return `<p class="small" style="margin-top:0">Choose a backup file saved from this tool. Nothing is written until you press Restore.</p>${pick}`;
+  if (r.error) return `<p class="small bad">${escapeHtml(r.error)}</p>${pick}`;
+  const p = r.plans[r.mode];
+  const radio = (m, label, plan) => `<label class="small rsmode"><input type="radio" name="rsMode" value="${m}" ${r.mode === m ? "checked" : ""} ${plan.ok ? "" : "disabled"}
+      onchange="IV.restoreMode('${m}')"/> ${label}${plan.ok ? "" : ` <span class="muted">(${escapeHtml(plan.why)})</span>`}</label>`;
+  const rows = p.rows.map((x) => `<tr><th>${escapeHtml(x.label)}</th><td>${x.inFile}</td><td>${x.now}</td><td>${x.add}</td><td>${x.same}</td><td>${x.different}</td></tr>`).join("");
+  return `<p class="small" style="margin-top:0">${escapeHtml(r.fileName)} · ${escapeHtml((r.backup.round || {}).name || "a round")} · saved ${escapeHtml(longDay(r.backup.exportedAt))}</p>
+    ${radio("missing", "Bring back missing items only", r.plans.missing)}
+    ${radio("replace", "Replace the working round with this backup", r.plans.replace)}
+    <div class="tablewrap"><table class="rstable"><thead><tr><th></th><th>In the file</th><th>Here now</th><th>Will be added</th><th>Same</th><th>Different (left as is)</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    ${[...p.warnings, ...p.skipped].map((w) => `<p class="small">${escapeHtml(w)}</p>`).join("")}
+    <p id="rsProgress" class="small muted"></p>
+    <div class="row backup-actions"><button class="btn filled small" onclick="IV.restoreGo(this)" ${p.ok && (p.total || Object.keys(p.meta).length) ? "" : "disabled"}>Restore</button>
+      <button class="btn ghost small" onclick="IV.restoreCancel()">Cancel</button>${pick}</div>`;
+}
+// Apply a restore plan: documents (decoded for this store), then the meta
+// documents it carries, with one history entry.
+async function applyRestore(plan, backup, label) {
+  const writes = plan.writes.map((w) => ({ coll: w.coll, id: w.id, data: store.decode(w.data) }));
+  const meta = plan.meta;
+  if (meta.configCommittee) writes.push({ coll: "interviews_meta", id: "config", data: { committee: store.decode(meta.configCommittee) }, mergeFields: ["committee"] });
+  if (meta.config) writes.push({ coll: "interviews_meta", id: "config", data: store.decode(meta.config) });
+  if (meta.questions) writes.push({ coll: "interviews_meta", id: "questions", data: store.decode(meta.questions) });
+  if (meta.schedule) writes.push({ coll: "interviews_meta", id: "schedule", data: store.decode(meta.schedule) });
+  if (meta.state) writes.push({ coll: "interviews_meta", id: "state", data: store.decode(meta.state) });
+  if (meta.public) writes.push({ coll: "interviews_public", id: "slots", data: meta.public, mergeFields: ["times", "slots", "booking"] });
+  const n = plan.writes.length;
+  const el = () => $("#rsProgress");
+  await track(store.applyPlan({ writes }, hEntry(plan.mode === "replace" ? "round.restore" : "backup.restore",
+    `${label} (${n} item${n === 1 ? "" : "s"})`, { by: byWho(), ...(meta.replacedQuestions && meta.replacedQuestions.length ? { undo: { kind: "reference", questions: meta.replacedQuestions } } : {}) }),
+    { onProgress: (done, all) => { if (el()) el().textContent = `Restoring... ${done} of ${all}`; } }));
+  return n;
 }
 
 // ------------------------------------------------ Setup → Change history (H12)
@@ -2435,7 +2534,7 @@ function timesEditor(slots) {
 // Re-render Setup while it's open without losing focus/typing in plain fields.
 function rerenderSettings() {
   const act = document.activeElement, id = act && act.id;
-  const keep = {}; ["odIn", "dlScreening", "dlAvailability", "dlReply", "thIn", "idLoc", "idZoom", "idContact"].forEach((k) => { const el = document.getElementById(k); if (el && el.value !== el.defaultValue) keep[k] = el.value; });
+  const keep = {}; ["odIn", "dlScreening", "dlAvailability", "dlReply", "thIn", "idLoc", "idZoom", "idContact", "rnName"].forEach((k) => { const el = document.getElementById(k); if (el && el.value !== el.defaultValue) keep[k] = el.value; });
   const sel = act && typeof act.selectionStart === "number" ? [act.selectionStart, act.selectionEnd] : null;
   if (ui.tEdit && !EFF().slotIds.includes(ui.tEdit.id)) { ui.tEdit = null; toast("The time you were editing was just removed by someone else", "err"); }
   renderSettings(); wireSections();
@@ -3194,6 +3293,135 @@ window.IV = {
       $("#delIn").addEventListener("input", (e) => { $("#delGo").disabled = lastKey(e.target.value) !== plan.confirmWord; });
     });
   },
+  // ---- R6: this round, past rounds, retention, restore
+  saveRoundName: (btn) => withBusy(btn, async () => {
+    const v = (($("#rnName") || {}).value || "").trim().slice(0, 120);
+    await track(store.updateState(() => ({ roundName: v }), hEntry("settings.save", "Changed the round name", { by: byWho() })));
+  }, "Name saved").catch(() => {}),
+  closeRound: () => { closeSetup(); rounds.begin(); },
+  roundTakeover: (action) => rounds.takeoverAnd(action, S.meta || {}),
+  keptDelete: async (btn) => {
+    const kept = (S.meta || {}).keptFromClose || [];
+    if (!kept.length) return;
+    const raw = await store.readCollections([...new Set(kept.map((k) => k.coll))]);
+    const docs = kept.map((k) => ({ ...k, data: (raw[k.coll] || {})[k.id] || null }));
+    downloadFile(`ed-hiring-kept-items-${todayIso()}.json`, JSON.stringify(docs, null, 1), "application/json");
+    const name = (S.meta || {}).keptFromRound || "delete";
+    const ok = await flowDialog((ctl) => {
+      ctl.step({ title: "Delete the kept items", html: `<p>The file with these ${kept.length} items was downloaded. Delete them from the tool now?
+          Type the round name to confirm: <b>${escapeHtml(name)}</b></p><input id="kdIn" type="text" autocomplete="off"/>`,
+        buttons: [{ label: "Cancel", kind: "ghost", run: (k) => k.close(false) },
+          { label: "Delete them", kind: "danger", id: "kdGo", disabled: true, run: (k) => k.close(true) }] });
+      $("#kdIn").addEventListener("input", (e) => { $("#kdGo").disabled = e.target.value.trim().toLowerCase() !== name.toLowerCase(); });
+    });
+    if (!ok) return;
+    await withBusy(btn, () => track(store.keptDecision(true, kept, hEntry("round.delete", `Deleted ${kept.length} items kept from the last close`, { by: byWho() }))),
+      "Deleted").catch(() => {});
+  },
+  keptKeep: (btn) => withBusy(btn, () => track(store.keptDecision(false, [], hEntry("settings.save", "Kept the items from the last close in this round", { by: byWho() }))),
+    "Kept in this round").catch(() => {}),
+  loadPast: async () => {
+    ui.past = null;
+    try {
+      const list = await store.listArchive();
+      const due = list.filter((a) => a.status === "closed" && a.deleteAfter && (toDate(a.deleteAfter) || 0) <= Date.now()).length;
+      ui.past = { list, due: due ? `${due} past round${due === 1 ? "" : "s"}` : "" };
+    } catch (e) { ui.past = { list: [], error: (e && e.code) || "Check your connection." }; }
+    const d = document.querySelector('details[data-sec="setPast"] .sec-body'); if (d) d.innerHTML = pastBody();
+  },
+  pastJson: async (id) => {
+    const text = unchunk(await store.readParts(id));
+    return parseBackup(text);
+  },
+  pastDownload: async (id) => {
+    try { const b = await IV.pastJson(id); downloadFile(backupFileName(b.round.name), JSON.stringify(b, null, 1), "application/json"); }
+    catch (e) { toast((e && e.message) || "Couldn't read that round", "err"); }
+  },
+  pastExcel: async (id) => { try { downloadExcel(toState((await IV.pastJson(id)).data)); } catch (e) { toast((e && e.message) || "Couldn't read that round", "err"); } },
+  pastPrint: async (id) => { try { IV.printCycle(toState((await IV.pastJson(id)).data)); } catch (e) { toast((e && e.message) || "Couldn't read that round", "err"); } },
+  pastBringBack: async (id) => {
+    let b, live;
+    try { b = await IV.pastJson(id); live = await store.snapshotRaw(); } catch (e) { toast((e && e.message) || "Couldn't read that round", "err"); return; }
+    const plan = planRestore(b, live, "replace", { committee: EFF().committee, newRoundId: `r-${todayIso().replace(/-/g, "")}-${Math.random().toString(36).slice(2, 6)}`,
+      nowIso: new Date().toISOString(), defaults: COMMITTEE });
+    if (!plan.ok) { await confirmDialog(plan.why, { title: "Bring back", yes: "OK", danger: false }); return; }
+    if (!(await confirmDialog(`Bring back '${b.round.name}'? It comes back open, as the working round, with ${plan.writes.length} items. The saved copy is kept.`,
+      { title: "Bring back", yes: "Bring it back", danger: false }))) return;
+    try {
+      await applyRestore(plan, b, `Brought back the past round '${b.round.name}'`);
+      await track(store.updateArchive(id, { restoredAt: store.now() }));
+      toast(`Brought back ${plan.writes.length} items.`, "ok");
+    } catch (e) { toast((e && e.message) || "Couldn't bring it back. Check your connection", "err"); }
+    IV.loadPast();
+  },
+  pastDelete: async (id) => {
+    const a = ((ui.past || {}).list || []).find((x) => x.id === id); if (!a) return;
+    const name = a.name || "Hiring round";
+    const ok = await flowDialog((ctl) => {
+      ctl.step({ title: "Delete permanently", html: `<p>Delete '${escapeHtml(name)}' permanently? This removes it from the tool for good. Only backup files you saved
+          elsewhere will remain. Type the round name to confirm.</p><input id="pdIn" type="text" autocomplete="off"/>`,
+        buttons: [{ label: "Cancel", kind: "ghost", run: (k) => k.close(false) }, { label: "Delete permanently", kind: "danger", id: "pdGo", disabled: true, run: (k) => k.close(true) }] });
+      $("#pdIn").addEventListener("input", (e) => { $("#pdGo").disabled = e.target.value.trim().toLowerCase() !== name.trim().toLowerCase(); });
+    });
+    if (!ok) return;
+    try {
+      await track(store.deleteArchive(id));
+      await track(store.addHistory(hEntry("round.delete", `Deleted the past round '${name}' permanently.`, { by: byWho() })));
+      toast("Deleted", "ok");
+    } catch (e) { toast((e && e.code) === "permission-denied" ? "It can't be deleted yet." : "Couldn't delete. Check your connection", "err"); }
+    IV.loadPast();
+  },
+  pastDeleteCopy: async (id) => {
+    try { await track(store.deleteArchive(id)); toast("Deleted", "ok"); } catch { toast("Couldn't delete. Check your connection", "err"); }
+    IV.loadPast();
+  },
+  setRetention: async (v) => {
+    const months = Number(v) || 0;
+    try {
+      await track(store.updateConfig(() => ({ retentionMonths: months || null }),
+        hEntry("settings.save", `Set how long to keep closed rounds: ${(RETENTION.find(([m]) => m === months) || [0, ""])[1].toLowerCase()}`, { by: byWho() })));
+    } catch { toast("Couldn't save. Check your connection", "err"); return; }
+    let list = []; try { list = (await store.listArchive()).filter((a) => a.status === "closed"); } catch { /* offline */ }
+    if (list.length && await confirmDialog(`Also apply to the ${list.length} past round${list.length === 1 ? "" : "s"} already closed?`,
+      { title: "Keep closed rounds for", yes: "Apply to them too", danger: false })) {
+      for (const a of list) {
+        const closed = toDate(a.closedAt); if (!closed) continue;
+        const after = months ? Math.max(closed.getTime() + months * 30.44 * 864e5, closed.getTime() + 31 * 864e5) : null;
+        try { await track(store.updateArchive(a.id, { deleteAfter: after ? store.tsFromMillis(after) : null })); } catch { /* refused: leave it */ }
+      }
+      toast("Applied", "ok");
+    }
+    rerenderSettings();
+  },
+  restoreFile: async (input) => {
+    const f = input.files && input.files[0]; if (!f) return;
+    ui.restore = null;
+    try {
+      const text = await f.text();
+      const backup = await parseBackup(text);
+      const chk = checkBackup(backup);
+      if (chk.errors.length) throw new Error(chk.errors[0]);
+      const live = await store.snapshotRaw();
+      const opts = { committee: EFF().committee, newRoundId: `r-${todayIso().replace(/-/g, "")}-${Math.random().toString(36).slice(2, 6)}`,
+        nowIso: new Date().toISOString(), defaults: COMMITTEE };
+      const plans = { missing: planRestore(backup, live, "missing", opts), replace: planRestore(backup, live, "replace", opts) };
+      ui.restore = { fileName: f.name, backup, plans, mode: plans.missing.ok ? "missing" : "replace" };
+    } catch (e) { ui.restore = { error: (e && e.message) || "That file can't be read." }; }
+    rerenderSettings();
+  },
+  restoreMode: (m) => { if (ui.restore) { ui.restore.mode = m; rerenderSettings(); } },
+  restoreCancel: () => { ui.restore = null; rerenderSettings(); },
+  restoreGo: (btn) => withBusy(btn, async () => {
+    const r = ui.restore; if (!r) return;
+    // re-plan against a FRESH read, never the one from when the file was chosen
+    const live = await store.snapshotRaw();
+    const plan = planRestore(r.backup, live, r.mode, { committee: EFF().committee, newRoundId: r.plans.replace.meta.state ? r.plans.replace.meta.state.roundId : "",
+      nowIso: new Date().toISOString(), defaults: COMMITTEE });
+    if (!plan.ok) throw new Error(plan.why);
+    const n = await applyRestore(plan, r.backup, r.mode === "replace" ? "Replaced the working round from a backup file" : "Brought back missing items from a backup file");
+    ui.restore = null; rerenderSettings();
+    toast(`Restored ${n} item${n === 1 ? "" : "s"}.`, "ok");
+  }).catch(() => {}),
   // ---- change history
   loadHistory: async () => {
     ui.hist = { entries: [], next: null, loading: true };
@@ -3257,17 +3485,7 @@ window.IV = {
   // The Excel workbook is built from a FRESH server read too (not page state,
   // which mixes in this browser's echo), so it matches the backup file.
   exportCycle: (btn) => withBusy(btn, async () => {
-    const st = toState(await store.snapshotRaw());
-    const t = withState(st, cycleTables);
-    const bytes = buildXlsx([
-      { name: "Summary", rows: t.summary, widths: [26, 70] },
-      { name: "Candidates", rows: t.candidates }, { name: "Screening", rows: t.screening },
-      { name: "Availability - committee", rows: t.availCommittee }, { name: "Availability - applicants", rows: t.availApplicants },
-      { name: "Panels", rows: t.panels }, { name: "Scores", rows: t.scores }, { name: "Questions", rows: t.questions, widths: [12, 80, 12] },
-      { name: "Ranking", rows: t.ranking },
-      { name: "Offers", rows: t.offers }, { name: "Committee", rows: t.committee }, { name: "Interview times", rows: t.times },
-    ]);
-    downloadFile(`ed-hiring-backup-${todayIso()}.xlsx`, bytes, XLSX_MIME);
+    downloadExcel(toState(await store.snapshotRaw()));
   }, "Excel downloaded"),
   // H1a: the restorable backup, from a fresh one-shot read of every round
   // collection (store.snapshotRaw), never from page memory.
@@ -3277,8 +3495,8 @@ window.IV = {
     const name = backupFileName(b.round.name || `Hiring round ${new Date().getFullYear()}`);
     downloadFile(name, JSON.stringify(b, null, 1), "application/json");
   }, "Backup downloaded"),
-  printCycle: () => {
-    const t = cycleTables();
+  printCycle: (st) => {
+    const t = st ? withState(st, cycleTables) : cycleTables();
     const tbl = (rows, opts = {}) => rows.length < 2 ? `<p class="pr-empty">None recorded.</p>`
       : `<table><thead><tr>${rows[0].map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead><tbody>${rows.slice(1)
         .map((r) => `<tr>${r.map((v, i) => `<td${opts.wrap && opts.wrap.includes(i) ? ' class="wrap"' : ""}>${escapeHtml(v == null ? "" : String(v))}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
@@ -3615,6 +3833,60 @@ async function logOut(keys) {
     } catch (e) { console.warn("sign-out failed:", e && e.code); }
   }
   location.reload();
+}
+
+// ------------------------------------------------- close the round (H1, R6)
+// The flow itself lives in rounds.js; this wires it to the page.
+const rounds = createRounds({
+  store: () => store, state: () => S, byWho, release: RELEASE,
+  roundName: () => (S.meta && S.meta.roundName) || `Hiring round ${new Date().getFullYear()}`,
+  retentionMonths: () => { const m = (S.settings || {}).retentionMonths; return Number.isInteger(m) && m > 0 ? m : null; },
+  downloadText: (name, text, mime) => downloadFile(name, text, mime),
+  backupName: (name) => backupFileName(name),
+  excelFromData: (data) => downloadExcel(toState(data)),
+  rerender: () => { render(); refreshSetup(); },
+  onActive: (on) => { ui.closing = on; },
+});
+// Every page other than the one closing: read-only while the close is alive;
+// once its lease has not changed for 5 minutes (on this page's clock), offer to
+// finish or stop it (a takeover first, which the server refuses if it is fresh).
+function renderRoundLine() {
+  const el = $("#roundLine"); if (!el) return;
+  const st = S.meta || {};
+  const mode = rounds.onState(st);
+  ui.roundMode = mode;
+  document.body.classList.toggle("closing-elsewhere", mode === "fresh" || mode === "stale");
+  if (mode !== "fresh" && mode !== "stale") { el.classList.add("hidden"); el.innerHTML = ""; return; }
+  if (mode === "fresh") { el.innerHTML = `<p>Leadership (another page) is closing the round now.</p>`; el.classList.remove("hidden"); return; }
+  const started = dayOf(st.closingStartedAt);
+  const paint = (status) => {
+    el.innerHTML = status === "clearing"
+      ? `<p>Closing was started${started ? ` on ${escapeHtml(started)}` : ""} and part of the round has been cleared. Nothing is lost: everything is in the saved copy.
+          <button class="linky" onclick="IV.roundTakeover('finish')">Finish closing</button> · <button class="linky" onclick="IV.roundTakeover('stop')">Stop closing and put everything back</button></p>`
+      : `<p>Closing was started${started ? ` on ${escapeHtml(started)}` : ""} and didn't finish. Nothing has been cleared.
+          <button class="linky" onclick="IV.roundTakeover('finish')">Finish closing</button> · <button class="linky" onclick="IV.roundTakeover('stop')">Stop closing</button></p>`;
+    el.classList.remove("hidden");
+  };
+  if (ui._staleAttempt && ui._staleAttempt.id === st.closingAttemptId) { paint(ui._staleAttempt.status); return; }
+  paint("");
+  const id = st.closingAttemptId;
+  (id ? store.readAttempt(id) : Promise.resolve(null)).then((a) => { ui._staleAttempt = { id, status: a ? a.status : "missing" }; paint(ui._staleAttempt.status); }, () => {});
+}
+// the stale view needs re-checking even when no snapshot arrives
+setInterval(() => { if (ui.role === "admin" && S && S.meta && S.meta.roundStatus === "closing") renderRoundLine(); }, 10000);
+
+// The Excel workbook from any state (a fresh read, or an archived round).
+function downloadExcel(st) {
+  const t = withState(st, cycleTables);
+  const bytes = buildXlsx([
+    { name: "Summary", rows: t.summary, widths: [26, 70] },
+    { name: "Candidates", rows: t.candidates }, { name: "Screening", rows: t.screening },
+    { name: "Availability - committee", rows: t.availCommittee }, { name: "Availability - applicants", rows: t.availApplicants },
+    { name: "Panels", rows: t.panels }, { name: "Scores", rows: t.scores }, { name: "Questions", rows: t.questions, widths: [12, 80, 12] },
+    { name: "Ranking", rows: t.ranking },
+    { name: "Offers", rows: t.offers }, { name: "Committee", rows: t.committee }, { name: "Interview times", rows: t.times },
+  ]);
+  downloadFile(`ed-hiring-backup-${todayIso()}.xlsx`, bytes, XLSX_MIME);
 }
 
 // Run a render or table builder against another state (a fresh server read, or

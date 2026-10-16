@@ -20,7 +20,7 @@
 //  every older version (upgrading in memory) and refuses newer ones.
 // ============================================================================
 
-import { canonicalJson } from "./history.js?v=R5";
+import { canonicalJson } from "./history.js?v=R6";
 
 export const FORMAT = "mgh-ed-hiring-backup";
 export const VERSION = 1;
@@ -166,4 +166,175 @@ export function toState(raw) {
     history: { ...c("interviews_history") },
     applicant: { ...c("interviews_applicant") },
   };
+}
+
+// ============================================================================
+//  R6: the close and restore halves.
+// ============================================================================
+
+// What a close may DELETE (review 2 B1): an explicit allow-list, separate from
+// what a backup contains. interviews_meta (committee, settings, state, allowed,
+// questions, schedule, passwords) and interviews_public are NEVER deleted by a
+// close; they are reset field by field in its single finish batch. The clear
+// step, the put-back and the "kept" list take their names from here only.
+export const CLEAR_COLLECTIONS = Object.freeze([
+  "interviews_candidates", "interviews_screening", "interviews_scores", "interviews_availIv",
+  "interviews_availCand", "interviews_offers", "interviews_applicant", "interviews_history",
+]);
+
+// UTF-8 byte length of one code point
+const cpBytes = (cp) => (cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4);
+export const utf8Length = (s) => { let n = 0; for (const ch of s) n += cpBytes(ch.codePointAt(0)); return n; };
+
+// Split text into parts of at most `max` UTF-8 BYTES (Firestore's limit is
+// bytes; accented names and curly quotes are 2 to 3 bytes each), cutting only
+// between characters, never inside one.
+export function chunkBytes(text, max = 900000) {
+  const parts = [];
+  let start = 0, bytes = 0, i = 0;
+  for (const ch of text) {
+    const b = cpBytes(ch.codePointAt(0));
+    if (bytes + b > max) { parts.push(text.slice(start, i)); start = i; bytes = 0; }
+    bytes += b; i += ch.length;
+  }
+  parts.push(text.slice(start));
+  return parts;
+}
+export const unchunk = (parts) => [...parts].sort((a, b) => a.i - b.i).map((p) => p.json).join("");
+
+// Kept items (review 3 m2): documents left in place by a close because they
+// changed after the copy. They belong to no round until leadership decides.
+export const quarantineSet = (kept) => new Set((kept || []).map((k) => `${k.coll}/${k.id}`));
+
+// ---- restore ----------------------------------------------------------------
+export const MAX_RESTORE_DOCS = 10000;
+const ID_OK = (id) => typeof id === "string" && id.length > 0 && !id.includes("/") && new TextEncoder().encode(id).length <= 1500;
+const AV_KEYS = ["slots", "reply", "replyAt"], OFFER_KEYS = ["status", "note", "offeredAt", "respondedAt", "updatedAt"];
+const HIST_KEYS = ["at", "by", "action", "text", "cand", "member", "undo", "restored"];
+// The shapes the rules check, so the preview can list what would be refused.
+export function shapeProblem(coll, d) {
+  if (!d || typeof d !== "object") return "not a document";
+  if (coll === "interviews_availCand") {
+    if (!Object.keys(d).every((k) => AV_KEYS.includes(k))) return "unexpected fields";
+    const sl = d.slots || {};
+    if (Object.keys(sl).length > 200 || !Object.values(sl).every((v) => ["ip", "zoom", "either"].includes(v))) return "times in an unknown form";
+    if (!["", "confirmed", "withdrawn", undefined].includes(d.reply)) return "an unknown reply";
+  }
+  if (coll === "interviews_offers") {
+    if (!Object.keys(d).every((k) => OFFER_KEYS.includes(k))) return "unexpected fields";
+    if (!["", "offered", "accepted", "declined", undefined].includes(d.status) || String(d.note || "").length > 4000) return "an unknown status or a note too long";
+  }
+  if (coll === "interviews_history") {
+    if (!Object.keys(d).every((k) => HIST_KEYS.includes(k))) return "unexpected fields";
+    if (String(d.action || "").length > 60 || String(d.text || "").length > 600 || String(d.by || "").length > 80) return "too long";
+    if (!d.at || !(d.at.__ts || typeof d.at === "string")) return "no time";
+  }
+  return null;
+}
+
+// Checks before any preview. Returns { errors, warnings, total }.
+export function checkBackup(b) {
+  const errors = [], warnings = [];
+  let total = 0;
+  for (const coll of ROUND_COLLECTIONS) {
+    for (const [id, d] of Object.entries((b.data || {})[coll] || {})) {
+      total++;
+      if (!ID_OK(id)) errors.push(`A document id in ${coll} isn't valid.`);
+      if (new TextEncoder().encode(JSON.stringify(d)).length > 1000000) errors.push(`A document in ${coll} is too big.`);
+    }
+  }
+  if (total > MAX_RESTORE_DOCS) errors.push("This backup is too big to restore in one day on the free plan.");
+  return { errors: [...new Set(errors)], warnings, total };
+}
+
+export const RESTORE_ROWS = Object.freeze([
+  ["interviews_candidates", "Applicants"], ["interviews_screening", "Screening answers"], ["interviews_scores", "Scores and notes"],
+  ["interviews_availIv", "Interviewer times"], ["interviews_availCand", "Applicant times"], ["interviews_offers", "Offers"],
+  ["interviews_applicant", "Notices"], ["interviews_history", "Change history"],
+]);
+// The working round counts as empty with no applicants, input, offers or notices.
+export const EMPTY_CHECK = Object.freeze(["interviews_candidates", "interviews_screening", "interviews_scores",
+  "interviews_availIv", "interviews_availCand", "interviews_offers", "interviews_applicant"]);
+export const roundIsEmpty = (live) => EMPTY_CHECK.every((c) => !Object.keys((live || {})[c] || {}).length);
+
+// Plan a restore. `backup` is a parsed file (or an archived round's JSON);
+// `live` is ALWAYS a fresh store.snapshotRaw() (never page state), encoded
+// with encodeValue for comparison. Pure: returns what would be written.
+//   mode "missing": add documents that are in the file but not here now; never
+//     change or delete anything; only for a file from the working round.
+//   mode "replace": only when the working round is empty; bring the round back
+//     open with a new round id.
+// opts: { committee (normalized, now), newRoundId, nowIso, defaults (config.js committee) }
+export function planRestore(backup, live, mode, opts = {}) {
+  const enc = (raw) => Object.fromEntries(ROUND_COLLECTIONS.map((c) => [c, Object.fromEntries(Object.entries((raw || {})[c] || {})
+    .map(([id, d]) => [id, encodeValue(d, `${c}/${id}`)]))]));
+  const L = enc(live), F = backup.data || {};
+  const st = (L.interviews_meta || {}).state || {};
+  const plan = { mode, ok: true, why: "", rows: [], writes: [], skipped: [], warnings: [], meta: {}, total: 0 };
+  const fileRound = (backup.round || {}).id || null;
+  const fromHere = fileRound === (st.roundId || null) || (fileRound && fileRound === st.broughtBackFrom);
+  if (mode === "missing" && !fromHere) {
+    plan.ok = false;
+    plan.why = `This file is from '${(backup.round || {}).name || "another round"}', not the round you are working on. To look at it again, use Past rounds, Bring back.`;
+  }
+  if (mode === "replace" && !roundIsEmpty(live)) { plan.ok = false; plan.why = "Close the current round first, so nothing is lost."; }
+  for (const [coll, label] of RESTORE_ROWS) {
+    const f = F[coll] || {}, l = L[coll] || {};
+    const row = { coll, label, inFile: Object.keys(f).length, now: Object.keys(l).length, add: 0, same: 0, different: 0 };
+    for (const [id, d] of Object.entries(f)) {
+      const bad = shapeProblem(coll, d);
+      if (bad) { plan.skipped.push(`${label}: one entry has ${bad}, so it would be refused.`); continue; }
+      if (l[id] !== undefined) { if (canonical(l[id]) === canonical(d)) row.same++; else row.different++; continue; }
+      row.add++;
+      plan.writes.push({ coll, id, data: coll === "interviews_history" ? { ...d, restored: true } : d });
+    }
+    plan.rows.push(row);
+  }
+  // members the file's input refers to who are not on the committee now
+  const ids = new Set();
+  for (const c of ["interviews_screening", "interviews_scores"]) Object.keys(F[c] || {}).forEach((k) => { const i = k.indexOf("~"); if (i > 0) ids.add(k.slice(0, i)); });
+  Object.keys(F.interviews_availIv || {}).forEach((k) => ids.add(k));
+  const now = opts.committee || [];
+  const fileCommittee = (((F.interviews_meta || {}).config || {}).committee) || [];
+  const missing = [...ids].filter((id) => !now.some((m) => m.id === id)).map((id) => {
+    const fm = fileCommittee.find((m) => (m.id || m.name) === id) || {};
+    return { id, name: fm.name || id, gender: fm.gender || "", active: false };
+  });
+  if (missing.length) plan.warnings.push(`${missing.length} ${missing.length === 1 ? "person" : "people"} in the file ${missing.length === 1 ? "is" : "are"} not on the committee now. ${missing.length === 1 ? "They" : "They"} will be added as Left the committee.`);
+  const curQ = ((L.interviews_meta || {}).questions || {}).questions || [];
+  const fileQ = ((F.interviews_meta || {}).questions || {}).questions || [];
+  const noteIds = new Set();
+  Object.values(F.interviews_scores || {}).forEach((s) => Object.keys((s && s.notes) || {}).forEach((q) => noteIds.add(String(q))));
+  const archivedQ = [...noteIds].filter((q) => !curQ.some((x) => x.id === q))
+    .map((q) => ({ id: q, text: (fileQ.find((x) => x.id === q) || {}).text || "(question text not in the file)", archived: true }));
+  const cfgNow = (L.interviews_meta || {}).config || {};
+  const fileCfg = (F.interviews_meta || {}).config || {};
+  if (mode === "missing") {
+    if (missing.length) plan.meta.configCommittee = [...(cfgNow.committee && cfgNow.committee.length ? cfgNow.committee : (opts.defaults || [])), ...missing];
+    if (archivedQ.length) plan.meta.questions = { ...((L.interviews_meta || {}).questions || { version: 1, scale: [], guide: [] }),
+      questions: [...curQ, ...archivedQ] };
+    const diff = ["config", "questions", "schedule"].filter((k) => (F.interviews_meta || {})[k] && canonical((F.interviews_meta || {})[k]) !== canonical((L.interviews_meta || {})[k] || null));
+    if (diff.length) plan.warnings.push(`Setup in the file differs from now (${diff.join(", ")}). Setup is never overwritten by "missing items only".`);
+  } else {
+    const keepCommittee = cfgNow.committee && cfgNow.committee.length ? cfgNow.committee : (opts.defaults || []);
+    const take = ["times", "slots", "panelOverrides", "days", "deadlines", "flagThreshold", "interviewInfo", "retentionMonths", "keptSurnameDocs"];
+    const cfg = { ...cfgNow };
+    take.forEach((k) => { if (k in fileCfg) cfg[k] = fileCfg[k]; });
+    cfg.committee = [...keepCommittee, ...missing];
+    if (!("chair" in cfgNow) && fileCfg.chair) cfg.chair = fileCfg.chair;
+    plan.meta.config = cfg;
+    const fq = (F.interviews_meta || {}).questions;
+    if (fq) plan.meta.questions = { ...fq, questions: [...(fq.questions || []), ...archivedQ.filter((q) => !(fq.questions || []).some((x) => x.id === q.id))] };
+    plan.meta.replacedQuestions = curQ;
+    if ((F.interviews_meta || {}).schedule) plan.meta.schedule = F.interviews_meta.schedule;
+    const fst = (F.interviews_meta || {}).state || {};
+    plan.meta.state = { interviewsComplete: !!fst.interviewsComplete, stages: fst.stages || {}, roundStatus: "open",
+      roundId: opts.newRoundId, roundName: fst.roundName || (backup.round || {}).name || "", roundOpenedAt: { __ts: opts.nowIso || new Date().toISOString() },
+      closingAttemptId: null, closingStartedAt: null, closingTab: null, keptFromClose: [], broughtBackFrom: fileRound || "before-rounds" };
+    const fpub = (F.interviews_public || {}).slots || {};
+    const avClosed = ((fst.stages || {}).availability || {}).closed === true;
+    plan.meta.public = { times: Array.isArray(fileCfg.times) ? fileCfg.times : (fpub.times || []), slots: fpub.slots || [], booking: avClosed ? "closed" : "open" };
+  }
+  plan.total = plan.writes.length;
+  return plan;
 }

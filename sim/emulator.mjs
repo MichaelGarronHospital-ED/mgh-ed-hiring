@@ -39,10 +39,12 @@ const until = async (fn, ms = 8000, step = 150) => {
 
 let B, SRV;
 // A fresh, isolated browser profile per page (its own storage and IndexedDB).
-export async function freshPage({ width = 1280, log = [] } = {}) {
+export async function freshPage({ width = 1280, log = [], timing = null, skewMs = 0 } = {}) {
   const ctx = await B.createBrowserContext();
   const page = await ctx.newPage();
   await page.setViewport({ width, height: 900 });
+  if (timing) await page.evaluateOnNewDocument((t) => { globalThis.__edRoundsTiming = t; }, timing);
+  if (skewMs) await page.evaluateOnNewDocument((ms) => { const now = Date.now; Date.now = () => now() + ms; }, skewMs);
   page.on("pageerror", (e) => log.push(`pageerror: ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error") log.push(`console.error: ${m.text()}`); });
   await page.goto(SRV.url, { waitUntil: "domcontentloaded" });
@@ -275,7 +277,363 @@ export const cases = {
     await closePage(app);
     return [...problems, ...log];
   },
+
+  // ---- R6: close the round, under the real rules --------------------------------
+  // A quiet close finishes in one pass; committee, settings, questions and
+  // passwords are untouched; the next round shows no times; bring it back and an
+  // ED rating saves at once; close again makes a new attempt.
+  async closeQuietThenBringBack() {
+    const problems = [], log = [];
+    await seedRound();
+    const before = await metaNow();
+    const a = await freshPage({ log });
+    await asLeadership(a);
+    await closeViaDialog(a);
+    const after = await metaNow();
+    for (const k of ["committee", "chair", "oneDrive", "flagThreshold", "retentionMonths"]) problems.push(...ok(JSON.stringify(after.config[k]) === JSON.stringify(before.config[k]), `${k} changed`));
+    problems.push(...ok(JSON.stringify(after.questions) === JSON.stringify(before.questions) && JSON.stringify(after.passwords) === JSON.stringify(before.passwords), "questions or passwords changed"));
+    problems.push(...ok(Array.isArray(after.config.times) && !after.config.times.length && Array.isArray(after.config.slots) && !after.config.slots.length, "times not emptied"));
+    for (const c of CLEAR) problems.push(...ok(Object.keys(await emu.listCollection(c)).filter((id) => c !== "interviews_history").length === 0 || c === "interviews_history", `${c} not empty`));
+    const st = after.state;
+    problems.push(...ok(st.roundStatus === "open" && !st.closingTab && st.roundId !== "r-2026" && !(st.keptFromClose || []).length, `state: ${JSON.stringify(st)}`));
+    const arch = Object.values(await emu.listCollection("interviews_archive"));
+    problems.push(...ok(arch.length === 1 && arch[0].status === "closed" && arch[0].closedAt.__ts && arch[0].deleteAfter && arch[0].deleteAfter.__ts, `archive: ${JSON.stringify(arch)}`));
+    // bring it back (Past rounds), then an ED rating saves at once
+    await a.evaluate(() => { document.querySelector("#flowBtns button").click(); window.IV.loadPast(); }); await sleep(800);
+    const id = Object.keys(await emu.listCollection("interviews_archive"))[0];
+    await a.evaluate((id) => { window.IV.pastBringBack(id); }, id);   // don't wait: it waits for the confirm below
+    await a.waitForSelector("#confirmWrap:not(.hidden)", { timeout: 8000 }); await a.click("#confirmYes");
+    const back = await until(async () => { const s2 = await emu.getDocument("interviews_meta/state"); return s2 && s2.broughtBackFrom === "r-2026" && s2; }, 10000);
+    problems.push(...ok(back && back.roundStatus === "open", "not brought back open"));
+    problems.push(...ok(Object.keys(await emu.listCollection("interviews_candidates")).length === 2, "candidates not back"));
+    const ed = await freshPage({ log });
+    await asED(ed, "Chen");
+    await ed.evaluate(() => window.IV.rate("c-2", 3));
+    const r = await until(async () => { const d = await emu.getDocument("interviews_screening/Chen~c-2"); return d && d.rating === 3 && d; });
+    problems.push(...ok(r && r.rating === 3, "an ED rating didn't save after bringing the round back"));
+    await closePage(ed);
+    await closeViaDialog(a);
+    problems.push(...ok(Object.values(await emu.listCollection("interviews_archive")).filter((x) => x.status === "closed").length === 2, "closing again didn't make a new attempt"));
+    await closePage(a);
+    return [...problems, ...log];
+  },
+
+  // Kill the page in the middle of the parts; finish from a new tab after the
+  // lease goes stale (by the server clock: lease.at moved 6 minutes back).
+  async killMidPartsFinishElsewhere() {
+    const problems = [], log = [];
+    await seedRound();
+    const a = await freshPage({ log, timing: { partBytes: 1500, renewMs: 600000 } });
+    await asLeadership(a);
+    await a.evaluate(() => { window.__edRounds.hooks.beforePart = (i) => (i === 1 ? new Promise(() => {}) : null); window.IV.closeRound(); });
+    await waitFlow(a, "Close the round?"); await flowClick(a, "Continue");
+    await until(async () => { const x = Object.values(await emu.listCollection("interviews_archive"))[0]; return x && x.status === "saving"; });
+    await sleep(500);
+    await closePage(a);                                          // the laptop lid closes for good
+    await staleLease();
+    const b = await freshPage({ log, timing: { staleMs: 800, renewMs: 600000 } });
+    await asLeadership(b);
+    await b.waitForFunction(() => (document.querySelector("#roundLine") || {}).textContent.includes("Nothing has been cleared"), { timeout: 15000 });
+    await b.evaluate(() => window.IV.roundTakeover("finish"));
+    await waitFlow(b, "Now save the backup", 30000);
+    await finishFromStep5(b);
+    const arch = Object.values(await emu.listCollection("interviews_archive"));
+    problems.push(...ok(arch.some((x) => x.status === "closed"), `archive: ${JSON.stringify(arch.map((x) => x.status))}`));
+    problems.push(...ok((await emu.getDocument("interviews_meta/state")).roundStatus === "open", "round not open after finishing"));
+    await closePage(b);
+    return [...problems, ...log];
+  },
+
+  // Kill it in the middle of clearing; from a new tab, "Stop closing and put
+  // everything back" restores CLEAR_COLLECTIONS to the copy and meta is untouched.
+  async killMidClearPutBack() {
+    const problems = [], log = [];
+    await seedRound();
+    const metaBefore = await metaNow();
+    const a = await freshPage({ log, timing: { renewMs: 600000 } });
+    await asLeadership(a);
+    await a.evaluate(() => { window.__edRounds.hooks.beforeChunk = (coll) => (coll === "interviews_scores" ? new Promise(() => {}) : null); });
+    const copyText = await closeViaDialog(a, { stopBeforeDone: true });
+    await until(async () => !Object.keys(await emu.listCollection("interviews_screening")).length);
+    await closePage(a);
+    await staleLease();
+    const b = await freshPage({ log, timing: { staleMs: 800, renewMs: 600000 } });
+    await asLeadership(b);
+    await b.waitForFunction(() => (document.querySelector("#roundLine") || {}).textContent.includes("part of the round has been cleared"), { timeout: 15000 });
+    await b.evaluate(() => window.IV.roundTakeover("stop"));
+    await waitFlow(b, "Closing stopped", 30000);
+    const copy = JSON.parse(copyText).data;
+    for (const c of CLEAR) {
+      if (c === "interviews_history") continue;
+      const live = await emu.listCollection(c);
+      problems.push(...ok(JSON.stringify(sorted(live)) === JSON.stringify(sorted(copy[c])), `${c} not back as in the copy`));
+    }
+    const metaAfter = await metaNow();
+    for (const k of ["config", "schedule", "questions", "passwords"]) problems.push(...ok(JSON.stringify(metaAfter[k]) === JSON.stringify(metaBefore[k]), `meta ${k} changed`));
+    const st = metaAfter.state;
+    problems.push(...ok(st.roundStatus === "open" && !st.closingTab, "round not open"));
+    problems.push(...ok(Object.values(await emu.listCollection("interviews_archive"))[0].status === "abandoned", "attempt not abandoned"));
+    await closePage(b);
+    return [...problems, ...log];
+  },
+
+  // Take over while page A is frozen with a delete chunk built but not
+  // committed; release it: the chunk is refused and the reopened round
+  // deep-equals the copy (review 2 M1).
+  async frozenChunkRefusedAfterTakeover() {
+    const problems = [], log = [];
+    await seedRound();
+    const a = await freshPage({ log, timing: { renewMs: 600000 } });
+    await asLeadership(a);
+    await a.evaluate(() => { window.__edRounds.hooks.beforeChunk = (coll) => (coll === "interviews_screening" ? new Promise((r) => { window.__release = r; }) : null); });
+    const copyText = await closeViaDialog(a, { stopBeforeDone: true });
+    await a.waitForFunction(() => !!window.__release, { timeout: 15000 });
+    await staleLease();
+    const b = await freshPage({ log, timing: { staleMs: 800, renewMs: 600000 } });
+    await asLeadership(b);
+    await b.waitForFunction(() => (document.querySelector("#roundLine") || {}).textContent.includes("part of the round has been cleared"), { timeout: 15000 });
+    await b.evaluate(() => window.IV.roundTakeover("stop"));
+    await waitFlow(b, "Closing stopped", 30000);
+    await a.evaluate(() => window.__release());
+    await sleep(2500);
+    const t = await a.$eval("#flowBody", (e) => e.textContent).catch(() => "");
+    problems.push(...ok(t.includes("Another Leadership page took over closing."), `page A says: ${t}`));
+    const copy = JSON.parse(copyText).data;
+    problems.push(...ok(JSON.stringify(sorted(await emu.listCollection("interviews_screening"))) === JSON.stringify(sorted(copy.interviews_screening)), "the frozen chunk deleted something"));
+    problems.push(...ok((await emu.getDocument("interviews_meta/state")).roundStatus === "open", "round not open"));
+    await closePage(a); await closePage(b);
+    return [...problems, ...log];
+  },
+
+  // The sleeping laptop (review 3 M1): A is frozen at step 6 with its timers
+  // held; B takes over, carries on and clears one chunk; A wakes. A's heartbeat,
+  // idle auto-stop and "Stop closing" all fail, each guard on its own (the wake
+  // check, closeTx's own check, and the rules); B then finishes normally.
+  async sleepingLaptop() {
+    const problems = [], log = [];
+    await seedRound();
+    const a = await freshPage({ log, timing: { renewMs: 600000, idleMs: 1 } });
+    await asLeadership(a);
+    await closeViaDialog(a, { stopAtStep6: true });
+    await staleLease();
+    const b = await freshPage({ log, timing: { staleMs: 800, renewMs: 600000 } });
+    await asLeadership(b);
+    await b.evaluate(() => { window.__edRounds.hooks.beforeChunk = (coll) => (coll === "interviews_scores" ? new Promise((r) => { window.__releaseB = r; }) : null); });
+    await b.waitForFunction(() => (document.querySelector("#roundLine") || {}).textContent.includes("Nothing has been cleared"), { timeout: 15000 });
+    await b.evaluate(() => window.IV.roundTakeover("finish"));
+    await waitFlow(b, "Now save the backup", 30000);
+    await finishFromStep5(b, { noWait: true });
+    await b.waitForFunction(() => !!window.__releaseB, { timeout: 20000 });     // B cleared candidates and screening
+    // (1) the wake check: A's heartbeat and idle auto-stop (idleMs 1 ms) stand down
+    await a.evaluate(() => window.__edRounds.tick());
+    const t1 = await a.$eval("#flowBody", (e) => e.textContent).catch(() => "");
+    problems.push(...ok(t1.includes("Another Leadership page took over closing."), `A after waking: ${t1}`));
+    // (2) closeTx's own check, without the wake check: A's "Stop closing" write
+    const r2 = await a.evaluate(() => window.__edRounds._tx(["saved", "clearing"], (w) => w.attempt({ status: "abandoned" })).then(() => "wrote", (e) => e.code));
+    problems.push(...ok(r2 === "took-over", `closeTx let a stale page write: ${r2}`));
+    // (3) the rules, without either: a direct write with A's own claim
+    const r3 = await a.evaluate(async () => {
+      const s = window.__edStore, f = s._fb;
+      try { await f.setDoc(f.doc(f.db, "interviews_meta", "state"), { roundStatus: "open", closingTab: null, lease: { tab: sessionStorage.getItem("ed_iv_tab"), load: "x", at: f.serverTimestamp() } }, { merge: true }); return "wrote"; }
+      catch (e) { return e.code; }
+    });
+    problems.push(...ok(r3 === "permission-denied", `the rules let a stale page reopen the round: ${r3}`));
+    const r4 = await a.evaluate(async () => { const f = window.__edStore._fb;
+      try { await f.updateDoc(f.doc(f.db, "interviews_meta", "state"), { roundStatus: "open", closingTab: null }); return "wrote"; } catch (e) { return e.code; } });
+    problems.push(...ok(r4 === "permission-denied", `a plain state write during a close was accepted: ${r4}`));
+    const st = await emu.getDocument("interviews_meta/state");
+    const att = (await emu.listCollection("interviews_archive"))[st.closingAttemptId];
+    problems.push(...ok(st.roundStatus === "closing" && att && att.status === "clearing", `after A woke: ${st.roundStatus} / ${att && att.status}`));
+    await b.evaluate(() => window.__releaseB());
+    await waitFlow(b, "Round closed", 30000);
+    problems.push(...ok((await emu.getDocument("interviews_meta/state")).roundStatus === "open", "B didn't finish"));
+    await closePage(a); await closePage(b);
+    return [...problems, ...log];
+  },
+
+  // Reload the closing page at step 5 and in step 8: still the holder, it carries
+  // on with no takeover. Duplicate the tab: the newer copy continues; the older
+  // says so and none of its writes land.
+  async reloadAndDuplicate() {
+    const problems = [], log = [];
+    await seedRound();
+    const a = await freshPage({ log, timing: { renewMs: 600000 } });
+    await asLeadership(a);
+    await closeViaDialog(a, { stopAtStep5: true });
+    await a.reload({ waitUntil: "domcontentloaded" }); await a.waitForFunction("window.__edReady === true");
+    await waitFlow(a, "Now save the backup", 20000);
+    problems.push(...ok(true, ""));
+    // duplicate: a second page in the SAME browser profile with the same tab id
+    const dup = await a._ctx.newPage();
+    await dup.evaluateOnNewDocument((id) => { sessionStorage.setItem("ed_iv_tab", id); globalThis.__edRoundsTiming = { renewMs: 600000 }; },
+      await a.evaluate(() => sessionStorage.getItem("ed_iv_tab")));
+    await dup.goto(SRV.url, { waitUntil: "domcontentloaded" }); await dup.waitForFunction("window.__edReady === true");
+    await dup.evaluate((c) => sessionStorage.setItem("ed_iv_code", c), "adminpw");
+    await dup.reload({ waitUntil: "domcontentloaded" }); await dup.waitForFunction("window.__edReady === true");
+    await waitFlow(dup, "Now save the backup", 20000);
+    await sleep(1000);
+    const t = await a.$eval("#flowBody", (e) => e.textContent).catch(() => "");
+    problems.push(...ok(t.includes("This close is continuing in another copy of this page."), `older copy says: ${t}`));
+    const r = await a.evaluate(() => window.__edRounds._tx(null, () => {}).then(() => "wrote", (e) => e.code));
+    problems.push(...ok(r === "took-over", `the older copy could still write: ${r}`));
+    await finishFromStep5(dup);
+    problems.push(...ok((await emu.getDocument("interviews_meta/state")).roundStatus === "open", "the newer copy didn't finish"));
+    await closePage(dup); await closePage(a);
+    return [...problems.filter(Boolean), ...log];
+  },
+
+  // Two pages whose clocks differ by 6 minutes: the viewer never offers a
+  // takeover while the holder is renewing (staleness is "unchanged for 5
+  // minutes on MY clock", never a comparison of two clocks).
+  async clockSkew() {
+    const problems = [], log = [];
+    await seedRound();
+    const a = await freshPage({ log, timing: { renewMs: 400 } });
+    await asLeadership(a);
+    await closeViaDialog(a, { stopAtStep5: true });
+    const v = await freshPage({ log, timing: { staleMs: 3000 }, skewMs: 6 * 60000 });
+    await asLeadership(v);
+    await sleep(6000);
+    const t = await v.$eval("#roundLine", (e) => e.textContent);
+    problems.push(...ok(t.includes("Leadership (another page) is closing the round now.") && !t.includes("Finish closing"), `viewer: ${t}`));
+    await a.evaluate(() => [...document.querySelectorAll("#flowBtns button")].find((x) => x.textContent === "Stop closing").click());
+    await waitFlow(a, "Closing stopped", 15000);
+    await closePage(a); await closePage(v);
+    return [...problems, ...log];
+  },
+
+  // A write from an older (pre-R6) leadership page during clearing is kept,
+  // listed, quarantined, and removable only by "Delete them" with the name typed.
+  async keptItemDuringClear() {
+    const problems = [], log = [];
+    await seedRound();
+    const a = await freshPage({ log, timing: { renewMs: 600000 } });
+    await asLeadership(a);
+    await a.evaluate(() => { window.__edRounds.hooks.beforeChunk = (coll) => (coll === "interviews_screening" ? new Promise((r) => { window.__go = r; }) : null); });
+    await closeViaDialog(a, { stopBeforeDone: true });
+    await a.waitForFunction(() => !!window.__go, { timeout: 15000 });
+    await emu.setDocument("interviews_screening/Bruns~c-1", { member: "Bruns", candId: "c-1", rating: 5 });   // the older page's write
+    await a.evaluate(() => window.__go());
+    await waitFlow(a, "Round closed", 30000);
+    const st = await emu.getDocument("interviews_meta/state");
+    problems.push(...ok((st.keptFromClose || []).length === 1 && st.keptFromClose[0].id === "Bruns~c-1", `kept: ${JSON.stringify(st.keptFromClose)}`));
+    problems.push(...ok(!!(await emu.getDocument("interviews_screening/Bruns~c-1")), "the changed item was deleted"));
+    await a.evaluate(() => document.querySelector("#flowBtns button").click());
+    await a.evaluate(() => { document.querySelector("#setupBtn").click(); });
+    await sleep(300);
+    await a.evaluate(() => { const d = document.querySelector('details[data-sec="setRound"]'); d.open = true; });
+    await a.evaluate(() => { const orig = URL.createObjectURL; URL.createObjectURL = () => "blob:stub"; HTMLAnchorElement.prototype.click = function () {};
+      [...document.querySelectorAll('details[data-sec="setRound"] button')].find((b) => b.textContent === "Download and delete them").click(); });
+    await waitFlow(a, "Delete the kept items", 10000);
+    const go = await a.$eval("#kdGo", (b) => b.disabled);
+    await a.type("#kdIn", "Hiring round 2026");
+    await flowClick(a, "Delete them");
+    await until(async () => !(await emu.getDocument("interviews_screening/Bruns~c-1")));
+    problems.push(...ok(go, "Delete them was enabled before the name was typed"));
+    problems.push(...ok(!(await emu.getDocument("interviews_screening/Bruns~c-1")) && !((await emu.getDocument("interviews_meta/state")).keptFromClose || []).length, "kept item not deleted"));
+    await closePage(a);
+    return [...problems, ...log];
+  },
+
+  // Restore "missing items only" after a candidate was deleted by mistake, under
+  // the real rules (history comes back marked restored); another round's file is
+  // refused for that mode.
+  async restoreMissingItems() {
+    const problems = [], log = [];
+    await seedRound();
+    const a = await freshPage({ log });
+    await asLeadership(a);
+    const text = await nextDownload(a, "window.IV.downloadBackup()");
+    const fs = await import("node:fs");
+    await fetch(`${emu.FS}/v1/projects/${emu.PROJECT}/databases/(default)/documents/interviews_candidates/c-2`, { method: "DELETE", headers: { authorization: "Bearer owner" } });
+    await fetch(`${emu.FS}/v1/projects/${emu.PROJECT}/databases/(default)/documents/interviews_history/h1`, { method: "DELETE", headers: { authorization: "Bearer owner" } });
+    const pick = async (t) => {
+      const f = `/tmp/hiring-emu-restore-${Date.now()}.json`; fs.writeFileSync(f, t);
+      await a.evaluate(() => { if (document.querySelector("#setupModal").classList.contains("hidden")) document.querySelector("#setupBtn").click(); });
+      await sleep(200);
+      await a.evaluate(() => { const d = document.querySelector('details[data-sec="setRestore"]'); d.open = true; });
+      await (await a.$("#rsFile")).uploadFile(f);
+      await a.waitForFunction(() => /In the file|isn't|changed after/.test((document.querySelector('details[data-sec="setRestore"]') || {}).textContent || ""), { timeout: 10000 });
+      return a.$eval('details[data-sec="setRestore"]', (e) => e.textContent);
+    };
+    await pick(text);
+    await a.evaluate(() => [...document.querySelectorAll('details[data-sec="setRestore"] button')].find((b) => b.textContent === "Restore").click());
+    const back = await until(() => emu.getDocument("interviews_candidates/c-2"));
+    problems.push(...ok(back && back.name === "Dr Ben Carter", "the candidate didn't come back"));
+    const h = await until(() => emu.getDocument("interviews_history/h1"));
+    problems.push(...ok(h && h.restored === true && h.at.__ts.startsWith("2026-10-10"), `history: ${JSON.stringify(h)}`));
+    const other = JSON.parse(text); other.round.id = "r-other";
+    const card = await pick(JSON.stringify(other));
+    problems.push(...ok(card.includes("not the round you are working on"), "another round's file was offered for missing items"));
+    await closePage(a);
+    return [...problems, ...log];
+  },
 };
+
+// ---- R6 helpers -------------------------------------------------------------------
+const CLEAR = ["interviews_candidates", "interviews_screening", "interviews_scores", "interviews_availIv",
+  "interviews_availCand", "interviews_offers", "interviews_applicant", "interviews_history"];
+// documents in a stable order, with every timestamp written the same way
+const normTs = (x) => (x === null || typeof x !== "object" ? x : Array.isArray(x) ? x.map(normTs)
+  : typeof x.__ts === "string" ? { __ts: new Date(x.__ts).toISOString() } : Object.fromEntries(Object.keys(x).sort().map((k) => [k, normTs(x[k])])));
+const sorted = (o) => normTs(Object.fromEntries(Object.entries(o || {}).sort(([a], [b]) => a.localeCompare(b))));
+async function seedRound() {
+  await emu.seed({
+    "interviews_meta/config": { committee: COMMITTEE, chair: "Abara", times: TIMES, slots: [], oneDrive: "https://onedrive.example/x", panelOverrides: {},
+      flagThreshold: 2, retentionMonths: 24 },
+    "interviews_meta/state": { interviewsComplete: true, roundId: "r-2026", roundName: "Hiring round 2026" },
+    "interviews_meta/questions": { version: 1, questions: [{ id: "0", text: "Tell us about yourself" }], scale: ["1", "2", "3", "4", "5"], guide: [] },
+    "interviews_meta/passwords": { ed: { changedAt: { __ts: "2026-10-01T00:00:00.000Z" } } },
+    "interviews_meta/schedule": { locked: true, lockedAt: { __ts: "2026-10-10T00:00:00.000Z" }, panels: {} },
+    "interviews_screening/Bruns~c-1": { member: "Bruns", candId: "c-1", rating: 4 },
+    "interviews_screening/Chen~c-2": { member: "Chen", candId: "c-2", flag: true, reason: "Short ED time" },
+    "interviews_scores/Abara~c-1": { member: "Abara", candId: "c-1", overall: 4.2, notes: { 0: "Clear" } },
+    "interviews_availIv/Abara": { slots: { t0: "ip" } },
+    "interviews_availCand/ashcombe": { slots: { t0: "ip" }, reply: "confirmed", replyAt: { __ts: "2026-10-12T10:00:00.000Z" } },
+    "interviews_offers/c-1": { status: "offered", offeredAt: "2026-10-10" },
+    "interviews_applicant/ashcombe": { date: TIMES[0].date, start: "09:00", end: "10:00", format: "ip" },
+    "interviews_history/h1": { at: { __ts: "2026-10-10T00:00:00.000Z" }, by: "leadership", action: "schedule.lock", text: "Locked the schedule" },
+  });
+}
+async function metaNow() {
+  const m = await emu.listCollection("interviews_meta");
+  return { config: m.config, state: m.state, questions: m.questions, passwords: m.passwords, schedule: m.schedule };
+}
+async function staleLease() {
+  const st = await emu.getDocument("interviews_meta/state");
+  st.lease = { ...st.lease, at: { __ts: new Date(Date.now() - 6 * 60000).toISOString() } };
+  await emu.setDocument("interviews_meta/state", st);
+}
+const waitFlow = (p, title, timeout = 15000) => p.waitForFunction((t) => (document.querySelector("#flowTitle") || {}).textContent === t, { timeout }, title);
+const flowClick = (p, label) => p.evaluate((label) => {
+  const b = [...document.querySelectorAll("#flowBtns button")].find((x) => x.textContent.trim() === label);
+  if (!b) throw new Error(`no dialog button "${label}"`); b.click();
+}, label);
+async function finishFromStep5(p, { noWait } = {}) {
+  await p.evaluate(() => { const o = URL.createObjectURL; URL.createObjectURL = () => "blob:stub"; HTMLAnchorElement.prototype.click = function () {}; });
+  await p.click("#clSaved"); await flowClick(p, "Next");
+  await waitFlow(p, "Close the round");
+  const name = await p.$eval("#flowBody b", (e) => e.textContent);
+  await p.type("#clName", name);
+  await flowClick(p, "Close the round");
+  if (!noWait) await waitFlow(p, "Round closed", 30000);
+}
+// Drives the dialog; returns the backup file's text.
+async function closeViaDialog(p, { stopAtStep5, stopAtStep6, stopBeforeDone } = {}) {
+  await p.evaluate(() => window.IV.closeRound());
+  await waitFlow(p, "Close the round?"); await flowClick(p, "Continue");
+  await waitFlow(p, "Now save the backup", 30000);
+  if (stopAtStep5) return null;
+  const text = await nextDownload(p, "document.getElementById('clBackup').click()");
+  await p.click("#clSaved"); await flowClick(p, "Next");
+  await waitFlow(p, "Close the round");
+  const name = await p.$eval("#flowBody b", (e) => e.textContent);
+  await p.type("#clName", name);
+  if (stopAtStep6) return text;
+  await flowClick(p, "Close the round");
+  if (!stopBeforeDone) await waitFlow(p, "Round closed", 30000);
+  return text;
+}
 
 // Extra cases from later releases register here (see the files they live in).
 export async function run(only) {

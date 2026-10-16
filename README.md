@@ -309,6 +309,23 @@ it, so every leadership save would fail.
 - **Lock the schedule (Panels)** freezes every panel; later availability changes don't move
   an interview, and Needs attention names anyone no longer free or no longer on the
   committee. You can still edit a locked panel, and unlock.
+- **Close the round (Setup, This round).** Saves a copy of the whole round (checked after it is
+  saved), asks you to download the backup file and type the round name, then clears the working
+  round so the committee and applicants see an empty tool. Kept for next round: the committee, the
+  interview questions and your settings. While it runs, ED and applicant pages are paused and other
+  Leadership pages are read-only. If the closing page stops part way (closed laptop, lost
+  connection), any Leadership page can "Finish closing" or "Stop closing" after 5 minutes;
+  stopping after clearing began puts everything back. Anything someone changed after the copy is
+  never deleted: it is kept and listed in This round for you to keep or delete.
+- **Past rounds (Setup)** lists closed rounds: download the backup file or Excel again, print a
+  summary, "Bring back" (only into an empty working round), or "Delete permanently" once the
+  keep-until date has passed (type the round name). **Keep closed rounds for** sets that date
+  (1 to 7 years, or until deleted by hand); nothing is ever deleted automatically, and the server
+  refuses to delete a closed round earlier than 30 days after closing.
+- **Restore from a backup file (Setup)** shows exactly what would be added (per kind of item: in
+  the file, here now, will be added, same, different) before anything is written. "Bring back
+  missing items only" never changes or deletes anything and works only for a file from the round
+  you are working on; "Replace the working round" only into an empty round.
 - **Interview questions now live in the database.** The first Leadership sign-in on the Oct
   2026 release copies them out of the old locked `js/data.js` automatically; Change history
   then shows "Copied the interview questions". Notes stay attached to their question.
