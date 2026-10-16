@@ -7,39 +7,40 @@
 //  Firestore rules when AUTH.mode === "roles" (see config.js + firestore.rules).
 // ============================================================================
 import { firebaseConfig, ORG_NAME, CHAIR, COMMITTEE, SLOTS, ONEDRIVE,
-         CANDIDATE_CODE_LOCAL, AUTH, SCREENING_DEADLINE } from "./config.js?v=R6";
-import { decryptContent } from "./data.js?v=R6";
-import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R6";
-import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R6";
-import { autoPanels, buildPanel } from "./panels.js?v=R6";
+         LOCAL_CODES, PARTNERS, AUTH, SCREENING_DEADLINE } from "./config.js?v=R7";
+import { ROLES, ROLE_WORD, ACCOUNTS, accountsFor, validateNew, preflight, applyChange, verify, halfDoneText,
+         makeFirebaseAdapter } from "./passwords.js?v=R7";
+import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R7";
+import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R7";
+import { autoPanels, buildPanel } from "./panels.js?v=R7";
 import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell, lastKey,
-         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R6";
-import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R6";
+         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R7";
+import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R7";
 import { effectiveSlots, slotLabel, slotTimeLabel, groupByDate, checkSlot, splitRange, responseCounts,
-         newSlotId, isStructured, fmtDate } from "./slots.js?v=R6";
+         newSlotId, isStructured, fmtDate } from "./slots.js?v=R7";
 import { normalizeCommittee, interviewers as interviewersOf, pickable as pickableOf, memberName, memberStatus,
-         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R6";
+         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R7";
 import { fromLegacy, normalizeQuestions, liveQuestions, idsWithNotes, scoringStarted, checkEdit, newQuestionId,
-         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R6";
+         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R7";
 import { entry as hEntry, newHistoryId, panelUndo, shortlistUndo, screeningUndo, canUndo, undoneIds, textFor, whoFor, whenFor,
-         hashOf, toDate } from "./history.js?v=R6";
-import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R6";
-import { createRounds, pageId } from "./rounds.js?v=R6";
-import { icsEvent, icsCalendar } from "./ics.js?v=R6";
-import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R6";
+         hashOf, toDate } from "./history.js?v=R7";
+import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R7";
+import { createRounds, pageId } from "./rounds.js?v=R7";
+import { icsEvent, icsCalendar } from "./ics.js?v=R7";
+import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R7";
 import { STAGES, STAGE_WORD, stageOpen, stageClosedAt, roundOpen, bookingFor, thresholdOf, isOnList, closePlan, reopenPlan,
-         lockEntry } from "./stages.js?v=R6";
+         lockEntry } from "./stages.js?v=R7";
 
 // The release this page is. Must equal version.json and every "?v=" in every
 // import (tests/versions.test.mjs). A page that sees a different version.json
 // was updated underneath it (section "Reload notice" below).
-const RELEASE = "R6";
+const RELEASE = "R7";
 
-// Interview questions (H2): the saved document (interviews_meta/questions) when
-// there is one, else what the typed password decrypted from the old js/data.js
-// this session (the fallback until the first Leadership sign-in copies them).
-let LEGACY_Q = null, LEGACY_DOC = null;
-const Q = () => normalizeQuestions(S && S.questions) || LEGACY_Q;
+// Interview questions (H2): the saved document (interviews_meta/questions).
+// Since R7 there is no other source: the old encrypted js/data.js is no longer
+// read (it stays in the repo, unused, until R8, for cached older pages).
+const LEGACY_DOC = null;   // kept so maybeMigrateQuestions stays inert until R8 removes it
+const Q = () => normalizeQuestions(S && S.questions);
 let store = null, S = null;
 let fbAuth = null;   // { auth, authFns } once Firebase has loaded, so Log out can sign out
 const ui = { role: "committee", isAdmin: false, member: null, tab: "screen", scoreCand: null,
@@ -104,83 +105,113 @@ const planState = () => ({ ...S, availRaw: S.availRaw || Object.fromEntries(Obje
   .map(([k, v]) => [k, { slots: v, ...((S.replies || {})[k] || {}) }])) });
 
 // ------------------------------------------------------------------ gate
-async function unlock(typed, silent) {
-  if (!(window.crypto && window.crypto.subtle)) {
-    gateFail("Open the secure https link (not a local file).");
+// R7 (H3): the role is found by SIGNING IN, never by decrypting a file. One
+// password box, three role accounts: the page tries them in roleOrder() until
+// one accepts. Nothing in the repo is derived from a password any more, so a
+// password can change without a commit. The password itself is never kept: a
+// reload in the same tab resumes from Firebase's own tab-only sign-in.
+const ROLE_EMAIL = { admin: AUTH.adminEmail, committee: AUTH.committeeEmail, candidate: AUTH.candidateEmail };
+const roleOfEmail = (email) => Object.keys(ROLE_EMAIL).find((r) => ROLE_EMAIL[r] === email) || null;
+const isRefusal = (e) => /wrong-password|invalid-credential|user-not-found|invalid-login-credentials/.test(String((e && e.code) || ""));
+const SIGNED_OUT_MSG = "You were signed out, probably because a password changed. Enter the current password.";
+// Guest first on an applicant link (every applicant-facing link is
+// index.html#apply); else the role that last worked on this browser (not
+// secret); else ED, then Guest, then Leadership. So nearly every sign-in costs
+// no refused attempt, and the worst case two.
+function roleOrder() {
+  const order = ["committee", "candidate", "admin"];
+  const first = /^#apply/.test(location.hash) ? "candidate" : ls.get("ed_iv_lastrole");
+  return order.includes(first) ? [first, ...order.filter((r) => r !== first)] : order;
+}
+async function unlock(typed) {
+  if (!isConfigured()) {
+    // local mode (sim/make-site.sh fills LOCAL_CODES in its copy; blank in the repo)
+    const role = Object.keys(LOCAL_CODES).find((r) => LOCAL_CODES[r] && LOCAL_CODES[r] === typed);
+    if (!role) { gateFail("Incorrect password."); return; }
+    await enter(role);
+    ss.set("ed_iv_localrole", role);
     return;
   }
-  // 1) admin OR committee — the code independently decrypts the questions and
-  //    tells us which role it is (admin vs staff wrap). No trailing-"!" needed.
-  let decrypted = null;
-  try { decrypted = await decryptContent(typed); } catch { /* not a staff/admin code */ }
-  if (decrypted) {
-    LEGACY_DOC = fromLegacy(decrypted);
-    LEGACY_Q = normalizeQuestions(LEGACY_DOC);
-    ui.isAdmin = decrypted.isAdmin;
-    ui.role = ui.isAdmin ? "admin" : "committee";
-    try { await initStore(ui.role, typed); }
+  let fb;
+  try { fb = await firebase(); } catch (e) { gateFail(signInError(e)); return; }
+  try { await tabOnly(fb); } catch (e) { gateFail(signInError(e)); return; }
+  let disabled = null;
+  for (const role of roleOrder()) {
+    try { await fb.authFns.signInWithEmailAndPassword(fb.auth, ROLE_EMAIL[role], typed); }
     catch (e) {
-      // A stored code that fails must not be replayed on every page load:
-      // Firebase throttles the DEVICE after repeated failures, so a stale code
-      // in sessionStorage can lock someone out all by itself — and each reload
-      // makes the block longer while looking like the code is the problem.
-      ss.del("ed_iv_code");
-      gateFail(signInError(e, { codeVerified: true, isAdmin: ui.isAdmin,
-        email: ui.isAdmin ? AUTH.adminEmail : AUTH.committeeEmail }));
+      if (isRefusal(e)) continue;
+      // a disabled account says so whatever was typed: try the others first
+      if (String(e && e.code).includes("user-disabled")) { disabled = disabled || { e, role }; continue; }
+      gateFail(signInError(e, { email: ROLE_EMAIL[role] }));
       return;
     }
-    ss.set("ed_iv_code", typed);
-    $("#gate").classList.add("hidden");
-    // Admin goes straight in as "Admin", with no name — the admin code is held
-    // by coordinators as well as committee members, and making them pick a
-    // physician's name to see the schedule filed nothing useful and invited
-    // input under someone else's name. An admin who also reviews picks their
-    // name from the header ("review as a member").
-    if (ui.isAdmin) { ui.member = null; showApp(); }
-    else proceedToMemberPick();
+    ls.set("ed_iv_lastrole", role);
+    ss.set("ed_iv_signedin", "1");
+    await enter(role);
     return;
   }
-  // 2) applicant — a different code; goes straight to their own scheduling
-  const localCandOk = !!CANDIDATE_CODE_LOCAL && typed === CANDIDATE_CODE_LOCAL;
-  if (AUTH.mode !== "roles" && !localCandOk) {
-    if (!silent) gateFail("Incorrect password.");
-    return;
-  }
-  try {
-    ui.role = "candidate";
-    await initStore("candidate", typed);
-  } catch (e) {
-    ss.del("ed_iv_code");
-    // The code decrypted nothing, so it is either the applicant code or simply
-    // wrong — we genuinely cannot tell which, and must not imply otherwise.
-    if (!silent) gateFail(signInError(e, { email: AUTH.candidateEmail }));
-    return;
-  }
-  ss.set("ed_iv_code", typed);
-  $("#gate").classList.add("hidden");
-  proceedCandidate();
+  gateFail(disabled ? signInError(disabled.e, { email: ROLE_EMAIL[disabled.role] }) : "Incorrect password.");
 }
 
-// Why the sign-in failed, in words that point at the actual fault.
-//
-// `codeVerified` is the load-bearing distinction. A code that DECRYPTED is
-// cryptographically proven to be a real staff or admin code — nothing else
-// unwraps the content key. So if Firebase then rejects it, the code is right
-// and the ACCOUNT is wrong: its password was never set to this code, or it
-// doesn't exist, or the provider is off. Reporting that as "Incorrect code."
-// sends the one person who holds a valid code away to retype it, which is the
-// one thing that cannot help — and it is indistinguishable from a typo, so
-// nobody thinks to look in the Firebase console.
-//
-// The detailed messages are safe to show: they appear ONLY after a valid code
-// has decrypted, so the reader already has staff or admin access.
+// Signed in (or resumed) as this role: open the store and the right view.
+async function enter(role) {
+  ui.role = role; ui.isAdmin = role === "admin";
+  await initStore(role);
+  $("#gate").classList.add("hidden");
+  watchSignOut();
+  // Admin goes straight in as "Admin", with no name: the Leadership password is
+  // held by coordinators as well as committee members. An admin who also
+  // reviews picks their name from the header ("review as a member").
+  if (role === "candidate") proceedCandidate();
+  else if (ui.isAdmin) { ui.member = null; showApp(); }
+  else proceedToMemberPick();
+}
+
+// A reload in the same tab: Firebase kept this tab's sign-in (tab-only), so map
+// its account back to the role. Older pages saved the raw password in
+// sessionStorage ("ed_iv_code"); it is deleted here and never written again.
+async function resume() {
+  const older = ss.get("ed_iv_code");
+  ss.del("ed_iv_code");
+  if (ss.get("ed_iv_signedout")) { ss.del("ed_iv_signedout"); gateMsg(SIGNED_OUT_MSG); }
+  if (!isConfigured()) {
+    const r = ss.get("ed_iv_localrole");
+    if (r && LOCAL_CODES[r]) await enter(r);
+    return;
+  }
+  if (!ss.get("ed_iv_signedin") && !older) return;   // nothing to resume: don't load the SDK yet
+  let fb;
+  try { fb = await firebase(); await fb.auth.authStateReady(); } catch { return; }
+  const role = fb.auth.currentUser && roleOfEmail(fb.auth.currentUser.email);
+  if (!role) { ss.del("ed_iv_signedin"); return; }
+  ss.set("ed_iv_signedin", "1");
+  await enter(role);
+}
+
+// If the sign-in ends while the page is open (a password changed elsewhere
+// revokes every other session within about an hour), go back to the gate and
+// say why, rather than let saves fail one by one.
+function watchSignOut() {
+  if (!fbAuth || ui._watching) return;
+  ui._watching = true;
+  let had = !!fbAuth.auth.currentUser;
+  fbAuth.authFns.onAuthStateChanged(fbAuth.auth, (u) => {
+    if (u) { had = true; return; }
+    if (!had || ui.loggingOut) return;
+    ss.del("ed_iv_signedin");
+    ss.set("ed_iv_signedout", "1");
+    location.reload();
+  });
+}
+
+// Why the sign-in failed, in words that point at the actual fault. Since R7
+// there is one source of truth (the account that accepts the password), so a
+// refusal by every account is simply "Incorrect password."
 function signInError(e, opts = {}) {
   const c = (e && e.code) || "";
-  const known = !!opts.codeVerified;
   const who = opts.email || "the role account";
-  const console_ = "Leadership: Firebase console → Authentication";
-
-  // The SDK itself never arrived — nothing was even attempted.
+  const console_ = "Leadership: Firebase console, Authentication";
+  // The SDK itself never arrived: nothing was even attempted.
   if (c === "app/sdk-unreachable")
     return "Couldn't load the sign-in service. A hospital network, VPN or content blocker may be "
       + "blocking www.gstatic.com. Try another network (mobile data is the quickest test).";
@@ -192,20 +223,11 @@ function signInError(e, opts = {}) {
   if (c.includes("network-request-failed") || c.includes("network"))
     return "Network problem. Check your connection and try again.";
   if (c.includes("operation-not-allowed"))
-    return `Email/Password sign-in is switched off for this project. ${console_} → Sign-in method.`;
+    return `Email/Password sign-in is switched off for this project. ${console_}, Sign-in method.`;
   if (c.includes("user-disabled"))
-    return `The ${who} account is disabled. ${console_} → Users.`;
-  // "invalid-credential" is what a modern project returns for BOTH a wrong
-  // password and a missing account once email-enumeration protection is on, so
-  // these three cannot be told apart from here — the message covers both.
-  if (c.includes("wrong-password") || c.includes("invalid-credential") || c.includes("user-not-found")) {
-    if (!known) return "Incorrect password.";
-    return `This is the correct ${opts.isAdmin ? "Leadership" : "ED"} password (it unlocked the questions), but `
-      + `${who} rejected it. That account either doesn't exist or its password was not updated. `
-      + `${console_} → Users → ${who}, and set its password to this exact password.`;
-  }
-  if (!known) return "Couldn't sign in. Please try again.";
-  return `The password is recognised but sign-in failed${c ? ` (${c})` : ""}. ${console_} → Users, and check ${who}.`;
+    return `The ${who} account is disabled. ${console_}, Users.`;
+  if (isRefusal(e)) return "Incorrect password.";
+  return "Couldn't sign in. Please try again.";
 }
 
 // One place that paints a gate failure, so every path gets the same treatment
@@ -213,9 +235,12 @@ function signInError(e, opts = {}) {
 let gateAttempts = 0;
 function gateFail(msg) {
   gateAttempts++;
+  gateMsg(msg);
+}
+function gateMsg(msg) {
   const gerr = $("#gerr"); if (!gerr) return;
-  // .overlay-box centres its text, which is fine for "Incorrect code." and
-  // unreadable for the several-sentence diagnoses below.
+  // .overlay-box centres its text, which is fine for "Incorrect password." and
+  // unreadable for the several-sentence messages.
   gerr.innerHTML = `<div style="text-align:${msg.length > 40 ? "left" : "center"}">${escapeHtml(msg)}</div>`
     + gateHint(gateAttempts);
 }
@@ -231,34 +256,37 @@ function gateHint(n) {
     leadership should check the matching account in the Firebase console.</div>`;
 }
 
-async function initStore(role, typed) {
-  if (isConfigured()) {
-    // Separate "the SDK never arrived" from "the server said no". They are the
-    // same thrown error to the gate otherwise, and a blocked CDN then reads as
-    // a bad code — a hospital network or content blocker is a real cause here.
-    let fb;
-    try { fb = await loadFirestore(); }
-    catch (e) {
-      const err = new Error("could not load the Firebase SDK");
-      err.code = "app/sdk-unreachable"; err.cause = e;
-      throw err;
-    }
-    fbAuth = { auth: fb.auth, authFns: fb.authFns };
-    await signInFor(fb, role, typed); // may throw → surfaced at the gate
-    const scopes = role === "candidate"
-        ? (AUTH.mode === "roles" ? ["public"] : ["meta"])  // roles: only the PII-free public slots doc; anon: config
+// Firebase, loaded once per page. Separate "the SDK never arrived" from "the
+// server said no": a blocked CDN must not read as a wrong password.
+let _fb = null;
+async function firebase() {
+  if (_fb) return _fb;
+  try { _fb = await loadFirestore(); }
+  catch (e) {
+    const err = new Error("could not load the Firebase SDK");
+    err.code = "app/sdk-unreachable"; err.cause = e;
+    throw err;
+  }
+  fbAuth = { auth: _fb.auth, authFns: _fb.authFns };
+  return _fb;
+}
 
-      : (AUTH.mode === "roles" && role === "committee")
+async function initStore(role) {
+  if (isConfigured()) {
+    const fb = await firebase();
+    const scopes = role === "candidate"
+      ? ["public"]                                         // only the PII-free public slots doc
+      : role === "committee"
         ? ["candidates", "availIv", "availCand", "meta"]   // reviewers can't read scores/screening
-        : ADMIN_SCOPES;                                    // admin or anon
+        : ADMIN_SCOPES;
     // Mirror your own input locally for EVERY committee role, admin included.
     // It used to be committee-only, which meant rating something as admin and
     // coming back with the staff code showed a blank review on the same
-    // machine — the likeliest cause of the "my ratings vanished" report.
+    // machine, the likeliest cause of the "my ratings vanished" report.
     // Screening now also comes back from the server; scores never do, so for
     // those this mirror is still the only replay a reviewer gets.
-    const echo = AUTH.mode === "roles" && role !== "candidate";
-    ui.echoOnly = AUTH.mode === "roles" && role === "committee";
+    const echo = role !== "candidate";
+    ui.echoOnly = role === "committee";
     store = new FirestoreStore(fb, { scopes, echo });
   } else {
     store = new LocalStore();
@@ -304,8 +332,9 @@ async function initStore(role, typed) {
   S = store.getState();
 }
 
-// H2: the first Leadership sign-in on this release copies the questions out of
-// the old encrypted js/data.js into interviews_meta/questions (ids "0".."n-1",
+// H2 (R1 to R6): the first Leadership sign-in copied the questions out of
+// the old encrypted js/data.js into interviews_meta/questions. Inert since R7
+// (nothing is decrypted any more); removed in R8. It copied them (ids "0".."n-1",
 // exactly the keys every saved note uses). Create-only, in a transaction with
 // its history entry, so two tabs doing it at once write it once.
 function maybeMigrateQuestions() {
@@ -397,7 +426,9 @@ async function loadFirestore() {
   const auth = au.getAuth(app);
   const db = f.getFirestore(app);
   return {
-    app, auth, authFns: au,
+    // the Firebase app functions too: the Passwords card (H3) opens short-lived
+    // helper apps (initializeApp, deleteApp) for the other accounts
+    app, auth, authFns: au, appFns: { initializeApp: a.initializeApp, deleteApp: a.deleteApp },
     db, collection: f.collection, doc: f.doc,
     setDoc: f.setDoc, updateDoc: f.updateDoc, onSnapshot: f.onSnapshot, runTransaction: f.runTransaction,
     deleteField: f.deleteField, writeBatch: f.writeBatch, serverTimestamp: f.serverTimestamp,
@@ -406,30 +437,16 @@ async function loadFirestore() {
   };
 }
 
-async function signInFor(fb, role, typed) {
-  const { auth, authFns } = fb;
-  if (AUTH.mode === "roles") {
-    const email = role === "candidate" ? AUTH.candidateEmail
-      : role === "admin" ? AUTH.adminEmail : AUTH.committeeEmail;
-    // Keep the Firebase sign-in for this tab only, the same as the password it
-    // was made from (sessionStorage, "ed_iv_code"). Firebase's default keeps it
-    // in the browser for good, so closing the tab or pressing Log out left a
-    // shared computer still signed in, and signing in on a second tab with
-    // another password quietly switched the first tab's account too. A reload
-    // in the same tab is unchanged: the saved password signs in again anyway.
-    // A browser that blocks sessionStorage gets memory only (this page load),
-    // never a sign-in that fails because the SDK could not save it.
-    const keep = storageWorks("sessionStorage") ? authFns.browserSessionPersistence : authFns.inMemoryPersistence;
-    await authFns.setPersistence(auth, keep);
-    await authFns.signInWithEmailAndPassword(auth, email, typed);
-  } else {
-    // let a real failure (e.g. Anonymous auth disabled) surface at the gate
-    // rather than proceed unauthenticated into a blank app
-    if (!auth.currentUser) await authFns.signInAnonymously(auth);
-    console.warn("[ED Hiring] AUTH.mode is 'anon': access control is UI-only and " +
-      "any signed-in client can read all data via the Firestore API. Before real " +
-      "applicant data, activate the 'roles' model (README → Real access control).");
-  }
+// Keep the Firebase sign-in for this tab only. Firebase's default keeps it in
+// the browser for good, so closing the tab or pressing Log out left a shared
+// computer still signed in, and signing in on a second tab with another
+// password quietly switched the first tab's account too. A reload in the same
+// tab resumes from it (resume()). A browser that blocks sessionStorage gets
+// memory only (this page load), never a sign-in that fails because the SDK
+// could not save it. Set once, before the first attempt.
+async function tabOnly(fb) {
+  const keep = storageWorks("sessionStorage") ? fb.authFns.browserSessionPersistence : fb.authFns.inMemoryPersistence;
+  await fb.authFns.setPersistence(fb.auth, keep);
 }
 
 // ------------------------------------------------------------ member pick
@@ -677,7 +694,7 @@ function render() {
 function openSetup() {
   // always open with every card collapsed
   ["setChair", "setCommittee", "setQuestions", "setStages", "setDeadlines", "setRule", "setInfo", "setSlots", "setOneDrive", "setRound", "setPast",
-   "setRetention", "setRestore", "setBackup", "setHistory"].forEach((k) => delete ui.openSections[k]);
+   "setRetention", "setRestore", "setBackup", "setPasswords", "setHistory"].forEach((k) => delete ui.openSections[k]);
   ui.past = null;
   ui.hist = null;   // the history card reads fresh each time Setup opens
   renderSettings(); wireSections();
@@ -2142,6 +2159,7 @@ function renderSettings() {
     ${section("setRetention", "Keep closed rounds for", retentionLabel(), retentionBody(), { open: false, info: "Set by the department. Check with leadership before changing." })}
     ${section("setRestore", "Restore from a backup file", "", restoreBody(), { open: false, info: "Load a backup file back in. You see exactly what would be added before anything is written." })}
     ${section("setBackup", "Backup", "", backupBody, { open: false, info: "Download everything in the working round. Do this before every release of the tool and before any big change." })}
+    ${section("setPasswords", "Passwords for all ED tools", "Leadership, ED and Guest", passwordsBody(), { open: false, info: "The three shared passwords. Changing one here changes it in Physician Hiring and Motion Voting together; the Patient Hub statistics page follows the Leadership password." })}
     ${section("setHistory", "Change history", "", historyBody(), { open: false, info: "Changes made with the Leadership password, newest first. Undo is offered where the change can still be undone." })}
     ${hint("Applicants are added on the Screen tab, under “Add candidates”.")}`;
 }
@@ -2217,7 +2235,7 @@ function questionsEditor() {
   const scale = d.scale.map((t, i) => `<label class="qscale"><span>${i + 1}</span>
       <input id="qScale-${i}" type="text" value="${escapeHtml(t)}" aria-label="Rating ${i + 1} means" oninput="IV.qScale(${i},this.value)"/></label>`).join("");
   return `${locked ? `<p class="note">Locked because scoring has started. You can fix spelling, but not add, remove or reorder questions.</p>` : ""}
-    ${none && !d.questions.length ? `<p class="note">No interview questions yet. Add them below, or sign in again with the Leadership password to copy them from the old locked file.</p>` : ""}
+    ${none && !d.questions.length ? `<p class="note">No interview questions yet. Add them below, or restore them from a backup file (Restore from a backup file, below).</p>` : ""}
     <div class="qedlist">${rows}</div>
     ${locked ? "" : `<button type="button" class="btn ghost small" onclick="IV.qAdd()">Add a question</button>`}
     <div class="ed-label" style="margin-top:14px">Rating scale</div>
@@ -2316,6 +2334,195 @@ async function applyRestore(plan, backup, label) {
     `${label} (${n} item${n === 1 ? "" : "s"})`, { by: byWho(), ...(meta.replacedQuestions && meta.replacedQuestions.length ? { undo: { kind: "reference", questions: meta.replacedQuestions } } : {}) }),
     { onProgress: (done, all) => { if (el()) el().textContent = `Restoring... ${done} of ${all}`; } }));
   return n;
+}
+
+// ------------------------------------- Setup → Passwords for all ED tools (H3)
+// The logic (order, sign in just before each change, converge) is in
+// js/passwords.js; this is the card and the dialog. Values typed here live only
+// in this dialog's closure and are wiped when it closes: never storage,
+// Firestore, the console or history.
+const TOOL_OF = { voting: "Motion Voting", hiring: "Physician Hiring" };
+function passwordsBody() {
+  // R7: the card waits until the questions live in the database, so nothing
+  // the page needs can depend on a password (design 5.2).
+  if (!S.questions) return `<p class="note">This opens once the interview questions are saved in the database (Interview questions, above).</p>`;
+  if (!isConfigured()) return `<p class="small muted">Passwords can only be changed on the live site.</p>`;
+  const pm = S.passwordsMeta || {};
+  const rows = ROLES.map((r) => {
+    const d = longDay(pm[r] && pm[r].changedAt);
+    return `<div class="hrow"><div class="grow small"><b>${ROLE_WORD[r]}</b>: ${d ? `last changed ${escapeHtml(d)}` : "Not changed in this app yet"}</div></div>`;
+  }).join("");
+  const pend = pm.pending;
+  return `${pend ? `<p class="small bad">A password change didn't finish${longDay(pend.startedAt) ? ` (started ${escapeHtml(longDay(pend.startedAt))})` : ""}.
+      <button class="linky" onclick="IV.changePasswords(true)">Open it to finish</button></p>` : ""}
+    <div class="hlist">${rows}</div>
+    <p class="small muted">These open Physician Hiring, Motion Voting and the Patient Hub statistics page.</p>
+    <div class="row backup-actions"><button class="btn tinted small" onclick="IV.changePasswords(false)">Change a password</button></div>`;
+}
+function pwAdapter() {
+  const fb = _fb;
+  return makeFirebaseAdapter({ ...fb.authFns, ...fb.appFns },
+    { mainAuth: fb.auth, configs: { hiring: firebaseConfig, voting: PARTNERS.voting.firebaseConfig } });
+}
+const pwTools = (r) => [...new Set(ACCOUNTS.filter((a) => a.role === r).map((a) => TOOL_OF[a.project]))];
+const pwWords = (roles) => { const w = roles.map((r) => ROLE_WORD[r]); return w.length > 1 ? `${w.slice(0, -1).join(", ")} and ${w[w.length - 1]}` : w[0]; };
+const pwField = (id, label, auto) => `<label class="ed-label" for="${id}">${escapeHtml(label)}</label>
+  <div class="pwfield"><input id="${id}" type="password" autocomplete="${auto}" autocapitalize="off" spellcheck="false"/>
+  <button type="button" class="btn ghost small" onclick="IV.pwShow('${id}',this)" aria-label="Show ${escapeHtml(label)}">Show</button></div>`;
+
+async function changePasswords(resuming) {
+  const pend = resuming && S.passwordsMeta && S.passwordsMeta.pending;
+  // everything typed lives here, and only for as long as the dialog is open
+  const v = { roles: pend ? ROLES.filter((r) => (pend.roles || []).includes(r)) : [], cur: {}, next: {}, overrides: {} };
+  const wipe = () => { v.cur = {}; v.next = {}; v.overrides = {}; };
+  const val = (id) => { const el = document.getElementById(id); return el ? el.value : ""; };
+  const msg = (t) => { const el = document.getElementById("pwErr"); if (el) el.innerHTML = t; };
+  const ad = pwAdapter();
+  const tick = (ok) => (ok ? `<span class="ok">ready</span>` : `<span class="bad">refused</span>`);
+
+  await flowDialog((ctl) => {
+    const step1 = () => ctl.step({ title: "Which password?", html: `
+      <p class="small">Tick the passwords to change.</p>
+      <div class="pwticks">${ROLES.map((r) => `<label class="pwtick"><input type="checkbox" value="${r}" ${v.roles.includes(r) ? "checked" : ""}/> ${ROLE_WORD[r]}</label>`).join("")}</div>
+      <p id="pwErr" class="small bad"></p>`,
+      buttons: [{ label: "Cancel", run: () => ctl.close(null) },
+        { label: "Next", kind: "filled", run: () => {
+          v.roles = ROLES.filter((r) => document.querySelector(`#flowBody .pwtick input[value="${r}"]`).checked);
+          if (!v.roles.length) { msg("Tick at least one password to change."); return; }
+          step2();
+        } }] });
+
+    const read = () => {
+      v.cur = Object.fromEntries(ROLES.map((r) => [r, val("pwCur_" + r)]));
+      v.next = Object.fromEntries(v.roles.map((r) => [r, { value: val("pwNew_" + r), repeat: val("pwRep_" + r) }]));
+      v.overrides = {};
+      for (const a of accountsFor(v.roles)) { const x = val("pwOv_" + a.key.replace(":", "_")); if (x) v.overrides[a.key] = x; }
+    };
+    const step2 = () => {
+      const warn = [];
+      if (v.roles.includes("leadership") || v.roles.includes("ed")) warn.push("Everyone signed in with the old password will be asked for the new one within about an hour, including phones signed in to Motion Voting. Don't do this on a voting day.");
+      if (v.roles.includes("guest")) warn.push("Applicants who have the old Guest password won't be able to sign in. Send them the new one.");
+      if (v.roles.includes("leadership")) warn.push("Patient Hub statistics follow this password automatically.");
+      ctl.step({ title: pend ? "Finish the password change" : "Type the passwords", html: `
+        ${pend ? `<p class="small">Type the current and new values again. Accounts already changed are only checked with the new value.</p>` : ""}
+        <div class="pwgroup">${ROLES.map((r) => pwField("pwCur_" + r, `Current ${ROLE_WORD[r]} password`, "off")).join("")}</div>
+        ${v.roles.map((r) => `<div class="pwgroup">${pwField("pwNew_" + r, `New ${ROLE_WORD[r]} password`, "new-password")}
+          ${pwField("pwRep_" + r, `Type the new ${ROLE_WORD[r]} password again`, "new-password")}</div>`).join("")}
+        <p class="small muted">At least 10 characters. Three or four words are easy to say and hard to guess. Don't reuse a password from another site.</p>
+        ${warn.map((w) => `<p class="small">${escapeHtml(w)}</p>`).join("")}
+        <details class="pwdrift"><summary class="small">The tools already have different passwords</summary>
+          <p class="small muted">Only if one account uses a different current value. Leave the rest blank.</p>
+          ${accountsFor(v.roles).map((a) => pwField("pwOv_" + a.key.replace(":", "_"), `Current password for ${a.label}`, "off")).join("")}
+        </details>
+        <p id="pwErr" class="small bad" role="alert"></p>`,
+        buttons: [{ label: "Back", run: () => { read(); step1(); } },
+          { label: pend ? "Finish the change" : "Check", kind: "filled", run: async (_c, btn) => {
+            read();
+            const errs = validateNew(v.roles, v.cur, v.next);
+            if (errs.length) { msg(errs.map(escapeHtml).join("<br>")); return; }
+            btn.disabled = true;
+            if (pend) { await change(pend); return; }
+            msg(""); btn.textContent = "Checking...";
+            await check();
+          } }] });
+    };
+
+    // Step 3: prove every account with its current value. Changes nothing.
+    const check = async () => {
+      ctl.step({ title: "Checking", html: `<p class="small">Signing in to each account with its current password. Nothing is changed.</p>` });
+      let r;
+      try { r = await preflight(ad, v.roles, v.cur, v.overrides); }
+      catch (e) { r = { ok: false, results: [{ ok: false, why: "error", label: "" }] }; }
+      const list = r.results.map((x) => `<li>${escapeHtml(x.label)}: ${tick(x.ok)}</li>`).join("");
+      if (!r.ok) {
+        const bad = r.results[r.results.length - 1];
+        const a = ACCOUNTS.find((x) => x.key === bad.key);
+        const text = bad.why === "throttled" ? "Firebase has paused sign-ins from this device for about 15 minutes. Nothing was changed. Wait, then try once."
+          : bad.why === "refused" ? `${TOOL_OF[a.project]}'s ${ROLE_WORD[a.role]} account didn't accept the current ${ROLE_WORD[a.role]} password, so nothing was changed. The tools may already have different ${ROLE_WORD[a.role]} passwords; open "The tools already have different passwords". If nobody knows the current password for this account, it can only be reset in the Firebase console by the department account.`
+          : "Couldn't reach the sign-in service, so nothing was changed. Check the connection and try again.";
+        ctl.step({ title: "Nothing was changed", html: `<ul class="pwlist">${list}</ul><p class="small">${escapeHtml(text)}</p>`,
+          buttons: [{ label: "Close", run: () => ctl.close(null) }, { label: "Back", kind: "filled", run: () => step2() }] });
+        return;
+      }
+      ctl.step({ title: "Ready to change", html: `<ul class="pwlist">${list}</ul>
+        <p class="small">Every account accepted its current password. Change now changes them one by one; it takes a few seconds. Keep this page open until it says Done.</p>`,
+        buttons: [{ label: "Cancel", run: () => ctl.close(null) }, { label: "Change now", kind: "danger", run: () => change(null) }] });
+    };
+
+    // Step 4: change, in the fixed order, each account signed in just before.
+    const change = async (progress) => {
+      const accts = accountsFor(v.roles);
+      const state = Object.fromEntries(accts.map((a) => [a.key, (progress && (progress.done || []).includes(a.key)) ? "done" : "waiting"]));
+      const paint = () => ctl.step({ title: "Changing", html: `<ul class="pwlist">${accts.map((a) => `<li>${escapeHtml(a.label)}: ${
+        state[a.key] === "done" ? `<span class="ok">changed</span>` : state[a.key] === "now" ? "changing..." : `<span class="muted">waiting</span>`}</li>`).join("")}</ul>
+        <p class="small">Keep this page open.</p>` });
+      paint();
+      let startedAt = null;
+      try {
+        await store.updatePasswords((d) => {
+          const keep = d && d.pending && JSON.stringify(d.pending.roles) === JSON.stringify(v.roles) ? d.pending : null;
+          startedAt = keep ? keep.startedAt : store.now();
+          return { ...(d || {}), pending: { roles: v.roles, startedAt, done: keep ? keep.done || [] : [], inProgress: keep ? keep.inProgress || null : null } };
+        });
+      } catch (e) { return failed({ done: [], failedAt: accts[0].key, error: e }, "save"); }
+      const record = async (p) => {
+        for (const a of accts) state[a.key] = p.done.includes(a.key) ? "done" : p.inProgress === a.key ? "now" : "waiting";
+        paint();
+        await store.updatePasswords((d) => ({ ...(d || {}), pending: { roles: v.roles, startedAt: (d && d.pending && d.pending.startedAt) || startedAt, done: p.done, inProgress: p.inProgress } }));
+      };
+      const r = await applyChange(ad, v.roles, v.cur, v.next, { overrides: v.overrides, progress: progress || {}, record });
+      if (r.failedAt) return failed(r);
+      // verify with the new values, in fresh memory-only helpers
+      ctl.step({ title: "Checking the new passwords", html: `<p class="small">Signing in to each account with its new password.</p>` });
+      const bad = await verify(ad, v.roles, v.next);
+      if (bad.length) return failed({ done: r.done.filter((k) => !bad.includes(k)), failedAt: bad[0], error: Object.assign(new Error("verify"), { code: "mismatch" }) });
+      try {
+        const now = store.now();
+        await store.updatePasswords((d) => ({ ...(d || {}), ...Object.fromEntries(v.roles.map((x) => [x, { changedAt: now }])), pending: null }),
+          hEntry("passwords.change", `Changed the ${pwWords(v.roles)} password${v.roles.length > 1 ? "s" : ""}`, { by: byWho() }));
+      } catch { /* the change itself is done; the dates are only a note */ }
+      done();
+    };
+
+    const failed = (r, where) => {
+      const lines = halfDoneText(v.roles, r.done);
+      const code = String((r.error && r.error.code) || "");
+      const why = where === "save" ? "Couldn't save the progress note, so nothing was changed. Check the connection and try again."
+        : /too-many-requests/.test(code) ? "Firebase has paused sign-ins from this device for about 15 minutes. Wait, then press Try again once."
+        : code === "refused" ? "An account didn't accept its current password. If nobody knows the current password for this account, it can only be reset in the Firebase console by the department account."
+        : /network/.test(code) ? "The connection dropped." : "";
+      const body = lines.length
+        ? `${lines.join(" ")} Nothing is broken, but the tools now use different passwords. Try again to finish.`
+        : r.done.length ? "Try again to finish." : "Nothing was changed yet.";
+      ctl.step({ title: "Not finished", html: `<p class="small">${escapeHtml(body)}</p>${why ? `<p class="small">${escapeHtml(why)}</p>` : ""}`,
+        buttons: [{ label: "Close", run: () => ctl.close(null) },
+          { label: "Try again", kind: "filled", run: () => change({ done: r.done, inProgress: r.failedAt }) }] });
+    };
+
+    const done = () => {
+      const who = ui.member ? mname(ui.member) : "ED leadership";
+      const words = pwWords(v.roles), many = v.roles.length > 1;
+      const note = `The ${words} password${many ? "s" : ""} for the ED tools changed today. Ask ${who} for the new one${many ? "s" : ""}.`;
+      const works = v.roles.map((r) => {
+        const t = pwTools(r); if (r === "leadership") t.push("the Patient Hub statistics page");
+        return `The new ${ROLE_WORD[r]} password works in ${t.length > 1 ? `${t.slice(0, -1).join(", ")} and ${t[t.length - 1]}` : t[0]}.`;
+      });
+      wipe();
+      ctl.step({ title: "Done", html: `${works.map((w) => `<p class="small">${escapeHtml(w)}</p>`).join("")}
+        <p class="small"><b>Next: tell people in person or by phone. Never email a password.</b></p>
+        <label class="ed-label" for="pwNote">A message without the password</label>
+        <textarea id="pwNote" rows="3" readonly>${escapeHtml(note)}</textarea>`,
+        buttons: [{ label: "Copy the message", run: async (_c, btn) => {
+          const t = document.getElementById("pwNote");
+          try { await navigator.clipboard.writeText(note); btn.textContent = "Copied"; }
+          catch { t.focus(); t.select(); btn.textContent = "Selected: copy it"; }
+        } }, { label: "Close", kind: "filled", run: () => ctl.close(null) }] });
+    };
+
+    if (pend) step2(); else step1();
+  }, { sticky: true, onClose: wipe });
+  wipe();
+  rerenderSettings();
 }
 
 // ------------------------------------------------ Setup → Change history (H12)
@@ -2774,6 +2981,8 @@ let pendingWrites = 0;
 function track(promise) { pendingWrites++; return Promise.resolve(promise).finally(() => { pendingWrites--; }); }
 const unconfirmed = () => pendingWrites > 0 || Object.keys(inflight).length > 0;
 window.IV = {
+  changePasswords: (resuming) => changePasswords(!!resuming),
+  pwShow: (id, btn) => { const el = document.getElementById(id); if (!el) return; const show = el.type === "password"; el.type = show ? "text" : "password"; btn.textContent = show ? "Hide" : "Show"; },
   toggleFlag: (id) => { if (!isOpen("screening")) return; const cur = (S.screening[key(ui.member, id)] || {}).flag; saved(store.setScreening(ui.member, id, { flag: !cur, reason: cur ? "" : (S.screening[key(ui.member, id)] || {}).reason || "" }), "screening"); },
   toggleNote: (id) => { ui.noteOpen = ui.noteOpen || {}; ui.noteOpen[id] = !ui.noteOpen[id]; renderScreen(); wireSections(); },
   saveNote: (id, btn) => withBusy(btn, async () => {
@@ -3811,7 +4020,7 @@ window.CAND = {
     toast(v === "confirmed" ? "Thank you. See you then." : v === "withdrawn" ? "You have withdrawn." : "Your interview is back.", "ok");
     renderCandidate();
   },
-  logout: () => logOut(["ed_iv_cand", "ed_iv_cand_disp", "ed_iv_code"]),
+  logout: () => logOut(["ed_iv_cand", "ed_iv_cand_disp"]),
 };
 
 // Log out = forget this tab's password AND sign out of Firebase, then reload.
@@ -3830,9 +4039,10 @@ async function logOut(keys) {
       { title: "Log out", yes: "Log out anyway" });
     if (!ok) return;
   }
-  keys.forEach((k) => ss.del(k));
+  [...keys, "ed_iv_code", "ed_iv_signedin", "ed_iv_localrole"].forEach((k) => ss.del(k));
   // say once, after the reload, that scores are saved but won't show here again
   try { const e = JSON.parse(ls.get("ed_iv_echo_v1") || "{}"); if (Object.keys(e.scores || {}).length) ss.set("ed_iv_bye", "1"); } catch { /* nothing to say */ }
+  ui.loggingOut = true;     // this sign-out is wanted: not "you were signed out"
   if (store) store.clearLocalCopies(); else { ls.del("ed_iv_echo_v1"); ls.del("ed_iv_cand_echo_v1"); }
   if (fbAuth) {
     try {
@@ -3989,7 +4199,7 @@ $("#gateForm").addEventListener("submit", async (e) => {
   const btn = $("#gbtn"), val = $("#gpw").value.trim();
   if (!val) return;
   $("#gerr").textContent = "";
-  await withBusy(btn, () => unlock(val, false)).catch(() => {});
+  await withBusy(btn, () => unlock(val)).catch(() => {});
 });
 $("#memberBtn").onclick = () => {
   const v = $("#memberSel").value;
@@ -4003,7 +4213,7 @@ $("#setupClose").onclick = closeSetup;
 $("#settings").addEventListener("focusout", flushSetup); // catch up on held live updates
 $("#setupModal").onclick = (e) => { if (e.target === $("#setupModal")) closeSetup(); };
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.defaultPrevented && setupOpen()) closeSetup(); });
-$("#logout").onclick = () => logOut(["ed_iv_code", "ed_iv_member", "ed_iv_cand"]);
+$("#logout").onclick = () => logOut(["ed_iv_member", "ed_iv_cand"]);
 // Tells the net in index.html that the module really did load and run. Without
 // this it shows "the page didn't finish loading" after 8 seconds.
 window.__edReady = true;
@@ -4026,5 +4236,4 @@ if (ss.get("ed_iv_bye")) {
   if (el) el.innerHTML = `<div style="text-align:left" class="muted">You are logged out. Your scores are saved, but this device won't show them to you again after you sign in.</div>`;
 }
 
-const savedCode = ss.get("ed_iv_code");
-if (savedCode) unlock(savedCode, true);
+resume().catch((e) => console.warn("resume failed:", e && e.code));

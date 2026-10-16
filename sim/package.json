@@ -19,7 +19,8 @@
     "stages": "bash make-site.sh && node stages.mjs",
     "applicants": "bash make-site.sh && node applicants.mjs",
     "notices": "bash make-site.sh && node notices.mjs",
-    "rounds": "bash make-site.sh && node rounds.mjs"
+    "rounds": "bash make-site.sh && node rounds.mjs",
+    "passwords": "bash make-site.sh --emulator && ../tests/node_modules/.bin/firebase emulators:exec --config firebase.json --only auth,firestore --project mgh-ed-hiring-test-emu \"node passwords.mjs\""
   },
   "devDependencies": {
     "puppeteer-core": "^23.0.0"

@@ -26,9 +26,9 @@
 //  with the server time. There is no "saved but not logged".
 // ============================================================================
 
-import { effectiveSlots, toStored } from "./slots.js?v=R6";
-import { lastKey, candKey, ls } from "./util.js?v=R6";
-import { ROUND_COLLECTIONS, quarantineSet, isQuarantined } from "./backup.js?v=R6";
+import { effectiveSlots, toStored } from "./slots.js?v=R7";
+import { lastKey, candKey, ls } from "./util.js?v=R7";
+import { ROUND_COLLECTIONS, quarantineSet, isQuarantined } from "./backup.js?v=R7";
 
 // R6 (review 3 m2): documents kept by a close because they changed after the
 // copy belong to no round until leadership decides. Every view leaves them out.
@@ -285,6 +285,16 @@ export class LocalStore extends BaseStore {
     const next = mutate(before);
     this.state.questions = { ...next, updatedAt: new Date().toISOString() };
     this._hist(histOf(history, before, next));
+    this._save();
+  }
+  // H3: interviews_meta/passwords (dates and account keys only, never a value).
+  // mutate(before) returns the whole document; `history` optional.
+  async updatePasswords(mutate, history = null) {
+    this._load();
+    const before = this.state.passwordsMeta ? JSON.parse(JSON.stringify(this.state.passwordsMeta)) : null;
+    const next = mutate(before);
+    this.state.passwordsMeta = next;
+    if (history) this._hist(histOf(history, before, next));
     this._save();
   }
   now() { return new Date().toISOString(); }
@@ -945,6 +955,18 @@ export class FirestoreStore extends BaseStore {
       const next = mutate(before);
       tx.set(ref, { ...next, updatedAt: serverTimestamp() });
       const h = histOf(history, before, next);
+      if (h) tx.set(...this._histDoc(h));
+    });
+  }
+  async updatePasswords(mutate, history = null) {
+    const { db, runTransaction } = this._fb;
+    const ref = this._doc("interviews_meta", "passwords");
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      const before = snap.exists() ? snap.data() : null;
+      const next = mutate(before);
+      tx.set(ref, next);
+      const h = history ? histOf(history, before, next) : null;
       if (h) tx.set(...this._histDoc(h));
     });
   }

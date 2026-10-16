@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="css/styles.css?v=R6" />
 </head>
 <body>
-<!-- login gate: committee code (decrypts the questions) OR a candidate password -->
+<!-- login gate: the ED, Leadership or Guest password; the role is whichever account accepts it (R7) -->
 <div id="gate" class="overlay" role="dialog" aria-modal="true" aria-labelledby="gateTitle">
   <div class="overlay-box">
     <div class="logo" aria-hidden="true">ED</div>
@@ -39,7 +39,7 @@
   </div>
 </div>
 
-<!-- candidate self-scheduling (same link, applicant code) -->
+<!-- candidate self-scheduling (same link, Guest password) -->
 <div id="candview" class="hidden"></div>
 
 <header id="appHeader" class="hidden">
@@ -142,6 +142,6 @@
   });
 })();
 </script>
-<script type="module" src="js/app.js?v=R6"></script>
+<script type="module" src="js/app.js?v=R7"></script>
 </body>
 </html>

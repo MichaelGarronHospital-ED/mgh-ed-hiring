@@ -4,8 +4,9 @@ A five-stage hiring tool: **Screen → Availability → Panels → Score → Ran
 Static frontend (no build step). Runs in **local mode** out of the box; add a
 Firebase project to go multi-device and real-time.
 
-- **Committee:** [`index.html`](index.html) — enter the committee code, pick your name.
-- **Applicants:** [`book.html`](book.html) — one link, type your name, pick your times.
+- **Committee:** [`index.html`](index.html): enter the ED password, pick your name.
+- **Applicants:** `index.html#apply` (old [`book.html`](book.html) links forward there):
+  the Guest password, then your name and your times.
 
 The clickable prototype Kyle reviewed (`mock.html`) was **deleted on Sept 21 2026**,
 once the real tool had superseded it. It was still being served publicly, it looked
@@ -28,9 +29,9 @@ Design + decisions live in [`DESIGN.md`](DESIGN.md); the paneling algorithm is i
 
 - **Deploys:** GitHub Pages, from `main`, root folder, no build step. A push to
   `main` is live about a minute later.
-- **Secrets:** none in the repo and none in GitHub Actions. The staff, admin and
-  guest codes are shared by word of mouth; the role-account passwords live only
-  in the Firebase console (see "Real access control" below).
+- **Secrets:** none in the repo and none in GitHub Actions. The ED, Leadership and
+  Guest passwords are shared by word of mouth and are only the passwords of Firebase
+  accounts (see "Passwords" below). No file in the repo is derived from them.
 - **Old address:** this tool used to live at
   `https://dralvinyang.github.io/ED-motion-voting/tools/interviews/`. That old
   repo now only redirects here, keeping the path, query string and #hash, so
@@ -42,31 +43,74 @@ Design + decisions live in [`DESIGN.md`](DESIGN.md); the paneling algorithm is i
 Since Oct 14 2026 every ED tool uses the same three passwords (shared out of band,
 never written in this repo):
 
-- **ED password** (ED physicians / the committee): unlocks the interview questions and
-  opens Screen · Availability · Score.
-- **Leadership password**: also unlocks the questions, and adds Panels · Ranking ·
-  Offers · Setup. It is independent of the ED password, so knowing the ED password
-  does not make anyone leadership.
-- **Guest password** (applicants): goes straight to the applicant's own scheduling; it
-  unlocks nothing and sees no committee data.
+- **ED password** (ED physicians / the committee): Screen, Availability, Score.
+- **Leadership password**: adds Panels, Ranking, Offers and Setup. It is independent of
+  the ED password, so knowing the ED password does not make anyone leadership.
+- **Guest password** (applicants): goes straight to the applicant's own scheduling and
+  sees no committee data.
 
-The ED and Leadership passwords each independently "unwrap" the question key (a random
-content key wrapped under each; see "Re-keying" below), so both unlock the questions
-without either revealing the other. In the live (roles) model each password is also the
-password of one Firebase account: `committee@` (ED), `admin@` (Leadership), `applicant@`
-(Guest).
+Each password is only the password of Firebase accounts: in Physician Hiring
+`committee@` (ED), `admin@` (Leadership) and `applicant@ed-hiring.app` (Guest); in
+Motion Voting `ed@` and `leadership@ed-motion-voting.app`. The Patient Hub statistics
+page checks the Leadership password against `admin@ed-hiring.app`. **The sign-in page
+finds your role by which account accepts the password** (ED first, then Guest, then
+Leadership; the role that last worked on this browser first; Guest first on an
+applicant link). The password itself is never saved: a reload in the same tab resumes
+from Firebase's own sign-in for that tab. Since release R7 nothing in the repo is
+derived from a password, so changing one needs no code change.
 
-**To change them:** edit `~/mgh-ed-passwords.txt` and run `python3 set-passwords.py --apply`
-from the `MGH-ED-Tools` folder (see the README there). It re-locks the questions, sets all
-the Firebase account passwords for hiring and voting, and verifies each one; then commit
-and push `js/data.js`.
+**To change one: Physician Hiring, Setup, "Passwords for all ED tools".** Tick the
+passwords to change, type the three current ones and the new ones (at least 10
+characters; three or four words are easy to say and hard to guess), press **Check**
+(this signs in to every account with its current password and changes nothing), then
+**Change now**. It changes Motion Voting first and Physician Hiring's Leadership
+account last, signing each account in seconds before its own change, then checks every
+new password and shows "Done". Then tell people in person or by phone; never email a
+password. Notes:
+- Everyone signed in with an old ED or Leadership password is asked for the new one
+  within about an hour, phones on Motion Voting included: don't do it on a voting day.
+  Applicants with the old Guest password can't sign in until they get the new one.
+- If it stops part way (lost connection, closed tab), it says exactly which tool has the
+  new password and which the old; "Try again" finishes it, and if the tab was closed,
+  Setup shows "A password change didn't finish" with "Open it to finish". Running it
+  again is always safe.
+- If the tools already disagree (one account has another password), Check says which
+  account refused; "The tools already have different passwords" takes that account's own
+  current value.
+- Only the dates are stored (`interviews_meta/passwords`, and one Change history line);
+  never a password.
+- `set-passwords.py` in the `MGH-ED-Tools` folder stays as a break-glass tool for someone
+  with the Firebase CLI; the normal way is the Setup card.
+- `scripts/diagnose-login.mjs` says which account accepts a given password (read-only).
+
+**Honest limit.** Anyone holding the ED password can change the ED accounts' password
+with Firebase's public API (this was always true), which would lock everyone else out of
+the ED role; the same holds for the Guest password, which applicants hold. On the free
+plan there is no server code to stop it. The real fix is per-person accounts (DESIGN.md).
+
+### If a password stops working and nobody knows the new one
+
+No terminal needed:
+1. Whoever can open the department mailbox (MGHEmergencyDepartmentAdministration@tehn.ca)
+   signs in at console.firebase.google.com with that Google account.
+2. Physician Hiring: open project `mgh-ed-hiring`, then Build, Authentication, Users.
+   Motion Voting: project `ed-motion-voting-99b96`, same place.
+3. Find the account (`committee@ed-hiring.app` for ED, `applicant@ed-hiring.app` for Guest,
+   `admin@ed-hiring.app` for Leadership; `ed@` and `leadership@ed-motion-voting.app` in
+   Motion Voting). The console cannot type a new password into an existing account, and
+   "Reset password" sends an email these made-up addresses never receive. So: open the
+   account's menu (the three dots at the end of its row), "Delete account", then "Add
+   user" with the same email and the new password. Nothing else is lost: the rules
+   recognise the account by its email, not by its internal id.
+4. Then sign in to Physician Hiring as Leadership and use Setup, "Passwords for all ED
+   tools" with the value you just set as the current one, so every tool ends up the same.
 
 ## Run it now (local mode)
-Open `index.html` over **https** (or `http://localhost`, not a `file://` path — the
-question decryption needs a secure context). With `firebaseConfig` left empty in
-[`js/config.js`](js/config.js), it uses `localStorage` + `BroadcastChannel`: fully
-working on **one machine / browser** (great for demo and click-through), seeded with
-sample candidates. Data does **not** sync across devices in this mode.
+With `firebaseConfig` left empty in [`js/config.js`](js/config.js), the page uses
+`localStorage` + `BroadcastChannel`: fully working on **one machine / browser** (for a demo
+or click-through). Its three passwords are `LOCAL_CODES` in `js/config.js`, blank in the
+repo on purpose; `sim/make-site.sh` builds such a copy in `sim/site/` with test passwords
+and sample questions. Data does **not** sync across devices in this mode.
 
 ## Go live (multi-device, real-time)
 1. **Create a Firebase project** — a *separate* one from Motion Voting (this holds
@@ -77,7 +121,7 @@ sample candidates. Data does **not** sync across devices in this mode.
 3. Firestore → **Rules** → paste [`firestore.rules`](firestore.rules) → Publish.
 4. Project settings → Your apps → Web → copy the config → paste into
    `firebaseConfig` in [`js/config.js`](js/config.js).
-5. Deploy, then open `index.html` as **admin** (the admin code) → the **Setup** tab, and
+5. Deploy, then open `index.html` as **Leadership** (the Leadership password) → the **Setup** tab, and
    set the real **committee** (names + each member's self-identified gender, used only
    to build balanced panels), **chair**, **interview times**, and the **OneDrive**
    applications-folder link. These save to your Firestore — they never go in the repo.
@@ -100,51 +144,21 @@ edited or removed, or a whole day at once; changes show on everyone's screen liv
 - The `SLOTS` in `js/config.js` are only the starting defaults, used until the first
   edit in Setup. After that the saved list is authoritative, even if it's empty.
 
-## Re-keying (change the staff / admin codes or the questions)
-The questions are encrypted once with a random content key `K`; `K` is then wrapped
-(`K XOR PBKDF2(code)`) separately under the **staff** and **admin** codes. Changing a
-code = re-wrapping `K`; changing the questions = re-encrypting + re-wrapping. Run this
-(Python 3), then paste the printed `ENC_CIPHER`, `ENC_WRAP_STAFF`, `ENC_WRAP_ADMIN` into
-[`js/data.js`](js/data.js) — the only copy, now that `mock.html` is gone:
-
-```python
-import hashlib, hmac, json, base64, os
-STAFF = "your-staff-code"; ADMIN = "your-admin-code"   # independent; never commit these
-QUESTIONS = [ ... ]               # the 10 questions
-SCALE = [ ... ]; GUIDE = [ ... ]  # the 5 scale levels + guidance bullets
-salt = base64.b64decode("ZWQtbW9jay1zYWx0LTAxIQ=="); iters = 100000  # = ENC_SALT/ENC_ITER
-def hkdf(ikm, salt, length, info=b""):     # RFC 5869, matches WebCrypto HKDF
-    prk = hmac.new(salt, ikm, hashlib.sha256).digest()
-    okm, t, i = b"", b"", 1
-    while len(okm) < length:
-        t = hmac.new(prk, t + info + bytes([i]), hashlib.sha256).digest(); okm += t; i += 1
-    return okm[:length]
-kdf = lambda c: hashlib.pbkdf2_hmac("sha256", c.encode(), salt, iters, dklen=32)
-K = os.urandom(32)
-pt = json.dumps({"q":QUESTIONS,"s":SCALE,"g":GUIDE}, ensure_ascii=False).encode()
-enc  = bytes(a ^ b for a, b in zip(pt, hkdf(K, salt, len(pt))))
-wS   = bytes(a ^ b for a, b in zip(K, kdf(STAFF)))
-wA   = bytes(a ^ b for a, b in zip(K, kdf(ADMIN)))
-b64 = lambda b: base64.b64encode(b).decode()
-print("ENC_CIPHER    =", b64(enc)); print("ENC_WRAP_STAFF =", b64(wS)); print("ENC_WRAP_ADMIN =", b64(wA))
-```
-
-**Changing a password.** Passwords never change by themselves: the question key is
-baked into `js/data.js` and the Firebase account passwords stay as set. The normal way
-is `set-passwords.py` (see "Passwords" above), which does the re-lock and the Firebase
-accounts in one go. The recipe above is the manual equivalent: re-run it with the new
-ED and Leadership passwords, paste the new values, push, then set the matching Firebase
-account passwords in the console. Pick passwords that are not easy to guess, and never
-write one, or a hint about its pattern, in this public repo.
+## Re-keying (no longer used)
+Until release R6 the questions were encrypted in `js/data.js` under the ED and Leadership
+passwords, so a password change meant re-locking that file. Since R7 the page reads the
+questions from the database only and never opens `js/data.js`; the file stays unchanged
+for one release (so a cached older page keeps working for its last minutes) and is
+deleted in R8, with this section. Never re-key it.
 
 ## One link, three audiences
-The same `index.html` serves everyone; what you can do depends on the code you type:
-- **ED physician / committee** — the staff code → Screen · Availability · Score.
-- **Admin** — the (independent) admin code → signed in as "Admin" with no name to
+The same `index.html` serves everyone; what you can do depends on the password you type:
+- **ED physician / committee**: the ED password → Screen · Availability · Score.
+- **Admin**: the (independent) Leadership password → signed in as "Admin" with no name to
   pick: the collation, both availability grids, Panels · Ranking · Setup. An admin who
   also reviews taps **review as a member** in the header to pick their name, which
   adds their own screening, availability and the Score tab.
-- **Applicant** — a **different applicant code** → taken straight to their own
+- **Applicant**: the **Guest password** → taken straight to their own
   scheduling (enter last name, pick times). They never see the roster, questions,
   scores, or other applicants. (`book.html` now just forwards here.)
 
@@ -152,9 +166,8 @@ The same `index.html` serves everyone; what you can do depends on the code you t
 `AUTH.mode` in [`js/config.js`](js/config.js) is `"roles"`, and that is how the live
 tool runs: each of the three passwords is the password of one Firebase account, and
 the Firestore rules decide what each account may do, on the server. (The old
-`"anon"` mode, where every visitor signed in anonymously and the data was only
-protected by the page itself, is still in the code but must not be used with real
-data; the published rules refuse anonymous sign-ins.) Setting the roles model up
+`"anon"` mode, where every visitor signed in anonymously, no longer works since R7:
+it found the role by decrypting `js/data.js`.) Setting the roles model up
 from scratch takes these console steps (they can't be done from the repo):
 
 1. **Firebase console → Authentication → Sign-in method →** enable **Email/Password**.
@@ -163,15 +176,14 @@ from scratch takes these console steps (they can't be done from the repo):
 
    | Email | Password | Who |
    |---|---|---|
-   | `committee@ed-hiring.app` | the **staff code** | ED physicians / reviewers |
-   | `admin@ed-hiring.app` | the **admin code** (independent of the staff code) | leadership |
-   | `applicant@ed-hiring.app` | the **guest code** | candidates |
+   | `committee@ed-hiring.app` | the **ED password** | ED physicians / reviewers |
+   | `admin@ed-hiring.app` | the **Leadership password** (independent of the ED one) | leadership |
+   | `applicant@ed-hiring.app` | the **Guest password** | candidates |
 
-   > The admin code is independent of the staff code, so a reviewer who knows the
-   > staff code **cannot** sign in as admin — the reviewer/admin (ranking) wall holds.
-   > Remaining tradeoff: the staff code both decrypts the questions and is the
-   > committee Firebase password, so keep it off any public channel and prefer a
-   > code that isn't trivially guessable.
+   > The Leadership password is independent of the ED password, so a reviewer who
+   > knows the ED password **cannot** sign in as admin: the reviewer/admin (ranking)
+   > wall holds. The three must all be different (the sign-in page tells the roles
+   > apart by which account accepts the password).
 
    > **What one reviewer can see of another.** All reviewers share the single
    > `committee@…` account, so the rules cannot tell them apart. Scores are
@@ -326,9 +338,10 @@ it, so every leadership save would fail.
   the file, here now, will be added, same, different) before anything is written. "Bring back
   missing items only" never changes or deletes anything and works only for a file from the round
   you are working on; "Replace the working round" only into an empty round.
-- **Interview questions now live in the database.** The first Leadership sign-in on the Oct
-  2026 release copies them out of the old locked `js/data.js` automatically; Change history
-  then shows "Copied the interview questions". Notes stay attached to their question.
+- **Interview questions live in the database** (`interviews_meta/questions`). Releases R1 to
+  R6 copied them out of the old locked `js/data.js` at the first Leadership sign-in (Change
+  history: "Copied the interview questions"); since R7 the database is the only copy, and every
+  backup file carries it. Notes stay attached to their question.
 - **Log out** first saves anything still pausing and waits up to 5 seconds for unsaved
   changes (it asks before throwing any away), then clears this browser's copy of your scores.
 - **When a new version goes live**, an open page notices within 10 minutes and shows "This
@@ -359,7 +372,7 @@ On the **Ranking** tab (admin):
   CVs on OneDrive after each cycle: the site is the working copy, not the record.
 
 ## Security notes
-- The **questions/scale/guidance** are encrypted and only decrypt with the correct
-  committee code — not readable in the page source.
+- The **questions/scale/guidance** live in Firestore; the rules let only the ED and Leadership
+  accounts read them (never applicants), and they are not in the page source.
 - Applicant **names/CVs** never live in the repo — names in Firestore/local, CVs in
   access-controlled OneDrive (the app only links out).

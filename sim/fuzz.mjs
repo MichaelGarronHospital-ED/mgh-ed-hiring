@@ -85,7 +85,7 @@ export function scenario(seed) {
 async function round(page, url, sc) {
   await page.evaluate((s) => {
     localStorage.setItem("ed_interviews_v1", JSON.stringify(s));
-    sessionStorage.setItem("ed_iv_code", "adminpw");
+    sessionStorage.setItem("ed_iv_localrole", "admin");   // local mode resumes by role; no password is kept (R7)
   }, sc.state);
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.waitForFunction("window.__edReady === true", { timeout: 15000 });

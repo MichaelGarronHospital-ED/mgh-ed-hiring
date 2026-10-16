@@ -23,7 +23,7 @@ run before applying.
 | Script | What it does |
 | --- | --- |
 | `report-data.mjs` | Read-only inventory of everything stored, grouped by candidate. **Start here.** `--issues` lists only what needs attention. |
-| `diagnose-login.mjs` | Read-only. Why won't a code sign in? Tests the two independent halves — does it decrypt the questions (staff vs admin), and does Firebase accept it as that account's password — and names the fault. `ED_IV_CODE='…' node diagnose-login.mjs`; `--offline` skips the network half. Never prints the code. |
+| `diagnose-login.mjs` | Read-only. Why won't a password sign in? Tries it on the three hiring role accounts (the same test the page makes) and says which accepted it, or why none did; `--voting` also tries Motion Voting's two accounts. `ED_PASSWORD='...' node diagnose-login.mjs`. Each try is a separate memory-only sign-in. Never prints the password. |
 | `rename-candidate.mjs` | Fix a candidate's name **in place**. The right way to correct a spelling. |
 | `migrate-candidate.mjs` | Move reviewer input from one roster entry onto another. For cleaning up after a remove-and-re-add. |
 | `purge-candidate.mjs` | Permanently delete a roster entry. Refuses if anything still references it. |

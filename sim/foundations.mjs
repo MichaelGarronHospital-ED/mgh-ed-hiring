@@ -99,23 +99,22 @@ const scenarios = {
     return problems;
   },
 
-  // H2: the first Leadership sign-in copies the questions out of the old
-  // locked file, once, with a history entry.
-  async questionsMigrate(page, url) {
+  // R7: nothing is decrypted or copied any more. With no questions document the
+  // Leadership sign-in writes nothing, the Questions card says how to add them,
+  // and the Passwords card waits for them (design 5.2).
+  async noQuestionCopySinceR7(page, url) {
     const problems = [];
-    await load(page, url, base(), "adminpw");
-    await landAsAdmin(page); await sleep(300);
-    let st = await dumpState(page);
-    problems.push(...ok(st.questions && st.questions.migratedFrom === "data.js", "no questions document after the Leadership sign-in"));
-    problems.push(...ok(st.questions && st.questions.questions.map((q) => q.id).join() === "0,1,2", `ids are ${st.questions && st.questions.questions.map((q) => q.id)}`));
-    const hist = Object.values(st.history || {});
-    problems.push(...ok(hist.filter((h) => h.action === "questions.migrate").length === 1, `${hist.length} history entries, expected one questions.migrate`));
-    await page.reload({ waitUntil: "domcontentloaded" }); await page.waitForFunction("window.__edReady === true"); await sleep(500);
-    st = await dumpState(page);
-    problems.push(...ok(Object.values(st.history || {}).filter((h) => h.action === "questions.migrate").length === 1, "the copy ran twice"));
-    await openSetupCard(page, "setHistory");
-    const card = await page.$eval('details[data-sec="setHistory"]', (e) => e.textContent);
-    problems.push(...ok(card.includes("Copied the interview questions"), `Change history doesn't show the copy: ${card.slice(0, 200)}`));
+    await load(page, url, base({ questions: null }), "adminpw");
+    await landAsAdmin(page); await sleep(400);
+    const st = await dumpState(page);
+    problems.push(...ok(!st.questions, "a questions document appeared after the Leadership sign-in"));
+    problems.push(...ok(!Object.values(st.history || {}).some((h) => h.action === "questions.migrate"), "a questions copy was recorded"));
+    await openSetupCard(page, "setQuestions");
+    const q = await page.$eval('details[data-sec="setQuestions"]', (e) => e.textContent);
+    problems.push(...ok(q.includes("restore them from a backup file") && !q.includes("old locked file"), `Questions card: ${q.slice(0, 200)}`));
+    await openSetupCard(page, "setPasswords");
+    const pw = await page.$eval('details[data-sec="setPasswords"]', (e) => e.textContent);
+    problems.push(...ok(pw.includes("opens once the interview questions are saved") && !pw.includes("Change a password"), `Passwords card: ${pw.slice(0, 200)}`));
     return problems;
   },
 

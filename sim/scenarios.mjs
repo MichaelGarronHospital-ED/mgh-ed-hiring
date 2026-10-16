@@ -37,7 +37,7 @@ const ok = (cond, msg) => (cond ? [] : [msg]);
 async function asAdmin(page, url, state, { member = null } = {}) {
   await page.evaluate((s) => {
     localStorage.setItem("ed_interviews_v1", JSON.stringify(s));
-    sessionStorage.setItem("ed_iv_code", "adminpw");
+    sessionStorage.setItem("ed_iv_localrole", "admin");   // local mode resumes by role; no password is kept (R7)
     sessionStorage.removeItem("ed_iv_cand"); sessionStorage.removeItem("ed_iv_cand_disp");
   }, state);
   await page.goto(url, { waitUntil: "domcontentloaded" });
