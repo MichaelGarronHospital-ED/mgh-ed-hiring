@@ -7,29 +7,30 @@
 //  Firestore rules when AUTH.mode === "roles" (see config.js + firestore.rules).
 // ============================================================================
 import { firebaseConfig, ORG_NAME, CHAIR, COMMITTEE, SLOTS, ONEDRIVE,
-         CANDIDATE_CODE_LOCAL, AUTH, SCREENING_DEADLINE } from "./config.js?v=R3";
-import { decryptContent } from "./data.js?v=R3";
-import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R3";
-import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R3";
-import { autoPanels, buildPanel } from "./panels.js?v=R3";
+         CANDIDATE_CODE_LOCAL, AUTH, SCREENING_DEADLINE } from "./config.js?v=R4";
+import { decryptContent } from "./data.js?v=R4";
+import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R4";
+import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R4";
+import { autoPanels, buildPanel } from "./panels.js?v=R4";
 import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell, lastKey,
-         ss, ls, storageWorks, dialogOpen } from "./util.js?v=R3";
+         ss, ls, storageWorks, dialogOpen, flowDialog, candKey, typedFirstKeys, firstKey } from "./util.js?v=R4";
+import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan } from "./candidates.js?v=R4";
 import { effectiveSlots, slotLabel, slotTimeLabel, groupByDate, checkSlot, splitRange, responseCounts,
-         newSlotId, isStructured, fmtDate } from "./slots.js?v=R3";
+         newSlotId, isStructured, fmtDate } from "./slots.js?v=R4";
 import { normalizeCommittee, interviewers as interviewersOf, pickable as pickableOf, memberName, memberStatus,
-         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R3";
+         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R4";
 import { fromLegacy, normalizeQuestions, liveQuestions, idsWithNotes, scoringStarted, checkEdit, newQuestionId,
-         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R3";
+         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R4";
 import { entry as hEntry, newHistoryId, panelUndo, shortlistUndo, screeningUndo, canUndo, undoneIds, textFor, whoFor, whenFor,
-         hashOf, toDate } from "./history.js?v=R3";
-import { buildBackup, backupFileName, toState } from "./backup.js?v=R3";
+         hashOf, toDate } from "./history.js?v=R4";
+import { buildBackup, backupFileName, toState } from "./backup.js?v=R4";
 import { STAGES, STAGE_WORD, stageOpen, stageClosedAt, roundOpen, bookingFor, thresholdOf, isOnList, closePlan, reopenPlan,
-         lockEntry } from "./stages.js?v=R3";
+         lockEntry } from "./stages.js?v=R4";
 
 // The release this page is. Must equal version.json and every "?v=" in every
 // import (tests/versions.test.mjs). A page that sees a different version.json
 // was updated underneath it (section "Reload notice" below).
-const RELEASE = "R3";
+const RELEASE = "R4";
 
 // Interview questions (H2): the saved document (interviews_meta/questions) when
 // there is one, else what the typed password decrypted from the old js/data.js
@@ -81,7 +82,11 @@ const slotName = (id) => slotLabel(EFF().slots.find((t) => t.id === String(id)))
 const liveAnswers = (map) => { const ids = new Set(EFF().slotIds); return Object.keys(map || {}).filter((k) => ids.has(k)); };
 // availability for a candidate: support both committee-keyed (candId, legacy) and
 // applicant-keyed (last name) documents.
-const availForCand = (c) => (S.availCand[c.id]) || (S.availCand[lastKey(c.name)]) || {};
+// H14: an applicant's document is their own availKey when they share a surname.
+const availForCand = (c) => (S.availCand[c.id]) || (S.availCand[candKey(c)]) || {};
+// The state the H5/H14 plans read: page state plus the whole availability documents.
+const planState = () => ({ ...S, availRaw: S.availRaw || Object.fromEntries(Object.entries(S.availCand || {})
+  .map(([k, v]) => [k, { slots: v, ...((S.replies || {})[k] || {}) }])) });
 
 // ------------------------------------------------------------------ gate
 async function unlock(typed, silent) {
@@ -277,7 +282,7 @@ async function initStore(role, typed) {
       const pub = Array.isArray(st.times) ? { times: st.times } : (st.slots && st.slots.length ? { slots: st.slots } : null);
       if (pub) { ui._syncedSlots = true; store.syncPublicSlots(pub).catch(() => { ui._syncedSlots = false; }); }
     }
-    if (ui.role === "admin" && isConfigured()) syncAllowedNames();
+    if (ui.role === "admin") syncAllowedNames();
     if (ui.role === "admin") maybeMigrateQuestions();
   });
   S = store.getState();
@@ -333,7 +338,7 @@ function syncAllowedNames(fromTimer = false) {
   syncAllowedNames._t = setTimeout(() => { syncAllowedNames._since = 0; if (S && ui.role === "admin") syncAllowedNow(fromTimer); }, wait);
 }
 function syncAllowedNow(fromTimer) {
-  const want = [...new Set(S.candidates.filter((c) => !c.removed).map((c) => lastKey(c.name)).filter(Boolean))].sort();
+  const want = [...new Set(S.candidates.filter((c) => !c.removed).map(candKey).filter(Boolean))].sort();
   if (!want.length) return;                 // never publish an empty list: that would lock every applicant out
   const g = ui._allowed = ui._allowed || { last: null, lastSeen: undefined, fights: [], held: false, timer: null };
   const have = S.allowedNames, haveSig = have ? have.join("|") : null;
@@ -741,10 +746,10 @@ function hiddenInput() {
   // Who is this probably now? A remove-and-re-add keeps most of the name, so a
   // live entry sharing the first name or the surname key is the likely target.
   const live = S.candidates.filter((c) => !c.removed);
-  const firstTok = (n) => String(n || "").trim().toLowerCase().split(/\s+/)[0] || "";
+  // first names with titles dropped ("Dr" matched every applicant before)
   for (const e of found.values()) {
     e.likely = e.name
-      ? live.filter((c) => (firstTok(c.name) && firstTok(c.name) === firstTok(e.name))
+      ? live.filter((c) => (firstKey(c.name) && firstKey(c.name) === firstKey(e.name))
                         || (lastKey(c.name) && lastKey(c.name) === lastKey(e.name)))
       : [];
   }
@@ -845,9 +850,15 @@ function renderScreen() {
           `<button type="button" class="${listVal === v ? "on" : ""}" aria-pressed="${listVal === v}" onclick="IV.setShortlist('${c.id}','${v}')">${l}</button>`).join("")}</span>
         ${infoIcon(th ? `Auto follows your rule: off the list at ${th} concern${th === 1 ? "" : "s"}. On or Off is your decision and overrides the rule.`
           : "Auto keeps everyone on (your rule is set to 0). On or Off is your decision.")}</div>`;
-      const action = c.removed
+      const action = (c.removed
         ? `<button class="linky" onclick="IV.removeCand('${c.id}',false)">Restore</button>`
-        : `<button class="linky danger" onclick="IV.removeCand('${c.id}',true)">Remove</button>`;
+        : `<button class="linky danger" onclick="IV.removeCand('${c.id}',true)">Remove</button>`)
+        // H5: rename, merge and permanent delete live behind "More"
+        + `<details class="more"><summary class="linky">More</summary><div class="moremenu">
+            <button class="linky" onclick="IV.renameCand('${c.id}')">Rename</button>
+            <button class="linky" onclick="IV.mergeCand('${c.id}')">Merge into another entry</button>
+            ${c.removed ? `<button class="linky danger" onclick="IV.deleteCand('${c.id}')">Delete permanently</button>`
+              : `<span class="muted small">Delete permanently: remove them from the list first</span>`}</div></details>`;
       // One line per flagger, attributed and quoted in full. Several people
       // flagging one applicant is the normal case, and each sentence is the
       // thing leadership actually has to weigh.
@@ -902,21 +913,18 @@ function renderScreen() {
         const bits = [part(e.flags, "concern"), part(e.ratings, "rating"), part(e.scores, "interview score")].filter(Boolean).join(", ");
         const who = [...e.members].map(mname).sort().map((m) => `<span class="chip">${escapeHtml(m)}</span>`).join("");
         const target = e.likely && e.likely.length === 1 ? e.likely[0] : null;
-        const cmd = e.name && target
-          ? `node migrate-candidate.mjs --from ${JSON.stringify(e.name)} --to ${JSON.stringify(target.name)} --apply`
-          : null;
         return `<div class="hidrow">
           <div><b>${escapeHtml(e.name || e.id)}</b>
             <span class="pill out">${e.kind === "removed" ? "Removed" : "No longer on the roster"}</span></div>
           <div class="muted small">${escapeHtml(bits)}, from ${who}</div>
           ${target ? `<div class="small">Looks like the same person as <b>${escapeHtml(target.name)}</b>, who is still on the list.</div>` : ""}
-          ${cmd ? `<pre class="cmd">${escapeHtml(cmd)}</pre>` : ""}
+          <div class="row backup-actions" style="margin-top:.4rem">
+            ${target ? `<button class="btn tinted small" onclick="IV.mergeCand('${e.id}','${target.id}')">Move these to ${escapeHtml(target.name)}</button>`
+              : `<button class="btn tinted small" onclick="IV.mergeCand('${e.id}')">Move these to another entry</button>`}
+            <button class="btn ghost small danger" onclick="IV.deleteCand('${e.id}')">Delete permanently</button></div>
         </div>`;
       }).join("")}
-      <div class="small" style="margin-top:.5rem">Run that from <code>scripts/</code> on a
-      computer (it needs the admin password, is a dry run without <code>--apply</code>, and never overwrites
-      input already given under the new entry). To fix a spelling in future use
-      <code>scripts/rename-candidate.mjs</code>, which keeps the id, instead of removing and re-adding.</div>
+      <div class="small" style="margin-top:.5rem">To fix a spelling, use Rename (under More); it keeps everything attached.</div>
     </div>`;
     const nSub = committee.filter((m) => submitted.has(m.id)).length;
     const dash = `<p><b>${nSub}/${committee.length}</b> members have submitted screening.</p>
@@ -925,7 +933,7 @@ function renderScreen() {
       ${hiddenBlock}`;
 
     const adder = `<div class="note">Paste applicant names, one per line, then Add. Stored in your database, never in the app's code.
-      To fix a spelling, use <code>scripts/rename-candidate.mjs</code>. Removing and re-adding strands every rating.</div>
+      To fix a spelling, use Rename. Removing and adding again separates their ratings.</div>
       <textarea id="bulkAdd" rows="4" placeholder="Dr Jane Doe&#10;Dr John Smith" aria-label="New candidate names"></textarea>
       <div style="margin-top:.5rem"><button class="btn tinted small" onclick="IV.addCands(this)">Add candidates</button></div>`;
 
@@ -1514,6 +1522,16 @@ function needsAttention(res) {
   by("no-panel").forEach((id) => items.push(`${unschedulableLine(id, res)} ${editLink(id, "Set a time")}`));
   by("contested").forEach((id) => items.push(`${unschedulableLine(id, res)} ${editLink(id, "Set a time")}`));
   by("locked").forEach((id) => items.push(`${unschedulableLine(id, res)} ${editLink(id, "Set a time")}`));
+  // H14: answers saved under a surname two applicants now share: ask whose they
+  // are (never guess). And a pair found in live data that has no keys yet.
+  sharedDocs(planState(), (S.settings || {}).keptSurnameDocs || []).forEach((d) => items.push(
+    `Answers saved under the last name <b>${escapeHtml(d.key.charAt(0).toUpperCase() + d.key.slice(1))}</b> could be from `
+    + `${d.names.map(escapeHtml).join(" or ")}. Whose are they? `
+    + d.ids.map((id, i) => `<button class="linky" onclick="IV.claimShared('${escapeHtml(d.key)}','${id}')">${escapeHtml(d.names[i])}</button>`).join(" · ")
+    + ` · <button class="linky" onclick="IV.claimShared('${escapeHtml(d.key)}','')">Not sure: ask both again</button>`));
+  const unkeyed = assignKeys(S.candidates);
+  if (Object.keys(unkeyed.patches).length) items.push(`${unkeyed.groups.map((g) => `${g.names.map(escapeHtml).join(" and ")}`).join("; ")} share a last name, `
+    + `so their answers would land in one place. <button class="linky" onclick="IV.separateKeys()">Give them separate answers</button>`);
   if (res.lockIssues) {
     res.lockIssues.notFree.forEach((x) => items.push(`<b>${escapeHtml(mname(x.member))}</b> is on ${escapeHtml(shortName(x.cand))}'s panel but no longer says they are free then. ${editLink(x.cand, "Edit the panel")}`));
     res.lockIssues.left.forEach((x) => items.push(`<b>${escapeHtml(x.name)}</b> has left the committee but is on ${x.n} panel${x.n === 1 ? "" : "s"}.`));
@@ -2084,6 +2102,18 @@ function refreshHistoryCard() {
   const d = document.querySelector('details[data-sec="setHistory"] .sec-body');
   if (d) d.innerHTML = historyBody();
 }
+// H14: give every active applicant who shares a surname their own key (and say
+// so). Never moves an existing surname-only document: Needs attention asks whose.
+async function separateShared(announce) {
+  const keys = assignKeys(S.candidates);
+  if (!Object.keys(keys.patches).length) { if (announce) toast("Nothing to separate", "ok"); return; }
+  try {
+    await track(store.setCandidates(keys.patches, hEntry("roster.rename", "Gave applicants who share a last name their own answers", { by: byWho() })));
+  } catch { toast("Couldn't save. Check your connection", "err"); return; }
+  const texts = keys.groups.map((g) => sharedSurnameText(S.candidates, g.key)).filter(Boolean);
+  if (texts.length) await confirmDialog(texts.join("\n\n"), { title: "Shared last name", yes: "OK", danger: false });
+}
+
 // Undo one entry: only if the thing it changed is exactly as the entry left it.
 // The undo is itself logged, pointing back at the entry (so the card can say
 // "Undone." instead of offering it again).
@@ -2252,38 +2282,44 @@ function renderCandidate() {
   }
   if (!ui.candLast) {
     el.innerHTML = `<div class="overlay"><div class="overlay-box"><div class="logo" aria-hidden="true">ED</div>
-      <h2>Interview availability</h2><p class="muted">Enter your last name to pick the times that work for you.
+      <h2>Interview availability</h2><p class="muted">Enter your name to pick the times that work for you.
         You won't see any other applicants or committee information.</p>
-      <form id="candForm"><input id="candName" type="text" placeholder="Your last name" autocomplete="family-name" aria-label="Last name" autofocus/>
+      <form id="candForm">
+        <label class="ed-label candlabel" for="candFirst">First name<input id="candFirst" type="text" autocomplete="given-name" autofocus/></label>
+        <label class="ed-label candlabel" for="candName">Last name<input id="candName" type="text" autocomplete="family-name"/></label>
       <button class="primary" type="submit" id="candGo">Continue</button></form>
       <div id="candErr" class="err" role="alert"></div></div></div>`;
     $("#candForm").onsubmit = async (e) => {
       e.preventDefault();
-      const v = $("#candName").value.trim();
+      const v = $("#candName").value.trim(), first = ($("#candFirst") || {}).value ? $("#candFirst").value.trim() : "";
       const err = $("#candErr"), btn = $("#candGo");
       if (v.length < 2) { err.textContent = "Please enter your last name."; return; }
-      const k = lastKey(v);
+      // H14: the last name alone first (most applicants), then last name plus
+      // first name, which is what applicants who share a surname are filed under.
+      const tries = [lastKey(v), ...typedFirstKeys(first).map((f) => `${lastKey(v)}-${f}`)];
       // Check the name against the roster BEFORE letting them fill anything in.
       // Applicants can't read the roster, so the rules answer this for us: an
       // unknown surname is refused. Without this, a typo or a name we hold
       // differently saved to a document nobody reads — the applicant saw
       // "Saved" and was never scheduled, which is the failure we're closing.
       err.textContent = ""; btn.disabled = true; btn.textContent = "Checking…";
-      let ok;
-      try { ok = await store.checkName(k); }
-      catch { // offline or misconfigured: don't accuse them of a wrong name
+      let k = null;
+      try {
+        for (const t of tries) { if (await store.checkName(t)) { k = t; break; } }
+      } catch { // offline or misconfigured: don't accuse them of a wrong name
         err.textContent = "Couldn't reach the server. Check your connection and try again.";
         btn.disabled = false; btn.textContent = "Continue"; return;
       }
       btn.disabled = false; btn.textContent = "Continue";
-      if (!ok) {
-        err.innerHTML = `We can't find <b>${escapeHtml(v)}</b> in our applicant list. ` +
+      if (!k) {
+        err.innerHTML = `We can't find <b>${escapeHtml((first ? first + " " : "") + v)}</b> in our applicant list. ` +
           `Please check the spelling, or try the last name exactly as it appears on your application. ` +
+          `Use your names exactly as on your application. ` +
           `If it still doesn't work, reply to the email that sent you this link and we'll sort it out.`;
         return;
       }
       ui.candLast = k;
-      ui.candDisplay = v.replace(/\s+/g, " ");
+      ui.candDisplay = ((first ? first + " " : "") + v).replace(/\s+/g, " ");
       ss.set("ed_iv_cand", ui.candLast);
       ss.set("ed_iv_cand_disp", ui.candDisplay);
       renderCandidate();
@@ -2421,14 +2457,22 @@ window.IV = {
     const t = $("#bulkAdd"); if (!t) return;
     const existing = new Set(S.candidates.map((c) => c.name.trim().toLowerCase()));
     const names = t.value.split("\n").map((s) => s.trim()).filter(Boolean);
+    // H14: two applicants with the same first AND last name can't be told apart
+    const fresh = [];
+    names.forEach((nm) => { if (!existing.has(nm.toLowerCase())) { existing.add(nm.toLowerCase()); fresh.push(nm); } });
+    const trial = assignKeys([...S.candidates, ...fresh.map((nm, i) => ({ id: `new-${i}`, name: nm }))]);
+    const refused = fresh.filter((nm) => trial.clash.includes(nm));
     let n = 0;
-    for (const nm of names) {
-      if (existing.has(nm.toLowerCase())) continue;
-      existing.add(nm.toLowerCase());
+    for (const nm of fresh) {
+      if (refused.includes(nm)) continue;
       await track(store.addCandidate(nm, (_b, p) => hEntry("roster.add", "Added {cand}", { by: byWho(), cand: p.id })));
       n++;
     }
-    t.value = ""; toast(n ? `Added ${n} candidate${n === 1 ? "" : "s"}` : "No new names", n ? "ok" : "err");
+    t.value = refused.join("\n");
+    await separateShared();
+    if (refused.length) await confirmDialog(`Two applicants have the same first and last name (${refused.join(", ")}). Add a middle initial to one of them so we can tell them apart.`,
+      { title: "Not added", yes: "OK", danger: false });
+    toast(n ? `Added ${n} candidate${n === 1 ? "" : "s"}` : "No new names", n ? "ok" : "err");
   }),
   removeCand: async (id, v) => {
     const c = cand(id);
@@ -2698,6 +2742,92 @@ window.IV = {
     } });
   },
   clearOverrides: (btn) => IV.resetPanels(btn),   // the old name, kept for one release
+  // ---- applicants: shared surnames (H14), rename, merge, delete (H5)
+  separateKeys: () => separateShared(true),
+  claimShared: async (key, id) => {
+    if (id) {
+      const plan = claimPlan(planState(), key, id);
+      if (!(await confirmDialog(plan.summary, { title: "Whose answers are these?", yes: "Move them", danger: false }))) return;
+      try { await track(store.applyPlan(plan, hEntry("roster.merge", "Moved answers saved under a shared last name to {cand}", { by: byWho(), cand: id }))); }
+      catch { toast("Couldn't save. Check your connection", "err"); return; }
+      toast("Answers moved", "ok");
+    } else {
+      if (!(await confirmDialog("Keep these answers for reference and ask both applicants to choose their times again? They will each answer under their own name.",
+        { title: "Ask both again", yes: "Ask both again", danger: false }))) return;
+      try { await track(store.updateConfig((c) => ({ keptSurnameDocs: [...new Set([...(c.keptSurnameDocs || []), key])] }),
+        hEntry("roster.rename", "Kept answers under a shared last name for reference; both applicants asked again", { by: byWho() }))); }
+      catch { toast("Couldn't save. Check your connection", "err"); }
+    }
+  },
+  renameCand: (id) => {
+    const c = cand(id); if (!c) return;
+    flowDialog((ctl) => {
+      ctl.step({ title: "Rename applicant",
+        html: `<label class="ed-label" for="rnIn">Name as it should appear</label>
+          <input id="rnIn" type="text" value="${escapeHtml(c.name)}" autocomplete="off"/>
+          <p class="small muted">Their screening, scores and notes stay with them.</p>
+          <p id="rnMsg" class="small" role="status"></p>`,
+        buttons: [{ label: "Cancel", kind: "ghost", run: (k) => k.close(null) },
+          { label: "Rename", kind: "filled", id: "rnGo", run: async (k, btn) => {
+            const plan = renamePlan(planState(), id, $("#rnIn").value);
+            if (plan.error) { $("#rnMsg").textContent = plan.error; return; }
+            await withBusy(btn, () => track(store.applyPlan(plan, hEntry("roster.rename", "Renamed {cand}", { by: byWho(), cand: id }))), "Renamed")
+              .then(() => k.close(true), () => {});
+          } }] });
+      const input = $("#rnIn");
+      const msg = () => {
+        const plan = renamePlan(planState(), id, input.value);
+        $("#rnMsg").textContent = plan.error || [plan.counts.timesMove ? "Their interview times move with them." : "", plan.shared || ""].filter(Boolean).join(" ");
+      };
+      input.addEventListener("input", msg); input.select();
+    });
+  },
+  mergeCand: (fromId, toId) => {
+    const src = cand(fromId);
+    const options = S.candidates.filter((c) => c.id !== fromId).sort((a, b) => (a.removed - b.removed) || a.name.localeCompare(b.name));
+    if (!options.length) { toast("There is no other entry to merge into", "err"); return; }
+    flowDialog((ctl) => {
+      const preview = (to) => {
+        const plan = mergePlan(planState(), fromId, to);
+        const go = async (k, btn, backup) => {
+          await withBusy(btn, async () => {
+            if (backup) await IV.downloadBackup(null);
+            await track(store.applyPlan(plan, hEntry("roster.merge", "Merged a duplicate entry into {cand}", { by: byWho(), cand: to })));
+          }, "Merged").then(() => k.close(true), () => {});
+        };
+        ctl.step({ title: "Merge into another entry", html: `<p>${escapeHtml(plan.error || plan.summary)}</p>`,
+          buttons: plan.error ? [{ label: "Close", kind: "ghost", run: (k) => k.close(null) }] : [
+            { label: "Cancel", kind: "ghost", run: (k) => k.close(null) },
+            { label: "Merge without a backup", kind: "tinted", run: (k, b) => go(k, b, false) },
+            { label: "Download backup and merge", kind: "filled", run: (k, b) => go(k, b, true) }] });
+      };
+      if (toId) { preview(toId); return; }
+      ctl.step({ title: "Merge into another entry",
+        html: `<p class="small muted">For a remove-and-add-again mix-up: everything saved under '${escapeHtml(src ? src.name : "this entry")}' moves to the entry you pick.</p>
+          <label class="ed-label" for="mgTo">The entry to keep</label>
+          <select id="mgTo">${options.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}${c.removed ? " (removed)" : ""}</option>`).join("")}</select>`,
+        buttons: [{ label: "Cancel", kind: "ghost", run: (k) => k.close(null) },
+          { label: "Next", kind: "filled", run: () => preview($("#mgTo").value) }] });
+    });
+  },
+  deleteCand: (id) => {
+    const plan = deletePlan(planState(), id);
+    if (plan.error) { toast(plan.error, "err"); return; }
+    flowDialog((ctl) => {
+      ctl.step({ title: "Delete permanently",
+        html: `<p>${escapeHtml(plan.summary)}</p>
+          <label class="ed-label" for="delIn">${plan.confirmWord === "delete" ? "Type delete to confirm." : "Type their last name to confirm."}</label>
+          <input id="delIn" type="text" autocomplete="off"/>`,
+        buttons: [{ label: "Cancel", kind: "ghost", run: (k) => k.close(null) },
+          { label: "Delete permanently", kind: "danger", id: "delGo", disabled: true, run: async (k, btn) => {
+            if (lastKey($("#delIn").value) !== plan.confirmWord) return;
+            await withBusy(btn, () => track(store.applyPlan(plan, hEntry("roster.delete",
+              `Deleted an applicant and ${plan.entries} saved entr${plan.entries === 1 ? "y" : "ies"}`, { by: byWho() }))), "Deleted")
+              .then(() => k.close(true), () => {});
+          } }] });
+      $("#delIn").addEventListener("input", (e) => { $("#delGo").disabled = lastKey(e.target.value) !== plan.confirmWord; });
+    });
+  },
   // ---- change history
   loadHistory: async () => {
     ui.hist = { entries: [], next: null, loading: true };
@@ -2775,7 +2905,7 @@ window.IV = {
   }, "Excel downloaded"),
   // H1a: the restorable backup, from a fresh one-shot read of every round
   // collection (store.snapshotRaw), never from page memory.
-  downloadBackup: (btn) => withBusy(btn, async () => {
+  downloadBackup: (btn) => withBusy(btn || null, async () => {
     const raw = await store.snapshotRaw();
     const b = await buildBackup(raw, { exportedBy: "leadership", build: RELEASE });
     const name = backupFileName(b.round.name || `Hiring round ${new Date().getFullYear()}`);

@@ -76,5 +76,15 @@ const shots = {
       availIv: { ...STATE.availIv, Chen: { t1: "ip" } } } });
     await shoot("panels-unlocked", async (p) => { await landAsAdmin(p); await tab(p, "panels"); });
   },
+  R4: async () => {
+    const kims = { ...STATE, candidates: STATE.candidates.map((c) => c.id === "c-2" ? { ...c, availKey: "kim-jane" } : c.id === "c-3" ? { ...c, availKey: "kim-min" } : c),
+      availCand: { ...STATE.availCand, kim: { t0: "ip" } } };
+    await shoot("applicant-names", async (p) => { await p.waitForSelector("#candName"); }, { code: "guestpw" });
+    await shoot("more-menu", async (p) => { await landAsAdmin(p); await p.evaluate(() => { document.querySelector("details.more").open = true; }); });
+    await shoot("merge-preview", async (p) => { await landAsAdmin(p); await p.evaluate(() => window.IV.mergeCand("c-3", "c-2")); await sleep(200); });
+    await shoot("delete-dialog", async (p) => { await landAsAdmin(p); await p.evaluate(() => window.IV.deleteCand("c-3")); await sleep(200); await p.type("#delIn", "Ki"); },
+      { state: { ...STATE, candidates: STATE.candidates.map((c) => c.id === "c-3" ? { ...c, removed: true } : c) } });
+    await shoot("shared-surname-attention", async (p) => { await landAsAdmin(p); await tab(p, "panels"); }, { state: kims });
+  },
 };
 if (shots[rel]) { await shots[rel](); await done(); }

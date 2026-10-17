@@ -30,10 +30,11 @@
 
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithEmailAndPassword, connectAuthEmulator } from "firebase/auth";
-import { getFirestore, collection, getDocs, doc, setDoc, updateDoc, deleteDoc,
+import { getFirestore, collection, getDocs, doc, setDoc, updateDoc, deleteDoc, deleteField,
          connectFirestoreEmulator } from "firebase/firestore";
 import { firebaseConfig, AUTH } from "../js/config.js";
-import { refreshAllowed, describeAllowed, lastKey } from "./allowed-list.mjs";
+import { refreshAllowed, describeAllowed, lastKey, candKey } from "./allowed-list.mjs";
+import { assignKeys } from "../js/candidates.js";
 
 const argv = process.argv.slice(2);
 const val = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : null; };
@@ -86,7 +87,21 @@ if (hits.length !== 1) {
 const cand = hits[0];
 if (cand.name === NEW_NAME) { console.log(`Already named "${NEW_NAME}". Nothing to do.`); process.exit(0); }
 
-const oldKey = lastKey(cand.name), newKey = lastKey(NEW_NAME);
+// The availability document is the applicant's own key when they share a
+// surname (availKey, set by the app), else the surname: the same rules as the
+// app's Rename (js/candidates.js renamePlan).
+const oldKey = candKey(cand);
+const keyed = candidates.map((c) => (c.id === cand.id ? { ...c, name: NEW_NAME, availKey: undefined } : c));
+if (cand.availKey && lastKey(NEW_NAME) === lastKey(cand.name)) keyed.find((c) => c.id === cand.id).availKey = cand.availKey;
+const keyPatches = assignKeys(keyed).patches;
+const newAvailKey = keyPatches[cand.id] ? keyPatches[cand.id].availKey : keyed.find((c) => c.id === cand.id).availKey;
+const newKey = newAvailKey || lastKey(NEW_NAME);
+const others = Object.keys(keyPatches).filter((id) => id !== cand.id);
+if (others.length) {
+  console.error(`This rename makes a shared surname with ${others.map((id) => candidates.find((c) => c.id === id).name).join(", ")}.`);
+  console.error(`Do it in the app instead (Screen tab, More, Rename), which separates their answers. Refusing.`);
+  process.exit(1);
+}
 const attached = screening.filter((r) => r.candId === cand.id).length + scores.filter((s) => s.candId === cand.id).length;
 
 console.log(`  ${cand.name}   ${cand.id}${cand.removed ? "  [removed]" : ""}`);
@@ -94,13 +109,14 @@ console.log(`→ ${NEW_NAME}\n`);
 console.log(`Document id is unchanged, so ${attached} doc(s) of reviewer input stay attached — nothing to migrate.`);
 
 // ----------------------------------------------------------- surname change
-const plan = [{ what: `interviews_candidates/${cand.id}`, detail: `name: "${cand.name}" → "${NEW_NAME}"` }];
+const plan = [{ what: `interviews_candidates/${cand.id}`, detail: `name: "${cand.name}" → "${NEW_NAME}"`
+  + (newAvailKey !== cand.availKey ? `, availKey: ${cand.availKey || "none"} → ${newAvailKey || "none"}` : "") }];
 let availMove = null;
 
 if (oldKey !== newKey) {
   console.log(`\nSurname key changes: "${oldKey}" → "${newKey}".`);
   // A namesake already using the new key would have their times overwritten.
-  const clash = candidates.filter((c) => c.id !== cand.id && !c.removed && lastKey(c.name) === newKey);
+  const clash = candidates.filter((c) => c.id !== cand.id && !c.removed && candKey(c) === newKey);
   if (clash.length) {
     console.log(`\n⚠  "${newKey}" is ALSO the surname key of: ${clash.map((c) => c.name).join(", ")}`);
     console.log(`   Availability is keyed by surname alone, so after this rename they would share ONE`);
@@ -127,7 +143,7 @@ if (oldKey !== newKey) {
 
 // The surname gate must move with the name, or the applicant is refused at the
 // gate ("we can't find you") until an admin next opens the app and it self-heals.
-const nextRoster = candidates.map((c) => (c.id === cand.id ? { ...c, name: NEW_NAME } : c));
+const nextRoster = candidates.map((c) => (c.id === cand.id ? { ...c, name: NEW_NAME, availKey: newAvailKey } : c));
 const gate = await refreshAllowed(db, nextRoster, { apply: false });
 if (gate.changed) console.log(`\n${describeAllowed(gate)}`);
 
@@ -138,7 +154,8 @@ if (!APPLY) { console.log(`\nRe-run with --apply to perform the rename.`); proce
 // ----------------------------------------------------------------- apply it
 let failed = 0;
 try {
-  await updateDoc(doc(db, "interviews_candidates", cand.id), { name: NEW_NAME });
+  await updateDoc(doc(db, "interviews_candidates", cand.id), { name: NEW_NAME,
+    ...(newAvailKey ? { availKey: newAvailKey } : cand.availKey ? { availKey: deleteField() } : {}) });
   console.log(`\nRenamed to "${NEW_NAME}".`);
 } catch (e) { failed++; console.error(`FAILED rename: ${e.code || e.message}`); }
 

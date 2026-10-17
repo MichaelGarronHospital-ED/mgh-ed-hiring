@@ -239,3 +239,24 @@ describe("only a real availability map can be saved", () => {
     await assertSucceeds(deleteDoc(doc(adminDb(), AV)));
   });
 });
+
+// ============================================================================
+describe("applicants who share a surname (H14)", () => {
+  // Once leadership has two Kims, each has their own key (kim-jane, kim-min) and
+  // the allowed list holds those, not plain "kim". Each writes their own
+  // document, and nobody can write under the plain surname any more.
+  test("two Kims each write their own document; neither can write under plain kim", async () => {
+    await env.withSecurityRulesDisabled(async (c) => {
+      await setDoc(doc(c.firestore(), "interviews_meta/allowed"), { keys: ["ashcombe", "kim-jane", "kim-min"] });
+    });
+    const s = applicantStore();
+    assert.equal(await s.checkName("kim"), false, "plain kim is still accepted");
+    assert.equal(await s.checkName("kim-jane"), true);
+    await s.setAvail("cand", "kim-jane", "t1", "ip");
+    assert.equal(await applicantStore().checkName("kim-min"), true);
+    await applicantStore().setAvail("cand", "kim-min", "t2", "zoom");
+    assert.deepEqual(await slotsOf("interviews_availCand/kim-jane"), { t1: "ip" });
+    assert.deepEqual(await slotsOf("interviews_availCand/kim-min"), { t2: "zoom" });
+    await assertFails(setDoc(doc(applicantDb(), "interviews_availCand/kim"), { slots: { t1: "ip" } }, { merge: true }));
+  });
+});

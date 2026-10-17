@@ -138,7 +138,9 @@ planMove("interviews_scores", scores, isEmptyScore, (s) =>
 
 // Availability is keyed by last name, so it only needs moving when the surname
 // actually changed (Young → Yung). Same surname = same doc = already correct.
-const srcKey = lastKey(src.name), dstKey = lastKey(dst.name);
+// the applicant's own key when they share a surname (availKey), else the surname
+const candKey = (c) => c.availKey || lastKey(c.name);
+const srcKey = candKey(src), dstKey = candKey(dst);
 if (srcKey !== dstKey) {
   const from = availCand.find((a) => a.id === srcKey), to = availCand.find((a) => a.id === dstKey);
   const picks = (a) => Object.keys((a && a.slots) || {}).length;

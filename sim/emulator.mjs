@@ -190,6 +190,34 @@ export const cases = {
     await closePage(p);
     return [...problems, ...log];
   },
+
+  // R4 (H14): leadership adds a second Kim; both get their own key, the allowed
+  // list follows, and each Kim books under their own document through the real
+  // rules (plain "kim" is refused).
+  async sameSurnameBooking() {
+    const problems = [], log = [];
+    await emu.seed({ "interviews_candidates/c-j": { name: "Dr Jane Kim", removed: false } });
+    const lead = await freshPage({ log });
+    await asLeadership(lead);
+    await lead.evaluate(() => { document.querySelector("#bulkAdd").value = "Dr Min Kim";
+      [...document.querySelectorAll("#screen button")].find((b) => b.textContent.trim() === "Add candidates").click(); });
+    await lead.waitForSelector("#confirmWrap:not(.hidden)", { timeout: 8000 }); await lead.click("#confirmYes");
+    const allowed = await until(async () => { const a = await emu.getDocument("interviews_meta/allowed");
+      return a && a.keys.includes("kim-jane") && a.keys.includes("kim-min") && !a.keys.includes("kim") && a; });
+    problems.push(...ok(allowed, "the allowed list didn't move to the two keys"));
+    await closePage(lead);
+    const app = await freshPage({ log });
+    await signIn(app, "guestpw"); await app.waitForSelector("#candName");
+    await app.type("#candFirst", "Jane"); await app.type("#candName", "Kim"); await app.click("#candGo");
+    await app.waitForSelector(".slotgrid", { timeout: 8000 });
+    await app.evaluate(() => { const b = [...document.querySelectorAll("button")].find((x) => (x.getAttribute("onclick") || "") === "CAND.set('t0','ip')"); b.click(); });
+    const d = await until(async () => { const x = await emu.getDocument("interviews_availCand/kim-jane"); return x && x.slots && x.slots.t0 === "ip" && x; });
+    problems.push(...ok(d, "Jane's pick didn't land under kim-jane"));
+    const plain = await emu.getDocument("interviews_availCand/kim");
+    problems.push(...ok(!plain, "something was written under plain kim"));
+    await closePage(app);
+    return [...problems, ...log.filter((l) => !l.includes("permission"))];
+  },
 };
 
 // Extra cases from later releases register here (see the files they live in).

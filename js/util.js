@@ -257,6 +257,35 @@ export function csvCell(s) { return `"${String(s ?? "").replace(/"/g, '""')}"`; 
 export const lastKey = (name) =>
   String(name || "").trim().split(/\s+/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
 
+// H14: applicants who share a surname. Titles are dropped from the front of a
+// name; the given names are what is left before the surname.
+const TITLES = new Set(["dr", "mr", "mrs", "ms", "mx", "prof", "miss"]);
+const tokKey = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+function givenTokens(name) {
+  const toks = String(name || "").trim().split(/\s+/).filter(Boolean);
+  let i = 0;
+  while (i < toks.length - 1 && TITLES.has(tokKey(toks[i]))) i++;
+  return toks.slice(i, -1).map(tokKey).filter(Boolean);
+}
+// "Dr Jane Kim" → "jane"; a name with no given name → "".
+export const firstKey = (name) => givenTokens(name)[0] || "";
+// every given name, for two applicants whose first names also match ("Jane A Kim" → "janea")
+export const givenKey = (name) => givenTokens(name).join("");
+// What an applicant TYPES in "First name": titles dropped; all words first (the
+// most specific key, "Jane B" -> "janeb"), then the first word ("jane"). The page
+// tries them in this order, so "Jane B Kim" is never booked under Jane Kim.
+export function typedFirstKeys(first) {
+  const toks = String(first || "").trim().split(/\s+/).filter(Boolean);
+  let i = 0;
+  while (i < toks.length - 1 && TITLES.has(tokKey(toks[i]))) i++;
+  const rest = toks.slice(i).map(tokKey).filter(Boolean);
+  return [...new Set([rest.join(""), rest[0] || ""])].filter(Boolean);
+}
+// The id of an applicant's availability document: their own key when they share
+// a surname (set by Leadership), else today's surname key.
+export const candKey = (c) => (c && c.availKey) || lastKey(c && c.name);
+export const dupKey = (c) => { const f = firstKey(c.name); return f ? `${lastKey(c.name)}-${f}` : lastKey(c.name); };
+
 // average of numeric values, or null.
 export function avg(nums) {
   const v = nums.filter((n) => typeof n === "number" && !isNaN(n));

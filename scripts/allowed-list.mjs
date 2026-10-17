@@ -15,8 +15,13 @@ import { doc, getDoc, setDoc } from "firebase/firestore";
 export const lastKey = (name) =>
   String(name || "").trim().split(/\s+/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
 
+// An applicant's key is their own availKey when they share a surname (set by
+// the app since Oct 2026, H14), else the surname key. Must match util.js candKey,
+// or a script run and an open leadership page would rewrite the list back and forth.
+export const candKey = (c) => (c && c.availKey) || lastKey(c && c.name);
+
 export const allowedKeysFrom = (candidates) =>
-  [...new Set(candidates.filter((c) => !c.removed).map((c) => lastKey(c.name)).filter(Boolean))].sort();
+  [...new Set(candidates.filter((c) => !c.removed).map(candKey).filter(Boolean))].sort();
 
 export async function readAllowed(db) {
   const snap = await getDoc(doc(db, "interviews_meta", "allowed"));

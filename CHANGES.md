@@ -31,6 +31,52 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## R4: applicants who share a surname; rename, merge and delete in the app (Oct 16 2026)
+
+- **Shared surnames (H14).** `util.js`: `firstKey`, `givenKey`, `typedFirstKeys`, `candKey`
+  (`availKey` when set, else `lastKey`), `dupKey`. The applicant page asks for first and last
+  name and tries the last name alone first, then last name plus first name (then every given
+  name, for two applicants whose first names also match). Adding a second applicant with an
+  existing surname gives every active member of the group their own `availKey` and says so;
+  two with the same first and last name are refused ("Add a middle initial to one of them").
+  A document saved under the plain surname is never guessed: Panels, Needs attention asks
+  "Whose are they?" (or "Not sure: ask both again"), and the move copies the whole document
+  only if the chosen applicant hasn't answered again. A pair found in live data without keys
+  gets "Give them separate answers". The allowed list holds `candKey`s.
+- **Write-loop guard checked (review M4, m4).** Normal roster edits always write at once; an
+  older tab rewriting the list is capped at 3 writes in 10 minutes with a reload message
+  (sim: two tabs with different key rules).
+- **Rename, merge, delete permanently (H5).** Screen tab, More. `js/candidates.js` plans
+  (`renamePlan`, `mergePlan` ported from `scripts/migrate-candidate.mjs` but copying the whole
+  availability document, `deletePlan`), applied by `store.applyPlan` (one batch under 450
+  operations, otherwise copies-before-deletes chunks). Merge has a dry-run preview and
+  "Download backup and merge"; delete needs the typed surname. History entries hold no names.
+  The yellow "saved entries nobody can see" box now has "Move these to ..." and "Delete
+  permanently" buttons instead of a terminal command.
+- **Scripts.** `allowed-list.mjs` uses `availKey` (same rule as the app, so a script run can't
+  fight an open page); `sync-allowed.mjs` and `report-data.mjs --issues` stop flagging pairs
+  that have keys; `scripts/README.md` says the app does all three now.
+
+- **Review fixes:** the applicant page tries the most specific first-name key first (all given
+  names, then the first one), so "Jane B Kim" is found as herself and never booked under Jane
+  Kim (`tests/keys.test.mjs`). The maintenance scripts use the applicant's own key when they
+  share a surname (`availKey`), like the app: `report-data`, `purge-candidate` and
+  `migrate-candidate` read and move the right document, and `rename-candidate` recomputes
+  `availKey` the way the app's Rename does (and refuses, pointing to the app, when a rename
+  would create a new shared surname).
+  The local (sim) store also listens to the storage event, as from R5 (a channel message can
+  arrive before the other tab's write is visible), and the two-tab sim answers from the
+  storage event too, with the newer tab in front.
+  Final review: when two applicants share both surname and first name (Jane Kim, Jane B Kim),
+  Leadership's same-surname note says the second must type "Jane B" exactly (`typeExactly`,
+  `tests/keys.test.mjs`); the four-edits sim waits up to 5 seconds for the list.
+
+Tests: `tests/keys.test.mjs`, `tests/candidates.test.mjs` (the remove-and-re-add fixture from
+`scripts/seed-migration.mjs`), `applicant-availability` two-Kims case; `sim/applicants.mjs`
+(7 scenarios); emulator `sameSurnameBooking`. Checked: see the release commit message.
+
+---
+
 ## R3: stages, deadlines, the schedule lock, leadership decides the list (Oct 16 2026)
 
 - **Round stages (H4).** `js/stages.js`; Setup, Round stages: Close screening, availability,

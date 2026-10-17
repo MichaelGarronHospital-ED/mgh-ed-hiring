@@ -27,7 +27,7 @@ import { initializeApp } from "firebase/app";
 import { getAuth, signInWithEmailAndPassword, connectAuthEmulator } from "firebase/auth";
 import { getFirestore, collection, getDocs, doc, getDoc, setDoc, connectFirestoreEmulator } from "firebase/firestore";
 import { firebaseConfig, AUTH } from "../js/config.js";
-import { lastKey } from "./allowed-list.mjs";
+import { lastKey, allowedKeysFrom } from "./allowed-list.mjs";
 
 const argv = process.argv.slice(2);
 const APPLY = argv.includes("--apply"), CHECK = argv.includes("--check");
@@ -50,7 +50,7 @@ if (process.env.ED_IV_EMULATOR) {
 
 const candidates = (await getDocs(collection(db, "interviews_candidates"))).docs.map((d) => ({ id: d.id, ...d.data() }));
 const live = candidates.filter((c) => !c.removed);
-const want = [...new Set(live.map((c) => lastKey(c.name)).filter(Boolean))].sort();
+const want = allowedKeysFrom(candidates);
 
 const snap = await getDoc(doc(db, "interviews_meta", "allowed"));
 const have = snap.exists() && Array.isArray(snap.data().keys) ? [...snap.data().keys].sort() : null;
@@ -61,12 +61,13 @@ console.log(`\nRoster: ${live.length} active candidate(s) → ${want.length} dis
 // second to submit overwrites the first. The allowed list cannot express that;
 // it has to be caught by a human.
 const counts = new Map();
-for (const c of live) { const k = lastKey(c.name); counts.set(k, [...(counts.get(k) || []), c.name]); }
+// applicants with their own availKey (set by the app) are already separated
+for (const c of live) { if (c.availKey) continue; const k = lastKey(c.name); counts.set(k, [...(counts.get(k) || []), c.name]); }
 const dupes = [...counts].filter(([, n]) => n.length > 1);
 if (dupes.length) {
   console.log(`\n⚠  Duplicate surname key(s) — these applicants SHARE one availability document:`);
   for (const [k, names] of dupes) console.log(`     "${k}": ${names.join(", ")}`);
-  console.log(`   Whoever submits last overwrites the other. Fix before sending the applicant link.`);
+  console.log(`   Whoever submits last overwrites the other. In the app: Panels, Needs attention, "Give them separate answers".`);
 }
 
 if (have === null) {
