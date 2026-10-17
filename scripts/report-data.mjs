@@ -19,7 +19,7 @@
 //    --issues   only the things that need attention: stale entries, duplicate
 //               surnames, availability that matches no candidate, empty docs.
 //
-//  Admin is required: firestore.rules lets only admin@ed-hiring.app READ
+//  Admin is required: firestore.rules lets only admin@mgh-ed-hiring.invalid READ
 //  screening and scores (that is what keeps the ranking private from
 //  reviewers), so the committee code will not work here.
 // ============================================================================

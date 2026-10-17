@@ -32,7 +32,7 @@ const STUB = {
   // the real SDK, so a reload can resume from it; passwords are the sim's three.
   "firebase-auth.js": `
     const log = (e) => { const a = JSON.parse(localStorage.getItem("__authlog") || "[]"); a.push(e); localStorage.setItem("__authlog", JSON.stringify(a)); };
-    const PW = { "admin@ed-hiring.app": "adminpw", "committee@ed-hiring.app": "staffpw", "applicant@ed-hiring.app": "guestpw" };
+    const PW = { "admin@mgh-ed-hiring.invalid": "adminpw", "committee@mgh-ed-hiring.invalid": "staffpw", "applicant@mgh-ed-hiring.invalid": "guestpw" };
     // the accounts' uids (the same as js/config.js): a role is known by uid (R7c)
     const UID = ${JSON.stringify(UID_BY_EMAIL)};
     export const browserSessionPersistence = { type: "SESSION" };
@@ -131,7 +131,7 @@ try {
     await pickMember(p, "Vojdani");
     let a = await authLog(p);
     R("ED: session-only persistence set before signing in, ED tried first",
-      a.join() === "persist:SESSION,signIn:committee@ed-hiring.app", a.join());
+      a.join() === "persist:SESSION,signIn:committee@mgh-ed-hiring.invalid", a.join());
     R("ED: the password is not kept in sessionStorage", !(await p.evaluate(() => JSON.stringify(sessionStorage)).then((t) => t.includes("staffpw"))));
 
     await reloaded(p, () => p.reload());
@@ -152,7 +152,7 @@ try {
     await landAsAdmin(p);
     let a = await authLog(p);
     R("Leadership on a new browser: ED and Guest refuse, then Leadership",
-      a.join() === "persist:SESSION,refused:committee@ed-hiring.app,refused:applicant@ed-hiring.app,signIn:admin@ed-hiring.app", a.join());
+      a.join() === "persist:SESSION,refused:committee@mgh-ed-hiring.invalid,refused:applicant@mgh-ed-hiring.invalid,signIn:admin@mgh-ed-hiring.invalid", a.join());
     await reloaded(p, () => p.click("#logout"));
     a = await authLog(p);
     R("Leadership: signs out on Log out", a[a.length - 1] === "signOut" && (await gateShown(p)), a.join());
@@ -161,7 +161,7 @@ try {
     await landAsAdmin(p);
     a = await authLog(p);
     R("Leadership again on the same browser: the remembered role first, nothing refused",
-      a.join() === "persist:SESSION,signIn:admin@ed-hiring.app", a.join());
+      a.join() === "persist:SESSION,signIn:admin@mgh-ed-hiring.invalid", a.join());
     await p.close(); }
 
   // ---- Guest password (applicant) -----------------------------------------
@@ -169,7 +169,7 @@ try {
     await signIn(p, "guestpw");
     await p.waitForSelector("#candview:not(.hidden)");
     let a = await authLog(p);
-    R("Guest on an applicant link: Guest tried first", a.join() === "persist:SESSION,signIn:applicant@ed-hiring.app", a.join());
+    R("Guest on an applicant link: Guest tried first", a.join() === "persist:SESSION,signIn:applicant@mgh-ed-hiring.invalid", a.join());
     await reloaded(p, () => p.evaluate(() => window.CAND.logout()));
     a = await authLog(p);
     R("Guest: Log out signs out", a[a.length - 1] === "signOut" && (await gateShown(p)), a.join());
@@ -209,10 +209,10 @@ try {
   { const p = await page();
     await signIn(p, "adminpw");
     await landAsAdmin(p);
-    await p.evaluate(() => window.__stubChangeEmail("admin@mgh-ed-hiring.invalid"));
+    await p.evaluate(() => window.__stubChangeEmail("admin@ed-hiring.app"));   // R7d: back to the old one (a rollback)
     await reloaded(p, () => p.reload());
     const a = await authLog(p);
-    R("signed in, email changed, reload: still in, same role (known by uid)",
+    R("signed in, email changed (here: back, as a rollback would), reload: still in, same role (known by uid)",
       !(await gateShown(p)) && (await p.$eval("#whoLine", (e) => e.textContent.trim())) === "Admin" && a.filter((x) => x.startsWith("signIn")).length === 1, a.join());
     await p.close(); }
 
@@ -232,7 +232,7 @@ try {
     await pickMember(p, "Vojdani");
     const a = await authLog(p);
     R("sessionStorage blocked: memory-only persistence, still signs in",
-      a.join() === "persist:NONE,signIn:committee@ed-hiring.app", a.join());
+      a.join() === "persist:NONE,signIn:committee@mgh-ed-hiring.invalid", a.join());
     await p.close(); }
 } finally {
   await b.close(); site.close();

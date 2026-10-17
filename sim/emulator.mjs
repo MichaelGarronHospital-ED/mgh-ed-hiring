@@ -68,8 +68,9 @@ export const nextDownload = (page, act) => page.evaluate((act) => new Promise((r
 const history = async () => Object.values(await emu.listCollection("interviews_history"));
 
 // R7c: the emails the accounts move FROM and TO in emailChangeKeepsSessions (R7d swaps them: a rollback)
-const FROM = { admin: "admin@ed-hiring.app", committee: "committee@ed-hiring.app", applicant: "applicant@ed-hiring.app" };
-const TO = { admin: "admin@mgh-ed-hiring.invalid", committee: "committee@mgh-ed-hiring.invalid", applicant: "applicant@mgh-ed-hiring.invalid" };
+// R7d: the accounts have the new emails; the change here goes back (what --undo would do in a rollback)
+const FROM = { admin: "admin@mgh-ed-hiring.invalid", committee: "committee@mgh-ed-hiring.invalid", applicant: "applicant@mgh-ed-hiring.invalid" };
+const TO = { admin: "admin@ed-hiring.app", committee: "committee@ed-hiring.app", applicant: "applicant@ed-hiring.app" };
 export const cases = {
   // R7c (Phase A): a role is known by uid, never by email.
   // (1) Signed in as each role, the account's email is changed by the admin API

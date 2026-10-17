@@ -4,9 +4,9 @@
 //
 //  Since R7 there is one test, the same one the page makes: which role account
 //  accepts the password? The page tries ED (committee@), Guest (applicant@) and
-//  Leadership (admin@ed-hiring.app); this script tries all three and says which
+//  Leadership (admin@mgh-ed-hiring.invalid); this script tries all three and says which
 //  accepted it, or why none did. With --voting it also tries Motion Voting's
-//  two accounts (ed@ and leadership@ed-motion-voting.app), which Setup,
+//  two accounts (ed@ and leadership@mgh-ed-voting.invalid), which Setup,
 //  the ED tools passwords page (passwords.html) keeps on the same values.
 //
 //  READ ONLY. It reads no documents and writes nothing; it only attempts

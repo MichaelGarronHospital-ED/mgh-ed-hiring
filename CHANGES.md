@@ -24,6 +24,22 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## R7d: sign in with the .invalid emails (merged IN the window, right after migrate-emails.py --apply)
+
+- `js/config.js`: `AUTH` and `PARTNERS.voting` sign-in emails are the new ones
+  (`admin@`, `committee@`, `applicant@mgh-ed-hiring.invalid`; `leadership@`, `ed@mgh-ed-voting.invalid`).
+  Nothing else: the rules and the pages already know every role by uid (R7c).
+- Between `--apply` and this page being live (about a minute) a fresh hiring sign-in fails.
+- Version `R7d`. If R8 has shipped by the window, the same one-line change is "R8b" on top of R8.
+
+Tests: every rules test signs in with the new emails; the sims make the accounts with them; the
+email-change cases (`emailChangeKeepsSessions`, `sim/auth.mjs`, `sim/passwords.mjs`) now change
+the email BACK (what `--undo` would do in a rollback): an old page signed in under the other
+email still knows the role, and a fresh sign-in with an email the accounts no longer have says
+Incorrect password.
+
+---
+
 ## R7c: roles known by uid, ahead of the account emails moving to .invalid (Oct 17 2026)
 
 Phase A of the passwords design. The account emails (`admin@ed-hiring.app` and so on) are on a

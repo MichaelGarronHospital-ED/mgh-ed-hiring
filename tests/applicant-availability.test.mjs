@@ -22,9 +22,9 @@ import { FirestoreStore } from "../js/store.js";
 import { UID, pw } from "./helpers/identities.mjs";
 
 let env;
-const applicantDb = () => env.authenticatedContext(UID.applicant, pw("applicant@ed-hiring.app")).firestore();
-const adminDb = () => env.authenticatedContext(UID.admin, pw("admin@ed-hiring.app")).firestore();
-const committeeDb = () => env.authenticatedContext(UID.committee, pw("committee@ed-hiring.app")).firestore();
+const applicantDb = () => env.authenticatedContext(UID.applicant, pw("applicant@mgh-ed-hiring.invalid")).firestore();
+const adminDb = () => env.authenticatedContext(UID.admin, pw("admin@mgh-ed-hiring.invalid")).firestore();
+const committeeDb = () => env.authenticatedContext(UID.committee, pw("committee@mgh-ed-hiring.invalid")).firestore();
 const AV = "interviews_availCand/ashcombe";
 
 // The store as the applicant page builds it, minus the listeners: applicants

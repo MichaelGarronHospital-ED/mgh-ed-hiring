@@ -8,32 +8,32 @@
 //  enforced by the Firestore rules (see config.js and firestore.rules).
 // ============================================================================
 import { firebaseConfig, ORG_NAME, CHAIR, COMMITTEE, SLOTS, ONEDRIVE,
-         LOCAL_CODES, AUTH, SCREENING_DEADLINE } from "./config.js?v=R7c";
-import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R7c";
-import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R7c";
-import { autoPanels, buildPanel } from "./panels.js?v=R7c";
+         LOCAL_CODES, AUTH, SCREENING_DEADLINE } from "./config.js?v=R7d";
+import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R7d";
+import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R7d";
+import { autoPanels, buildPanel } from "./panels.js?v=R7d";
 import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell, lastKey,
-         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R7c";
-import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R7c";
+         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R7d";
+import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R7d";
 import { effectiveSlots, slotLabel, slotTimeLabel, groupByDate, checkSlot, splitRange, responseCounts,
-         newSlotId, isStructured, fmtDate } from "./slots.js?v=R7c";
+         newSlotId, isStructured, fmtDate } from "./slots.js?v=R7d";
 import { normalizeCommittee, interviewers as interviewersOf, pickable as pickableOf, memberName, memberStatus,
-         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R7c";
+         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R7d";
 import { fromLegacy, normalizeQuestions, liveQuestions, idsWithNotes, scoringStarted, checkEdit, newQuestionId,
-         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R7c";
+         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R7d";
 import { entry as hEntry, newHistoryId, panelUndo, shortlistUndo, screeningUndo, canUndo, undoneIds, textFor, whoFor, whenFor,
-         hashOf, toDate } from "./history.js?v=R7c";
-import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R7c";
-import { createRounds, pageId } from "./rounds.js?v=R7c";
-import { icsEvent, icsCalendar } from "./ics.js?v=R7c";
-import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R7c";
+         hashOf, toDate } from "./history.js?v=R7d";
+import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R7d";
+import { createRounds, pageId } from "./rounds.js?v=R7d";
+import { icsEvent, icsCalendar } from "./ics.js?v=R7d";
+import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R7d";
 import { STAGES, STAGE_WORD, stageOpen, stageClosedAt, roundOpen, bookingFor, thresholdOf, isOnList, closePlan, reopenPlan,
-         lockEntry } from "./stages.js?v=R7c";
+         lockEntry } from "./stages.js?v=R7d";
 
 // The release this page is. Must equal version.json and every "?v=" in every
 // import (tests/versions.test.mjs). A page that sees a different version.json
 // was updated underneath it (section "Reload notice" below).
-const RELEASE = "R7c";
+const RELEASE = "R7d";
 
 // Interview questions (H2): the saved document (interviews_meta/questions).
 // Since R7 there is no other source: the old encrypted js/data.js is no longer

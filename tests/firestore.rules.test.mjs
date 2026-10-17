@@ -42,9 +42,9 @@ beforeEach(async () => { await testEnv.clearFirestore(); });
 // (tests/helpers/identities.mjs, from AUTH.uids in js/config.js); the email is
 // still the one the account has today. tests/uids.test.mjs keeps the uids in
 // the rules and in the config equal.
-const admin     = () => testEnv.authenticatedContext(UID.admin, pw("admin@ed-hiring.app")).firestore();
-const committee = () => testEnv.authenticatedContext(UID.committee, pw("committee@ed-hiring.app")).firestore();
-const applicant = () => testEnv.authenticatedContext(UID.applicant, pw("applicant@ed-hiring.app")).firestore();
+const admin     = () => testEnv.authenticatedContext(UID.admin, pw("admin@mgh-ed-hiring.invalid")).firestore();
+const committee = () => testEnv.authenticatedContext(UID.committee, pw("committee@mgh-ed-hiring.invalid")).firestore();
+const applicant = () => testEnv.authenticatedContext(UID.applicant, pw("applicant@mgh-ed-hiring.invalid")).firestore();
 // someone with a valid Firebase account that isn't one of the three roles
 const stranger  = () => testEnv.authenticatedContext("u-stranger",  { email: "someone@example.com" }).firestore();
 // an Anonymous sign-in: authenticated, but the token carries no email at all.
@@ -458,7 +458,7 @@ describe("KNOWN LIMITATIONS — asserted so that changing them is deliberate", (
 
   it("reviewers share one account, so rules cannot tell reviewer A from B", async () => {
     // A reviewer submits under whatever name they picked at the "Who are you?"
-    // screen; the rules only see committee@ed-hiring.app. So one reviewer can
+    // screen; the rules only see committee@mgh-ed-hiring.invalid. So one reviewer can
     // overwrite another's score. Per-member enforcement would need per-member
     // accounts or custom claims. This is the main residual risk in the model.
     await seed("interviews_scores/Marrocco~c-1", { member: "Marrocco", overall: 5 });

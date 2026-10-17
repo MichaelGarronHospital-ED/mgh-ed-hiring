@@ -24,7 +24,7 @@
 //    auth.close(session)            -> void
 // ============================================================================
 
-import { AUTH, PARTNERS } from "./config.js?v=R7c";
+import { AUTH, PARTNERS } from "./config.js?v=R7d";
 
 export const ROLES = Object.freeze(["leadership", "ed", "guest"]);
 export const ROLE_WORD = Object.freeze({ leadership: "Leadership", ed: "ED", guest: "Guest" });
