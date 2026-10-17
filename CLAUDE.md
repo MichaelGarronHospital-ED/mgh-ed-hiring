@@ -113,7 +113,7 @@ Full design and reference data (committee, candidates, questions, rules) live in
   `browserSessionPersistence` (memory only if sessionStorage is blocked) before the first
   attempt; a reload in the same tab resumes from it (`resume()`, `auth.authStateReady()`),
   and a sign-in that ends while the page is open returns to the gate with "You were signed
-  out, probably because a password changed." Both Log out buttons call `logOut()`, which
+  out. Please sign in again." Both Log out buttons call `logOut()`, which
   signs out before reloading. Firebase's default kept the sign-in in the browser for good and
   let a second tab switch the first tab's account. Pinned by `sim/auth.mjs`.
 - **Admin signs in with no name; `ui.member` can be `null`.** The admin code
