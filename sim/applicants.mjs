@@ -179,7 +179,9 @@ const scenarios = {
         [...document.querySelectorAll("#screen button")].find((b) => b.textContent.trim() === "Add candidates").click(); }, nm);
       await sleep(250);
     }
-    const st = await dumpState(page);
+    // the list is written within a couple of seconds (gathered, at most 2 s): poll for it
+    let st = await dumpState(page);
+    for (let i = 0; i < 20 && !(st.allowedNames && st.allowedNames.includes("lindqvist") && st.allowedNames.includes("trelawney")); i++) { await sleep(250); st = await dumpState(page); }
     problems.push(...ok(st.allowedNames && st.allowedNames.includes("lindqvist") && st.allowedNames.includes("trelawney"), `allowed: ${st.allowedNames}`));
     const line = await page.$eval("#updateLine", (e) => (e.classList.contains("hidden") ? "" : e.textContent));
     problems.push(...ok(!line, `a held-back message appeared for normal edits: ${line}`));

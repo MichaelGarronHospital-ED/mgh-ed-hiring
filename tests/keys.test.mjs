@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { lastKey, firstKey, givenKey, typedFirstKeys, candKey, dupKey } from "../js/util.js";
-import { assignKeys, sharedDocs, sharedSurnameText, claimPlan } from "../js/candidates.js";
+import { assignKeys, sharedDocs, sharedSurnameText, claimPlan, typeExactly } from "../js/candidates.js";
 
 test("firstKey and givenKey drop titles and use the same normalising as lastKey", () => {
   assert.equal(firstKey("Dr Jane Kim"), "jane");
@@ -75,4 +75,13 @@ test("Jane B Kim is found as herself, never as Jane Kim", () => {
   assert.equal(find("Jane B", "Kim"), "kim-janeb");
   assert.equal(find("Dr Jane B.", "Kim"), "kim-janeb");
   assert.equal(find("Jane", "Kim"), "kim-jane");
+});
+
+test("Jane B Kim beside Jane Kim must type \"Jane B\"; Leadership is told so", () => {
+  const g = [{ id: "a", name: "Dr Jane Kim" }, { id: "b", name: "Dr Jane B Kim" }, { id: "c", name: "Dr Min Kim" }];
+  assert.equal(typeExactly(g, g[1]), "Jane B");
+  assert.equal(typeExactly(g, g[0]), null);
+  assert.equal(typeExactly(g, g[2]), null);
+  assert.match(sharedSurnameText(g, "kim"), /Jane B Kim must type the first name exactly as "Jane B"/);
+  assert.doesNotMatch(sharedSurnameText([g[0], g[2]], "kim"), /exactly/);
 });

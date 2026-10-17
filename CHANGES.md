@@ -60,6 +60,9 @@ the three role-account sign-ins (see the console steps in README).
   The local (sim) store also listens to the storage event, as from R5 (a channel message can
   arrive before the other tab's write is visible), and the two-tab sim answers from the
   storage event too, with the newer tab in front.
+  Final review: when two applicants share both surname and first name (Jane Kim, Jane B Kim),
+  Leadership's same-surname note says the second must type "Jane B" exactly (`typeExactly`,
+  `tests/keys.test.mjs`); the four-edits sim waits up to 5 seconds for the list.
 
 Tests: `tests/keys.test.mjs`, `tests/candidates.test.mjs` (the remove-and-re-add fixture from
 `scripts/seed-migration.mjs`), `applicant-availability` two-Kims case; `sim/applicants.mjs`

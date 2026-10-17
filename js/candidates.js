@@ -47,12 +47,25 @@ export function assignKeys(cands) {
 }
 
 // The H14 add or rename message, or null when nobody shares the surname.
+// What an applicant must type as their first name when another applicant has
+// the same surname AND the same first name ("Jane B" for Jane B Kim beside Jane
+// Kim): typing only "Jane" would find Jane Kim. null when the first name alone
+// is enough (review).
+export function typeExactly(cands, c) {
+  if (!c) return null;
+  const same = (cands || []).filter((x) => !x.removed && x.id !== c.id && lastKey(x.name) === lastKey(c.name) && firstKey(x.name) === firstKey(c.name));
+  if (!same.length || givenKey(c.name) === firstKey(c.name)) return null;
+  const parts = display(c.name).trim().split(/\s+/);
+  return parts.slice(0, -1).join(" ");
+}
 export function sharedSurnameText(cands, key) {
   const g = (cands || []).filter((c) => !c.removed && lastKey(c.name) === key);
   if (g.length < 2) return null;
   const names = g.map((c) => display(c.name));
+  const exact = g.map((c) => [c, typeExactly(g, c)]).filter(([, t]) => t)
+    .map(([c, t]) => ` ${display(c.name)} must type the first name exactly as "${t}" (with the middle name or initial), or the page will take them for someone else. Tell them when you send the link.`);
   return `${g.length === 2 ? "Two" : g.length} applicants have the last name ${surname(g[0].name)}: ${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}. `
-    + "When booking, they will be asked for their first name too, so their answers stay separate.";
+    + "When booking, they will be asked for their first name too, so their answers stay separate." + exact.join("");
 }
 
 // Surname-only documents that might belong to any of several applicants
