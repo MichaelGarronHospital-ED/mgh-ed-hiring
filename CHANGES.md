@@ -110,7 +110,7 @@ pinned uids (`sim/emu.mjs`); NEW emulator case `emailChangeKeepsSessions`: (1) s
 each role, the email changed by the admin API, reload: in as the same role or at the sign-in box,
 never another role; (2) an old cached page (old emails in its config) with the account signed in
 under its new email: reload, still in, same role (a page deciding by email fails this); (3) a
-fresh sign-in with the old emails says Incorrect password. `sim/auth.mjs` (a stub that keeps the
+fresh sign-in across the switch is `signInAcrossTheSwitch`. `sim/auth.mjs` (a stub that keeps the
 session: signed in, email changed, reload, still in) and `sim/passwords.mjs` (the passwords page,
 as (2)).
 
