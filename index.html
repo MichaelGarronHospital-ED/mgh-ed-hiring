@@ -12,7 +12,7 @@
 <body>
 <!-- login gate: the ED, Leadership or Guest password; the role is whichever account accepts it (R7) -->
 <div id="gate" class="overlay" role="dialog" aria-modal="true" aria-labelledby="gateTitle">
-  <div class="overlay-box">
+  <div class="overlay-box" role="main">
     <div class="logo" aria-hidden="true">ED</div>
     <h2 id="gateTitle">Physician Hiring</h2>
     <p class="muted">Enter your password to continue.</p>
@@ -27,9 +27,9 @@
 
 <!-- pick your name (committee identity) -->
 <div id="memberpick" class="overlay hidden">
-  <div class="overlay-box">
+  <div class="overlay-box" role="main" aria-labelledby="pickTitle">
     <div class="logo" aria-hidden="true">ED</div>
-    <h2>Who are you?</h2>
+    <h2 id="pickTitle">Who are you?</h2>
     <p class="muted">Pick your name so your input is saved to you.</p>
     <div id="roleLine" class="note"></div>
     <select id="memberSel" aria-label="Your name"></select>
@@ -40,7 +40,7 @@
 </div>
 
 <!-- candidate self-scheduling (same link, Guest password) -->
-<div id="candview" class="hidden"></div>
+<div id="candview" class="hidden" role="main"></div>
 
 <header id="appHeader" class="hidden">
   <div class="brandrow">
@@ -59,9 +59,11 @@
   </div>
 </header>
 
+<div role="region" aria-label="Notices">
 <div id="banner" class="banner hidden" aria-live="polite"></div>
 <div id="updateLine" class="updline hidden" role="status" aria-live="polite"></div>
 <div id="roundLine" class="updline roundline hidden" role="status" aria-live="polite"></div>
+</div>
 
 <nav id="tabs" class="tabs hidden" role="tablist" aria-label="Hiring stages"></nav>
 

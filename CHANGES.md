@@ -39,6 +39,11 @@ the three role-account sign-ins (see the console steps in README).
 - **Before deploying:** R7 live for a week, and Alvin has signed in with each of the three
   passwords and run "Change a password" to the Check step. **Never roll the page back past R7
   after a password has been changed in the app** (pre-R7 pages decide the role by decrypting).
+- **Review fixes (deployability pass, small things that were already there):** every screen
+  has a landmark (the sign-in box, the name picker and the applicant page are main regions; the
+  notice lines are one region), both availability grids are a labelled region you can reach
+  with the keyboard and scroll sideways, the Ranking tab's headings go in order, and on a phone
+  each committee row is one line (name, what they do) with "Details" for the rest.
 
 Tests: as R7, plus the new versions check. Checked: see the release commit message.
 

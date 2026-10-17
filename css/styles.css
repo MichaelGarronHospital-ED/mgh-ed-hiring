@@ -660,7 +660,7 @@ td.adj { font-variant-numeric:tabular-nums; color:var(--ed-ink-2); }
 .pickhint { margin:8px 0 0; text-align:left; }
 .mlist .mrow { padding:12px 0; border-top:1px solid var(--ed-line-soft); display:grid; gap:8px; }
 .mlist .mrow:first-child { border-top:none; padding-top:4px; }
-.mlist .mrow.left > input[type=text] { color:var(--ed-ink-2); }
+.mlist .mrow.left input[type=text] { color:var(--ed-ink-2); }
 .mopts { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
 .mopts .seg button { min-height:36px; }
 .mopts .mg { display:inline-flex; align-items:center; gap:6px; }
@@ -762,6 +762,17 @@ body.closing-elsewhere #app, body.closing-elsewhere #settings { opacity:.6; }
 .pwdrift summary::before { content:""; width:6px; height:6px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(-45deg); transition:transform .15s; }
 .pwdrift[open] summary::before { transform:rotate(45deg); }
 #pwNote { width:100%; font:inherit; font-size:var(--ed-text-sm); resize:vertical; }
+
+/* ---- committee rows: one line on a phone until "Details" (review) ---------- */
+.mrow .mhead { display:flex; gap:8px; align-items:center; }
+.mrow .mhead input { flex:1; min-width:0; }
+.mrow .mtoggle, .mrow .msum { display:none; }
+.h3size { font-size:var(--ed-h3); font-weight:700; }
+@media (max-width:640px) {
+  .mrow .mtoggle { display:inline-flex; min-height:40px; align-items:center; flex:none; }
+  .mrow .msum { display:block; margin-top:-4px; }
+  .mrow:not(.open) .mopts, .mrow:not(.open) input[type=email], .mrow:not(.open) > .linky.danger { display:none; }
+}
 
 /* ---- mobile field sizing: MUST STAY LAST ---------------------------------
    iOS Safari zooms the whole page whenever a focused field's text is smaller

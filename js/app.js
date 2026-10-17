@@ -1107,7 +1107,7 @@ function availGrid() {
     <span><i class="sw either">E</i> either</span><span><i class="sw no"></i> not available</span>
     <span class="muted small">★ chair · hover any square for the name</span></div>`;
 
-  return `<div class="gridwrap"><table class="avgrid"><thead>${head}</thead><tbody>${body}</tbody></table></div>${legend}`;
+  return `<div class="gridwrap" tabindex="0" role="region" aria-label="Interviewer availability (scrolls sideways)"><table class="avgrid"><thead>${head}</thead><tbody>${body}</tbody></table></div>${legend}`;
 }
 
 // ------------------------------------- applicant availability at a glance
@@ -1217,7 +1217,7 @@ function candGrid() {
     <span class="muted small">hover any square for the name</span></div>`;
 
   return `${capacity}
-    <div class="gridwrap"><table class="avgrid demand"><thead>${head}</thead><tbody>${body}${foot}</tbody></table></div>${legend}`;
+    <div class="gridwrap" tabindex="0" role="region" aria-label="Applicant availability (scrolls sideways)"><table class="avgrid demand"><thead>${head}</thead><tbody>${body}${foot}</tbody></table></div>${legend}`;
 }
 
 // ------------------------------------------------------ 2 · Availability
@@ -2001,7 +2001,7 @@ function offersSection(rows) {
       </div>
     </div>`;
   }).join("");
-  return `<h3 class="sechead">Offers</h3>
+  return `<h2 class="sechead">Offers</h2>
     <p class="hint">Record each offer as you make it, then the answer. Only admins can see this.</p>
     <div class="ofsummary">${summary}</div>
     <div class="card flush list">${body || empty(ICON.mail, "No candidates yet", "Candidates appear here once they are on the list.")}</div>`;
@@ -2015,7 +2015,7 @@ function offersSection(rows) {
 function backupCard() {
   return `<div class="card backup">
     <div class="row center">
-      <div class="grow"><h3 style="margin:0 0 .2rem">Back up this hiring cycle</h3>
+      <div class="grow"><h2 class="h3size" style="margin:0 0 .2rem">Back up this hiring cycle</h2>
         <p class="small muted" style="margin:0">Everything in this round, read fresh from the database. The backup file can be
           loaded back into the tool; the Excel file is for reading. Save both with the CVs on OneDrive; the site is the
           working copy, not the record.</p></div>
@@ -2193,8 +2193,13 @@ function committeeEditor() {
     `<button type="button" class="${cur === v ? "on" : ""}" aria-pressed="${cur === v}" onclick="IV.mSet(${i},'${field}','${v}')">${escapeHtml(l)}</button>`).join("")}</span>`;
   const body = rows.map((m, i) => {
     const saved = hasInput(S, m.id), isChair = m.id === chair;
-    return `<div class="mrow${m.active ? "" : " left"}">
-      <input id="mName-${i}" type="text" value="${escapeHtml(m.name)}" aria-label="Name" oninput="IV.mSet(${i},'name',this.value,true)"/>
+    // on a phone a row is one line (name, what they do) until "Details" opens it
+    const sum = [m.role === "interviewer" ? `Interviews${m.gender ? ", " + m.gender : ""}` : "Screens only", m.active ? "" : "left"].filter(Boolean).join(", ");
+    const open = !!(ui.mOpen && ui.mOpen[i]);
+    return `<div class="mrow${m.active ? "" : " left"}${open ? " open" : ""}">
+      <div class="mhead"><input id="mName-${i}" type="text" value="${escapeHtml(m.name)}" aria-label="Name" oninput="IV.mSet(${i},'name',this.value,true)"/>
+        <button type="button" class="linky small mtoggle" aria-expanded="${open}" onclick="IV.mToggle(${i})">${open ? "Less" : "Details"}</button></div>
+      <span class="msum small muted">${escapeHtml(sum)}</span>
       <div class="mopts">
         ${seg(i, "role", [["interviewer", "Interviews and screens"], ["screener", "Screens only"]], m.role, "Does")}
         ${m.role === "interviewer" ? `<span class="mg">${seg(i, "gender", [["F", "F"], ["M", "M"]], m.gender, "Gender")}${infoIcon("Self-identified. Used only to build balanced panels. Never shown as a label.")}</span>` : ""}
@@ -3044,6 +3049,7 @@ let pendingWrites = 0;
 function track(promise) { pendingWrites++; return Promise.resolve(promise).finally(() => { pendingWrites--; }); }
 const unconfirmed = () => pendingWrites > 0 || Object.keys(inflight).length > 0;
 window.IV = {
+  mToggle: (i) => { ui.mOpen = ui.mOpen || {}; ui.mOpen[i] = !ui.mOpen[i]; rerenderSettings(); },
   changePasswords: (resuming) => changePasswords(!!resuming),
   pwShow: (id, btn) => { const el = document.getElementById(id); if (!el) return; const show = el.type === "password"; el.type = show ? "text" : "password"; btn.textContent = show ? "Hide" : "Show"; },
   toggleFlag: (id) => { if (!isOpen("screening")) return; const cur = (S.screening[key(ui.member, id)] || {}).flag; saved(store.setScreening(ui.member, id, { flag: !cur, reason: cur ? "" : (S.screening[key(ui.member, id)] || {}).reason || "" }), "screening"); },
