@@ -41,6 +41,9 @@ npm test
 
 `npm test` starts the emulator, runs the suite against it, and shuts it down.
 
+GitHub Actions runs this and `../sim` on every push and pull request
+(`../.github/workflows/tests.yml`).
+
 **Last run: Oct 16 2026 (rules v2): 190 tests, 190 pass.** The 109 from before v2 run
 unchanged, which is the proof the page that was live before v2 still works;
 [`rules-v2.test.mjs`](rules-v2.test.mjs) adds 81 for stages, the round close, the
