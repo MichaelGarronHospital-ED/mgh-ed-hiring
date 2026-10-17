@@ -20,10 +20,10 @@
 // ============================================================================
 
 import { buildBackup, chunkBytes, unchunk, parseBackup, CLEAR_COLLECTIONS, canonical, encodeValue, utf8Length,
-         FORMAT, VERSION, docHash } from "./backup.js?v=R7b";
-import { entry as hEntry } from "./history.js?v=R7b";
-import { escapeHtml, flowDialog, toast, ss } from "./util.js?v=R7b";
-import { bookingFor } from "./stages.js?v=R7b";
+         FORMAT, VERSION, docHash } from "./backup.js?v=R7c";
+import { entry as hEntry } from "./history.js?v=R7c";
+import { escapeHtml, flowDialog, toast, ss } from "./util.js?v=R7c";
+import { bookingFor } from "./stages.js?v=R7c";
 
 export const TIMING = { renewMs: 30000, staleMs: 5 * 60000, idleMs: 30 * 60000, lateMs: 2 * 60000, progressMs: 30000,
   keptMax: 200, chunk: 450, partBytes: 900000, keptHistoryBytes: 400000 };

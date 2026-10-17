@@ -2,9 +2,21 @@ rules_version = '2';
 // ============================================================================
 //  Hardened rules for the interviews tool — the "roles" security model.
 //
-//  Three Firebase Auth email/password "role accounts" (created in the console;
-//  their PASSWORDS are the shared secrets typed into the app and never live in
-//  the repo). Rules branch on request.auth.token.email:
+//  Three Firebase Auth email/password "role accounts" (their PASSWORDS are the
+//  shared secrets typed into the app and never live in the repo).
+//
+//  Rules v3 (Oct 2026): each role is recognised by its account's UID, never by
+//  its email, and only when signed in with a password. A uid never changes when
+//  an email changes, so the move of the account emails to .invalid addresses
+//  (admin@ed-hiring.app to admin@mgh-ed-hiring.invalid, and so on) needs no rules
+//  change, and an account someone else makes with a freed email gets another uid
+//  and nothing else. Uids are public identifiers, not secrets. NEVER DELETE A ROLE
+//  ACCOUNT: a new one has a new uid, which these rules and the pages refuse until
+//  both are updated (js/config.js AUTH.uids; tests/uids.test.mjs keeps them equal).
+//
+//    Leadership  uid ULgtfRrkAVPS2aT69Tc4CjMqbsx1  (admin@ed-hiring.app, to admin@mgh-ed-hiring.invalid)
+//    ED          uid 36FXvbR8ExgU7p4cmwuCNfkgFgD2  (committee@ed-hiring.app, to committee@mgh-ed-hiring.invalid)
+//    Guest       uid jvmQYhgYlRMf3f2J3uw8XXos8yD3  (applicant@ed-hiring.app, to applicant@mgh-ed-hiring.invalid)
 //
 //    admin@ed-hiring.app      — leadership: full read/write, incl. scores/ranking
 //                               and the roster. The only role that can delete.
@@ -22,13 +34,14 @@ rules_version = '2';
 //
 //  IMPORTANT — before publishing this file:
 //    1. Authentication → Sign-in method → enable Email/Password.
-//    2. Authentication → Users → add the three accounts above; set each password
-//       (committee = the ED password; admin = the independent Leadership
-//       password; applicant = the Guest password). See README, "Real access control".
-//    3. The page signs in with these accounts (AUTH in js/config.js).
+//    2. The three accounts above exist (never delete or re-create them; see
+//       above). Their passwords: committee = the ED password; admin = the
+//       independent Leadership password; applicant = the Guest password.
+//    3. The page signs in with these accounts (AUTH in js/config.js) and knows
+//       each role by the same uids as below.
 //    4. Sign in as admin once (publishes the PII-free list of interview times to
 //       /interviews_public/slots for applicants; every edit in Setup re-publishes).
-//  If the emails in js/config.js differ, edit the three constants below to match.
+//  The uids below must equal AUTH.uids in js/config.js (tests/uids.test.mjs).
 //
 //  Honest limits (documented, not hidden):
 //   • Reviewers share one committee account, so rules can't tell reviewer A from
@@ -65,10 +78,13 @@ rules_version = '2';
 // ============================================================================
 service cloud.firestore {
   match /databases/{database}/documents {
-    function em() { return request.auth != null ? request.auth.token.email : ''; }
-    function isAdmin()     { return em() == 'admin@ed-hiring.app'; }
-    function isCommittee() { return em() == 'committee@ed-hiring.app' || isAdmin(); }
-    function isApplicant() { return em() == 'applicant@ed-hiring.app'; }
+    // A role is its account's uid, signed in with a password (never an email,
+    // never an anonymous or custom-token sign-in).
+    function signedIn(uid) { return request.auth != null && request.auth.uid == uid
+                             && request.auth.token.firebase.sign_in_provider == 'password'; }
+    function isAdmin()     { return signedIn('ULgtfRrkAVPS2aT69Tc4CjMqbsx1'); }
+    function isCommittee() { return signedIn('36FXvbR8ExgU7p4cmwuCNfkgFgD2') || isAdmin(); }
+    function isApplicant() { return signedIn('jvmQYhgYlRMf3f2J3uw8XXos8yD3'); }
 
     // An applicant may only write availability under a surname that is actually
     // on the roster. Without this, a typo or a married/maiden name saves happily

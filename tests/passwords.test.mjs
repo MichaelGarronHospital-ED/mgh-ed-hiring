@@ -118,12 +118,13 @@ test("helpers keep their sign-in in memory only; the page's own account is re-au
   const sdk = {
     initializeApp: (c, name) => ({ name, c }), deleteApp: async () => {}, inMemoryPersistence: { type: "NONE" },
     initializeAuth: (app, opts) => { asked.push(opts.persistence.type); return { app }; },
-    signInWithEmailAndPassword: async (auth, email) => ({ user: { email } }), updatePassword: async () => {}, signOut: async () => {},
-    reauthenticateWithCredential: async (u) => { asked.push("reauth:" + u.email); }, EmailAuthProvider: { credential: (e, p) => ({ e, p }) },
+    signInWithEmailAndPassword: async (auth, email) => ({ user: { email, uid: ACCOUNTS.find((a) => a.email === email).uid } }), updatePassword: async () => {}, signOut: async () => {},
+    reauthenticateWithCredential: async (u, c) => { asked.push("reauth:" + c.e); }, EmailAuthProvider: { credential: (e, p) => ({ e, p }) },
   };
-  const ad = makeFirebaseAdapter(sdk, { mainAuth: { currentUser: { email: "admin@ed-hiring.app" } }, configs: { hiring: {}, voting: {} } });
+  // the page's own account is recognised by its uid (R7c), whatever its email says now
+  const ad = makeFirebaseAdapter(sdk, { mainAuth: { currentUser: { email: "admin@mgh-ed-hiring.invalid", uid: ACCOUNTS.find((a) => a.main).uid } }, configs: { hiring: {}, voting: {} } });
   for (const a of ACCOUNTS) await ad.close(await ad.open(a, "x"));
-  assert.deepEqual(asked, ["NONE", "NONE", "NONE", "NONE", "reauth:admin@ed-hiring.app"]);
+  assert.deepEqual(asked, ["NONE", "NONE", "NONE", "NONE", "reauth:admin@mgh-ed-hiring.invalid"]);   // the account's email now
 });
 
 test("no password value ever reaches the console, storage, or what is recorded", async () => {
@@ -208,4 +209,37 @@ test("finishing with a different new value than the first time says so (not a lo
   assert.equal(r.failedAt, "voting:ed");
   assert.equal(r.error.code, "not-first-value");
   assert.equal(passwords["hiring:committee"], CUR.ed, "went on to change the others with a different value");
+});
+
+test("a helper sign-in that lands on another uid than the role account's is a refusal", async () => {
+  const sdk = {
+    initializeApp: (c, name) => ({ name }), deleteApp: async () => {}, inMemoryPersistence: { type: "NONE" },
+    initializeAuth: (app) => ({ app }), signOut: async () => {},
+    signInWithEmailAndPassword: async (auth, email) => ({ user: { email, uid: "someone-else" } }),
+    updatePassword: async () => {}, reauthenticateWithCredential: async () => {}, EmailAuthProvider: { credential: () => ({}) },
+  };
+  const ad = makeFirebaseAdapter(sdk, { mainAuth: null, configs: { hiring: {}, voting: {} } });
+  await assert.rejects(() => ad.open(ACCOUNTS[0], "x"), (e) => e.code === "auth/invalid-credential");
+});
+
+test("the flow's helper sign-ins (hiring AND voting accounts) fall back to the other email and remember it", async () => {
+  const remembered = {};
+  const tried = [];
+  const sdk = {
+    initializeApp: (c, name) => ({ name }), deleteApp: async () => {}, inMemoryPersistence: { type: "NONE" },
+    initializeAuth: (app) => ({ app }), signOut: async () => {}, updatePassword: async () => {},
+    reauthenticateWithCredential: async () => {}, EmailAuthProvider: { credential: () => ({}) },
+    // after --apply: only the new emails exist
+    signInWithEmailAndPassword: async (auth, email) => {
+      tried.push(email);
+      const a = ACCOUNTS.find((x) => x.emails.new === email);
+      if (!a) throw Object.assign(new Error("no"), { code: "auth/invalid-credential" });
+      return { user: { email, uid: a.uid } };
+    },
+  };
+  const ad = makeFirebaseAdapter(sdk, { mainAuth: null, configs: { hiring: {}, voting: {} }, order: () => ["old", "new"],
+    remember: (project, kind) => { remembered[project] = kind; } });
+  for (const a of ACCOUNTS) await ad.close(await ad.open(a, "x"));
+  assert.deepEqual(remembered, { voting: "new", hiring: "new" });
+  assert.equal(tried.length, ACCOUNTS.length * 2);
 });

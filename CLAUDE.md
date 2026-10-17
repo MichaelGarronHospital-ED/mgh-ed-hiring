@@ -113,7 +113,7 @@ Full design and reference data (committee, candidates, questions, rules) live in
   `browserSessionPersistence` (memory only if sessionStorage is blocked) before the first
   attempt; a reload in the same tab resumes from it (`resume()`, `auth.authStateReady()`),
   and a sign-in that ends while the page is open returns to the gate with "You were signed
-  out, probably because a password changed." Both Log out buttons call `logOut()`, which
+  out. Please sign in again." Both Log out buttons call `logOut()`, which
   signs out before reloading. Firebase's default kept the sign-in in the browser for good and
   let a second tab switch the first tab's account. Pinned by `sim/auth.mjs`.
 - **Admin signs in with no name; `ui.member` can be `null`.** The admin code
@@ -236,6 +236,21 @@ Full design and reference data (committee, candidates, questions, rules) live in
   `doubleBooked`) or seat someone who never said they were free (now warned).
   Overlapping times are only *warned* at creation — accept one and the chair can
   be auto-scheduled into two at once.
+- **Every hiring branch after R7 must contain R7c and R7d before it merges** (merge `main` into
+  it first). A branch made before them (`hiring-r8` at 689b3f8 was one) signs in with the old
+  `ed-hiring.app` emails and decides roles by email; merged after the email switch, it locks
+  everyone out. R7d adds `tests/emails.test.mjs`, which fails on any old address in `js/` or a page.
+  Until R7d, every sign-in tries both emails of an account (the kind that last worked first,
+  `js/signin.js`), accepting only the pinned uid; R7d (weeks after the email switch) drops that.
+- **A role is known by its account's uid, never by its email (R7c, rules v3).** `firestore.rules`
+  checks `request.auth.uid` and the `password` sign-in provider (`signedIn(uid)`); every page and
+  script decides "who is this" by `uid` against `AUTH.uids` (and `PARTNERS.voting.uids`), and uses
+  the emails only to sign in (and treats a sign-in that lands on another uid as a refusal).
+  `tests/uids.test.mjs` keeps the config uids equal to the rules' and fails on any `.email ===`
+  role check in `js/`. This is what lets the account emails move to `.invalid` addresses with no
+  rules change and no signed-in page dropping out (`sim/emulator.mjs` `emailChangeKeepsSessions`).
+  **Never delete a role account**: a new account has a new uid, refused until the rules and
+  `AUTH.uids` are updated; a lost password is set by `set-passwords.py` on the same account.
 - **The role is found by signing in, and nothing in any repo may be derived from a password.**
   Since R7 the gate tries the password on the role accounts in `roleOrder()` (Guest first on
   `#apply`, else the role that last worked on this browser, `ls` `ed_iv_lastrole`, else ED,

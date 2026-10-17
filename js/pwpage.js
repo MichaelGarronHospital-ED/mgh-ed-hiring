@@ -14,12 +14,13 @@
 //  is kept, and 3 wrong tries on a device mean a 30-second wait (the same
 //  count as the hiring page).
 // ============================================================================
-import { firebaseConfig, PARTNERS, AUTH } from "./config.js?v=R7b";
+import { firebaseConfig, PARTNERS, AUTH } from "./config.js?v=R7c";
 import { ROLES, ROLE_WORD, ACCOUNTS, accountsFor, validateCurrent, validateNew, preflight, applyChange, verify, halfDoneText,
-         makeFirebaseAdapter } from "./passwords.js?v=R7b";
-import { FirestoreStore } from "./store.js?v=R7b";
-import { entry as hEntry, toDate } from "./history.js?v=R7b";
-import { escapeHtml, flowDialog, ss, ls, storageWorks } from "./util.js?v=R7b";
+         makeFirebaseAdapter } from "./passwords.js?v=R7c";
+import { FirestoreStore } from "./store.js?v=R7c";
+import { entry as hEntry, toDate } from "./history.js?v=R7c";
+import { escapeHtml, flowDialog, ss, ls, storageWorks } from "./util.js?v=R7c";
+import { emailOrder, rememberKind, signInPinned } from "./signin.js?v=R7c";
 
 const $ = (s) => document.querySelector(s);
 const isConfigured = () => !!(firebaseConfig && firebaseConfig.apiKey);
@@ -94,7 +95,12 @@ async function unlock(typed) {
   try {
     const keep = storageWorks("sessionStorage") ? fb.authFns.browserSessionPersistence : fb.authFns.inMemoryPersistence;
     await fb.authFns.setPersistence(fb.auth, keep);
-    await fb.authFns.signInWithEmailAndPassword(fb.auth, AUTH.adminEmail, typed);
+    // the email that last worked here first, then the other (they move to
+    // .invalid in Phase A); only the pinned Leadership account (by uid) opens it
+    const { kind } = await signInPinned((email, pw) => fb.authFns.signInWithEmailAndPassword(fb.auth, email, pw),
+      { emails: { old: AUTH.adminEmail, new: AUTH.newEmails.admin }, uid: AUTH.uids.admin, project: "hiring" }, typed,
+      { onWrongUid: async () => { try { await fb.authFns.signOut(fb.auth); } catch { /* local anyway */ } } });
+    rememberKind("hiring", kind);
   } catch (e) {
     if (isRefusal(e)) {
       const paused = gateWrong();
@@ -110,14 +116,15 @@ async function unlock(typed) {
 // A reload in the same tab (or coming from Physician Hiring in this tab):
 // Firebase kept the tab's sign-in. Only the Leadership account opens the page.
 async function resume() {
-  if (ss.get("ed_iv_signedout")) { ss.del("ed_iv_signedout"); gateMsg("You were signed out, probably because a password changed. Enter the current Leadership password."); }
+  if (ss.get("ed_iv_signedout")) { ss.del("ed_iv_signedout"); gateMsg("You were signed out. Please sign in again."); }
   if (!isConfigured()) { gateMsg("Passwords can only be changed on the live site."); return; }
   if (!ss.get("ed_iv_signedin")) return;
   let fb;
   try { fb = await firebase(); await fb.auth.authStateReady(); } catch { return; }
-  const email = fb.auth.currentUser && fb.auth.currentUser.email;
-  if (email === AUTH.adminEmail) enter();
-  else if (email) gateMsg("This page needs the Leadership password.");
+  // who is signed in: by uid, never by email (R7c)
+  const u = fb.auth.currentUser;
+  if (u && u.uid === AUTH.uids.admin) enter();
+  else if (u) gateMsg("This page needs the Leadership password.");
 }
 
 function watchSignOut() {
