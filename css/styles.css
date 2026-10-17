@@ -335,7 +335,7 @@ label.chip { font-size:var(--ed-text-sm); padding:6px 12px; }
 .empty { text-align:center; padding:28px 16px; display:flex; flex-direction:column; align-items:center; gap:6px;
   color:var(--ed-ink-2); font-size:var(--ed-text-sm); }
 .empty > svg { width:40px; height:40px; margin-bottom:4px; }
-.empty h4 { margin:0; color:var(--ed-ink); font-size:var(--ed-text); font-weight:600; }
+.empty .empty-title { font-family:inherit; letter-spacing:normal; margin:0; color:var(--ed-ink); font-size:var(--ed-text); font-weight:600; }
 .empty p { margin:0; max-width:340px; }
 
 /* ---- toast: a small dark pill; taps go through it ----------------------- */
@@ -762,6 +762,9 @@ body.closing-elsewhere #app, body.closing-elsewhere #settings { opacity:.6; }
 .pwdrift summary::before { content:""; width:6px; height:6px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(-45deg); transition:transform .15s; }
 .pwdrift[open] summary::before { transform:rotate(45deg); }
 #pwNote { width:100%; font:inherit; font-size:var(--ed-text-sm); resize:vertical; }
+
+/* the tab row's landmark wrapper adds no box of its own (the sticky row keeps working) */
+.tabsland { display:contents; }
 
 /* ---- committee rows: one line on a phone until "Details" (review) ---------- */
 .mrow .mhead { display:flex; gap:8px; align-items:center; }

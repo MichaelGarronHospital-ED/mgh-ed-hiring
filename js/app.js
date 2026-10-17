@@ -643,7 +643,7 @@ function wireSections() {
 // beside the thing it explains, where it is asked for rather than announced.
 const hint = (text) => `<p class="hint">${text}</p>`;
 const empty = (icon, title, msg) =>
-  `<div class="empty">${icon}<h4>${escapeHtml(title)}</h4><p>${escapeHtml(msg)}</p></div>`;
+  `<div class="empty">${icon}<h2 class="empty-title">${escapeHtml(title)}</h2><p>${escapeHtml(msg)}</p></div>`;
 
 // Line icons drawn in the text colour. House rule for every ED tool: no emoji
 // as icons (they render differently on every phone and ignore dark mode). The
@@ -2838,13 +2838,13 @@ function renderCandidate() {
   const slots = effectiveSlots(S.settings, SLOTS);
   const booking = bookingNow();
   if (booking === "paused") {
-    el.innerHTML = `<div class="overlay"><div class="overlay-box"><div class="logo" aria-hidden="true">ED</div>
+    el.innerHTML = `<div class="overlay"><div class="overlay-box" role="main"><div class="logo" aria-hidden="true">ED</div>
       <h2>Interview availability</h2><p class="muted">Booking is paused. Please try again later.</p>
       <p style="margin-top:16px"><button class="linky" onclick="CAND.logout()">Log out</button></p></div></div>`;
     return;
   }
   if (!ui.candLast) {
-    el.innerHTML = `<div class="overlay"><div class="overlay-box"><div class="logo" aria-hidden="true">ED</div>
+    el.innerHTML = `<div class="overlay"><div class="overlay-box" role="main"><div class="logo" aria-hidden="true">ED</div>
       <h2>Interview availability</h2><p class="muted">${booking === "closed"
         ? "Booking is closed. If you need to change your times, reply to our email. If you have an interview time, enter your name to see it."
         : "Enter your name to pick the times that work for you. You won't see any other applicants or committee information."}</p>

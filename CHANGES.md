@@ -44,6 +44,8 @@ the three role-account sign-ins (see the console steps in README).
   notice lines are one region), both availability grids are a labelled region you can reach
   with the keyboard and scroll sideways, the Ranking tab's headings go in order, and on a phone
   each committee row is one line (name, what they do) with "Details" for the rest.
+- **Final review:** the applicant page has one main region (its own), the empty-state titles are
+  level 2 headings so no tab skips a level, and the tab row sits inside a navigation landmark.
 
 Tests: as R7, plus the new versions check. Checked: see the release commit message.
 
