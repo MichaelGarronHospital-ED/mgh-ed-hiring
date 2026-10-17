@@ -75,3 +75,19 @@ test("a fight is counted even when the other tab's write lands before this tab l
   assert.equal(h.ui._allowed.held, true, "the fight was never noticed");
   assert.ok(h.writes.length <= 4, `${h.writes.length} writes`);
 });
+
+test("a steady stream of snapshots can't put the write off for more than 2 seconds", async () => {
+  const h = harness([{ id: "c1", name: "Dr Jane Kim" }]);
+  for (let i = 0; i < 20; i++) { h.sync(); await h.run(h.now + 200); }   // a call every 200 ms for 4 s
+  assert.ok(h.writes.length >= 1, "never wrote");
+});
+
+test("held back after fights, an edit to this tab's own roster is still written", async () => {
+  const cands = [{ id: "c1", name: "Dr Jane Kim" }];
+  const h = harness(cands);
+  h.sync(); await h.run(h.now + 1000);
+  for (let i = 0; i < 4; i++) { h.S.allowedNames = ["other"]; h.sync(); await h.run(h.now + 1000); }
+  assert.equal(h.ui._allowed.held, true);
+  cands.push({ id: "c2", name: "Dr R Ashcombe" }); h.sync(); await h.run(h.now + 1000);
+  assert.deepEqual(h.S.allowedNames, ["ashcombe", "kim"]);
+});

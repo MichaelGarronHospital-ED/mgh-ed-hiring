@@ -71,6 +71,10 @@ which the v1 rules refuse.
   does not pass from the SDK it already loaded, so Leadership saves don't fail. Both stylesheets
   carry `?v=` like the scripts (`tests/versions.test.mjs`). After Log out, the sign-in page says
   once that scores are saved but this device won't show them again.
+  Final review: the allowed-list write is never put off more than 2 seconds by a stream of
+  snapshots, and an edit to this tab's own roster is written even while it is held back after a
+  fight. The applicant's name form is never redrawn under them (it wiped typed or filled-in
+  names).
 
 Tests: node `members`, `questions`, `history`, `backup`, `store.snapshot`, `store.questions`,
 `versions` (39). Sim: `sim/foundations.mjs` (7 scenarios, in `npm test`). New emulator

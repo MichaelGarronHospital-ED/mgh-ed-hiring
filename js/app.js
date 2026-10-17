@@ -235,7 +235,12 @@ async function initStore(role, typed) {
   }
   store.subscribe((s) => {
     S = s;
-    if (ui.role === "candidate") { if ($("#candview") && !$("#candview").classList.contains("hidden")) renderCandidate(); }
+    if (ui.role === "candidate") {
+      // on the name step, never redraw: a redraw wipes a name being typed or
+      // filled in by the browser (review)
+      const cv = $("#candview");
+      if (cv && !cv.classList.contains("hidden") && (ui.candLast || !$("#candForm"))) renderCandidate();
+    }
     else if ($("#app") && !$("#app").classList.contains("hidden")) {
       // The roster changed out from under this session and no longer has the
       // name we're filing input under — everything typed from here would be
@@ -308,9 +313,14 @@ function maybeMigrateQuestions() {
 //     again, so a roster edit made while a write was in flight is never missed.
 const ALLOWED_WINDOW_MS = 10 * 60 * 1000;
 const rosterSig = () => S.candidates.map((c) => `${c.id}:${c.name}:${c.removed ? 1 : 0}`).sort().join("|");
+// gathered for 250 ms, but never put off for more than 2 seconds in all, so a
+// steady stream of snapshots can't keep the list from being written (review)
 function syncAllowedNames(fromTimer = false) {
   clearTimeout(syncAllowedNames._t);
-  syncAllowedNames._t = setTimeout(() => { if (S && ui.role === "admin") syncAllowedNow(fromTimer); }, 250);
+  const now = Date.now();
+  if (!syncAllowedNames._since) syncAllowedNames._since = now;
+  const wait = Math.max(0, Math.min(250, syncAllowedNames._since + 2000 - now));
+  syncAllowedNames._t = setTimeout(() => { syncAllowedNames._since = 0; if (S && ui.role === "admin") syncAllowedNow(fromTimer); }, wait);
 }
 function syncAllowedNow(fromTimer) {
   const want = [...new Set(S.candidates.filter((c) => !c.removed).map((c) => lastKey(c.name)).filter(Boolean))].sort();
@@ -327,7 +337,8 @@ function syncAllowedNow(fromTimer) {
   const roster = rosterSig(), now = Date.now();
   g.fights = g.fights.filter((t) => now - t < ALLOWED_WINDOW_MS);
   if (!fromTimer && seenChanged && g.last && g.last.roster === roster && haveSig !== g.last.list) g.fights.push(now);
-  if (!fromTimer && g.fights.length >= 3) {
+  // held back only while this tab's own roster is unchanged: an edit here is always written
+  if (!fromTimer && g.fights.length >= 3 && !(g.last && g.last.roster !== roster)) {
     if (!g.held) { g.held = true; renderUpdateLine(); }
     clearTimeout(g.timer);
     g.timer = setTimeout(() => syncAllowedNames(true), g.fights[0] + ALLOWED_WINDOW_MS - now + 50);

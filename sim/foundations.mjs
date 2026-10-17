@@ -49,6 +49,28 @@ async function openSetupCard(page, sec) {
 }
 
 const scenarios = {
+  // review: the applicant's name form is never redrawn under them (a redraw
+  // wiped what they had typed, or what the browser filled in)
+  async nameFormSurvivesUpdates(page, url) {
+    const problems = [];
+    await load(page, url, base(), "guestpw");
+    await page.waitForSelector("#candName");
+    await page.type("#candName", "Ashc");
+    const other = await page.browser().newPage();
+    await other.goto(url, { waitUntil: "domcontentloaded" });
+    await other.evaluate(() => {
+      const s = JSON.parse(localStorage.getItem("ed_interviews_v1"));
+      s.screening = { ...(s.screening || {}), "Bruns~c-1": { member: "Bruns", candId: "c-1", rating: 3 } };
+      localStorage.setItem("ed_interviews_v1", JSON.stringify(s));
+      new BroadcastChannel("ed_interviews").postMessage(1);
+    });
+    await sleep(500);
+    await page.bringToFront();
+    const v = await page.$eval("#candName", (e) => e.value).catch(() => "(gone)");
+    problems.push(...ok(v === "Ashc", `the typed name became "${v}" after an update`));
+    await other.close();
+    return problems;
+  },
   // Members keyed by id: a member whose id is not her name shows by name
   // everywhere, and her input (keyed by id) is found.
   async membersById(page, url) {
