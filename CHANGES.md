@@ -44,15 +44,25 @@ dashboard, not inside Physician Hiring, and on his phone tapping Check "doesn't 
   different, including from every value in use now; the unfinished-change record and "Finish the
   change"; nothing over another page's unfinished change; the leave-page warning; the fixed
   order with a fresh sign-in before each change.
-- **Messages where they can be seen:** every message sits last in the dialog, right above the
-  buttons, is scrolled into view, focuses the field to fix and is announced (`role=alert`).
-  "Checking..." shows on the button and above it at once.
+- **Messages where they can be seen:** every message sits at the top of its step, right under
+  the title (on an iPhone the keyboard covers the bottom half), is scrolled into view and is
+  announced (`role=alert`). On a touch screen the field to fix is marked (red outline,
+  `aria-invalid`) rather than focused, so the keyboard doesn't open over the message; a desktop
+  still focuses it. "Checking..." shows on the button and in the message line at once.
+- **Finishing an unfinished change runs Check too** (on the accounts not changed yet, and
+  Physician Hiring's account of each unticked password), says "Use the same new password as
+  the first time", and if an account that already changed refuses the new value typed, says
+  plainly that it differs from the first try and goes back to the new values (no loop of Try
+  again). The step with the current passwords says why all three are needed, and a new value
+  already in use gives one line instead of two.
 - Version `R7b` (a release between R7 and R8): `tests/versions.test.mjs` accepts a trailing
   letter and also checks `passwords.html`.
 
-Tests: `tests/passwords.test.mjs` (`validateCurrent`); `sim/passwords.mjs` rewritten for the page
-(5 cases); NEW `sim/passwords-webkit.mjs` (WebKit at iPhone 13 size: the Check message is on
-screen and the field focused; `playwright-core` 1.60.0, sim only); `sim/foundations.mjs` checks
+Tests: `tests/passwords.test.mjs` (`validateCurrent`, the skip list when finishing, a different
+value when finishing, one line for a value in use); `sim/passwords.mjs` rewritten for the page
+(5 cases, finishing with Check and with a different value); NEW `sim/passwords-webkit.mjs`
+(WebKit at iPhone 13 size: the Check message is in the top half of the screen and the field is
+marked, not focused; `playwright-core` 1.60.0, sim only); `sim/foundations.mjs` checks
 the Setup card's link.
 
 ---

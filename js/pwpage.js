@@ -188,8 +188,12 @@ const pwField = (id, label, auto) => `<label class="ed-label" for="${id}">${esca
   <div class="pwfield"><input id="${id}" type="password" autocomplete="${auto}" autocapitalize="off" spellcheck="false"/>
   <button type="button" class="btn ghost small" onclick="PW.show('${id}',this)" aria-label="Show ${escapeHtml(label)}">Show</button></div>`;
 const ovId = (a) => "pwOv_" + a.key.replace(":", "_");
-// the message line sits last in the dialog body, right above the buttons
+// the message line sits FIRST in the step, right under its title: on a phone
+// the keyboard covers the lower half of the screen (review)
 const msgLine = `<p id="pwErr" class="small pwmsg" role="alert"></p>`;
+// a phone or tablet: don't focus the field to fix (that opens the keyboard
+// over the message); mark it instead. A desktop keeps the focus.
+const touch = () => { try { return window.matchMedia("(pointer: coarse)").matches; } catch { return false; } };
 
 async function change() {
   if (!S || !S.questions || !_fb || dialogOpen) return;
@@ -206,24 +210,25 @@ async function change() {
     const el = document.getElementById("pwErr"); if (!el) return;
     el.className = "small pwmsg bad"; el.setAttribute("role", "alert");
     el.innerHTML = errs.map(escapeHtml).join("<br>");
+    document.querySelectorAll('#flowBody input[aria-invalid="true"]').forEach((x) => x.removeAttribute("aria-invalid"));
     const f = focusId && document.getElementById(focusId);
-    if (f) f.focus({ preventScroll: true });
-    el.scrollIntoView({ block: "nearest" });
-    if (f) f.scrollIntoView({ block: "nearest" });
+    if (f) f.setAttribute("aria-invalid", "true");
+    if (f && !touch()) f.focus({ preventScroll: true });
+    else if (document.activeElement && document.activeElement.blur) document.activeElement.blur();   // close the keyboard
+    el.scrollIntoView({ block: "start" });
   };
   const showBusy = (text) => {
     const el = document.getElementById("pwErr"); if (!el) return;
     el.className = "small pwmsg muted"; el.setAttribute("role", "status");
-    el.textContent = text; el.scrollIntoView({ block: "nearest" });
+    el.textContent = text; el.scrollIntoView({ block: "start" });
   };
   dialogOpen = true;
 
   await flowDialog((ctl) => {
     // ---- step 1: which passwords
-    const step1 = () => ctl.step({ title: "Which password?", html: `
+    const step1 = () => ctl.step({ title: "Which password?", html: `${msgLine}
       <p class="small">Tick the passwords to change.</p>
-      <div class="pwticks">${ROLES.map((r) => `<label class="pwtick"><input type="checkbox" value="${r}" ${v.roles.includes(r) ? "checked" : ""}/> ${ROLE_WORD[r]}</label>`).join("")}</div>
-      ${msgLine}`,
+      <div class="pwticks">${ROLES.map((r) => `<label class="pwtick"><input type="checkbox" value="${r}" ${v.roles.includes(r) ? "checked" : ""}/> ${ROLE_WORD[r]}</label>`).join("")}</div>`,
       buttons: [{ label: "Cancel", run: () => ctl.close(null) },
         { label: "Next", kind: "filled", run: () => {
           v.roles = ROLES.filter((r) => document.querySelector(`#flowBody .pwtick input[value="${r}"]`).checked);
@@ -238,23 +243,22 @@ async function change() {
       for (const a of accountsFor(v.roles)) { const x = val(ovId(a)); if (x) v.overrides[a.key] = x; }
     };
     const step2 = () => {
-      ctl.step({ title: pend ? "Finish the password change" : "Check the current passwords", html: `
+      ctl.step({ title: pend ? "Finish the password change" : "Check the current passwords", html: `${msgLine}
         <p class="small">${pend
-          ? "Type the three current passwords again. Accounts already changed are checked with the new value later."
-          : "Type the three current passwords. Check signs in to every account with them and changes nothing."}</p>
+          ? "Type the three current passwords again. Check signs in to the accounts not changed yet and changes nothing; the ones already changed are checked with the new password later."
+          : "Type the three current passwords. Check signs in to every account with them and changes nothing."}
+          All three are needed so the new one can't match a password in use.</p>
         <div class="pwgroup">${ROLES.map((r) => pwField("pwCur_" + r, `Current ${ROLE_WORD[r]} password`, "off")).join("")}</div>
         <details class="pwdrift"${Object.keys(v.overrides).length ? " open" : ""}><summary class="small">The tools already have different passwords</summary>
           <p class="small muted">Only if one account uses a different current value. Leave the rest blank.</p>
           ${accountsFor(v.roles).map((a) => pwField(ovId(a), `Current password for ${a.label}`, "off")).join("")}
-        </details>
-        ${msgLine}`,
+        </details>`,
         // finishing an unfinished change: its passwords are fixed, so no Back to the tick boxes
         buttons: [pend ? { label: "Cancel", run: () => ctl.close(null) } : { label: "Back", run: () => { readCurrent(); step1(); } },
-          { label: pend ? "Next" : "Check", kind: "filled", id: "pwCheck", run: async (_c, btn) => {
+          { label: "Check", kind: "filled", id: "pwCheck", run: async (_c, btn) => {
             readCurrent();
             const errs = validateCurrent(v.roles, v.cur);
             if (errs.length) { showErr(errs, "pwCur_" + ROLES.find((r) => !v.cur[r])); return; }
-            if (pend) { step3(); return; }
             btn.disabled = true; btn.textContent = "Checking...";
             showBusy("Checking each account. This takes a few seconds; nothing is changed.");
             await check();
@@ -265,7 +269,10 @@ async function change() {
 
     const check = async () => {
       let r;
-      try { r = await preflight(ad, v.roles, v.cur, v.overrides); }
+      // finishing: the accounts that may already have the new password are not
+      // proven with the current one (they are checked with the new one later)
+      const skip = pend ? [...(pend.done || []), pend.inProgress, ...(pend.unsure || [])].filter(Boolean) : [];
+      try { r = await preflight(ad, v.roles, v.cur, v.overrides, skip); }
       catch { r = { ok: false, results: [{ ok: false, why: "error", label: "", key: "" }] }; }
       const list = r.results.map((x) => `<li>${escapeHtml(x.label)}: ${tick(x.ok)}</li>`).join("");
       if (!r.ok) {
@@ -289,14 +296,14 @@ async function change() {
       if (v.roles.includes("leadership") || v.roles.includes("ed")) warn.push("Everyone signed in with the old password will be asked for the new one within about an hour, including phones signed in to Motion Voting. Don't do this on a voting day.");
       if (v.roles.includes("guest")) warn.push("Applicants who have the old Guest password won't be able to sign in. Send them the new one.");
       if (v.roles.includes("leadership")) warn.push("Patient Hub statistics follow this password automatically.");
-      ctl.step({ title: pend ? "Finish the password change" : "Type the new passwords", html: `
-        ${v.checked ? `<p class="small">Every account accepted its current password:</p><ul class="pwlist">${v.checked}</ul>` : ""}
+      ctl.step({ title: pend ? "Finish the password change" : "Type the new passwords", html: `${msgLine}
+        ${pend ? `<p class="small"><b>Use the same new password as the first time.</b> Some accounts already have it.</p>` : ""}
+        ${v.checked ? `<p class="small">${pend ? "The accounts not changed yet accepted their current password:" : "Every account accepted its current password:"}</p><ul class="pwlist">${v.checked}</ul>` : ""}
         ${v.roles.map((r) => `<div class="pwgroup">${pwField("pwNew_" + r, `New ${ROLE_WORD[r]} password`, "new-password")}
           ${pwField("pwRep_" + r, `Type the new ${ROLE_WORD[r]} password again`, "new-password")}</div>`).join("")}
         <p class="small muted">At least 10 characters. Three or four words are easy to say and hard to guess. Not a password in use now anywhere, and not containing the word "password". Don't reuse a password from another site.</p>
         ${warn.map((w) => `<p class="small">${escapeHtml(w)}</p>`).join("")}
-        <p class="small">Change now changes the accounts one by one; it takes a few seconds. Keep this page open until it says Done.</p>
-        ${msgLine}`,
+        <p class="small">Change now changes the accounts one by one; it takes a few seconds. Keep this page open until it says Done.</p>`,
         buttons: [{ label: "Back", run: () => { v.checked = null; step2(); } },
           { label: pend ? "Finish the change" : "Change now", kind: pend ? "filled" : "danger", id: "pwGo", run: async (_c, btn) => {
             v.next = Object.fromEntries(v.roles.map((r) => [r, { value: val("pwNew_" + r), repeat: val("pwRep_" + r) }]));
@@ -377,6 +384,16 @@ async function change() {
       const lines = halfDoneText(v.roles, r.done);
       const code = String((r.error && r.error.code) || "");
       const acct = ACCOUNTS.find((a) => a.key === r.failedAt);
+      // finishing with another new password than the first time: Try again
+      // would only fail the same way, so say it and go back to the new values
+      const firstTry = pend && [...(pend.done || []), pend.inProgress, ...(pend.unsure || [])].includes(r.failedAt);
+      if (code === "not-first-value" || (firstTry && code === "refused")) {
+        ctl.step({ title: "Not finished", html: `<p class="small bad" role="alert">${escapeHtml(acct ? acct.label : "An account")} already has the new password from the first try,
+            and the new password typed now is different${code === "refused" ? " (it took neither the current password nor this one)" : ""}. Nothing more was changed.
+            Type the same new password as the first time.</p>`,
+          buttons: [{ label: "Close", run: () => ctl.close(null) }, { label: "Back", kind: "filled", run: () => step3() }] });
+        return;
+      }
       const why = where === "save" ? "Couldn't save the progress note, so nothing was changed. Check the connection and try again."
         : /too-many-requests/.test(code) ? "Firebase has paused sign-ins from this device for about 15 minutes. Wait, then press Try again once."
         : /user-disabled/.test(code) ? `${acct ? acct.label : "An account"} is switched off in Firebase. The department account can switch it back on in the Firebase console (Authentication, Users), then press Try again.`

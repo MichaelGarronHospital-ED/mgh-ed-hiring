@@ -37,7 +37,10 @@ test("validation", () => {
   assert.ok(validateNew(["ed"], CUR, { ed: { value: " leading-space", repeat: " leading-space" } }).some((e) => e.includes("space")));
   assert.ok(validateNew(["ed"], CUR, { ed: { value: "MyPassword12", repeat: "MyPassword12" } }).some((e) => e.includes('"password"')));
   assert.ok(validateNew(["ed"], CUR, { ed: { value: CUR.ed, repeat: CUR.ed } }).some((e) => e.includes("same as the current")));
-  assert.ok(validateNew(["ed"], CUR, { ed: { value: CUR.guest, repeat: CUR.guest } }).some((e) => e.includes("must all be different")));
+  // a value in use now: ONE line that says both things (review)
+  const inUse = validateNew(["ed"], CUR, { ed: { value: CUR.guest, repeat: CUR.guest } });
+  assert.deepEqual(inUse, ["The new ED password is already in use. The Leadership, ED and Guest passwords must all be different, and none can be one in use now."]);
+  assert.ok(validateNew(["ed", "guest"], CUR, { ed: NEXT.ed, guest: { value: NEXT.ed.value, repeat: NEXT.ed.value } }).includes("The Leadership, ED and Guest passwords must all be different."));
   assert.ok(validateNew(["ed"], { ...CUR, guest: "" }, { ed: NEXT.ed }).some((e) => e.includes("current Guest password")));
 });
 
@@ -144,11 +147,11 @@ test("no password value ever reaches the console, storage, or what is recorded",
 // in as the wrong role if the change stopped part way
 test("a new value may not be any password in use now, nor a value one tool already has", () => {
   const errs = validateNew(["ed"], CUR, { ed: { value: CUR.guest, repeat: CUR.guest } });
-  assert.ok(errs.some((e) => e.includes("one of the passwords in use now")), errs.join("|"));
+  assert.ok(errs.some((e) => e.includes("is already in use")), errs.join("|"));
   const errs2 = validateNew(["ed"], CUR, { ed: { value: CUR.leadership, repeat: CUR.leadership } });
-  assert.ok(errs2.some((e) => e.includes("one of the passwords in use now")));
+  assert.ok(errs2.some((e) => e.includes("is already in use")));
   const errs3 = validateNew(["ed"], CUR, { ed: NEXT.ed }, { "voting:leadership": NEXT.ed.value });
-  assert.ok(errs3.some((e) => e.includes("one of the passwords in use now")));
+  assert.ok(errs3.some((e) => e.includes("is already in use")));
   assert.deepEqual(validateNew(["ed"], CUR, { ed: NEXT.ed }, { "voting:ed": "some-old-voting-ed" }), []);
 });
 
@@ -186,4 +189,23 @@ test("Check needs only the current values", () => {
   assert.deepEqual(validateCurrent(["ed"], CUR), []);
   assert.deepEqual(validateCurrent(["ed"], { ...CUR, guest: "" }), ["Type the current Guest password."]);
   assert.deepEqual(validateCurrent([], CUR), ["Tick at least one password to change."]);
+});
+
+test("finishing: Check skips the accounts that may already have the new value", async () => {
+  const passwords = all();
+  passwords["voting:ed"] = NEXT.ed.value;              // changed the first time
+  const auth = fakeAuth({ passwords, clock: { now: 0 } });
+  const r = await preflight(auth, ["ed"], CUR, {}, ["voting:ed"]);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.results.map((x) => x.key), ["hiring:committee", "hiring:applicant", "hiring:admin"]);
+});
+
+test("finishing with a different new value than the first time says so (not a loop of Try again)", async () => {
+  const passwords = all();
+  passwords["voting:ed"] = NEXT.ed.value;
+  const auth = fakeAuth({ passwords, clock: { now: 0 } });
+  const r = await applyChange(auth, ["ed"], CUR, { ed: { value: "another new value", repeat: "another new value" } }, { progress: { done: ["voting:ed"], inProgress: null } });
+  assert.equal(r.failedAt, "voting:ed");
+  assert.equal(r.error.code, "not-first-value");
+  assert.equal(passwords["hiring:committee"], CUR.ed, "went on to change the others with a different value");
 });

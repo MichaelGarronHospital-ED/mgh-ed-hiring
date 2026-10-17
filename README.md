@@ -64,8 +64,8 @@ https://michaelgarronhospital-ed.github.io/mgh-ed-hiring/passwords.html (the ED 
 has a tile for it; Physician Hiring's Setup links to it). Sign in with the Leadership
 password. Tick the passwords to change, type the three current ones and press **Check**
 (this signs in to every account of the ticked passwords, and to the Physician Hiring
-account of each other one, with its current password, and changes nothing; a missing value
-is said right above the button). Only then type the new ones (at least 10 characters; three
+account of each other one, with its current password, and changes nothing; a message shows
+at the top of the step, above where a phone's keyboard opens). Only then type the new ones (at least 10 characters; three
 or four words are easy to say and hard to guess; never a password in use now anywhere; and
 not containing the word "password" in any form, which is stricter than it needs to be on
 purpose) and press **Change now**. It changes Motion Voting first and Physician Hiring's Leadership

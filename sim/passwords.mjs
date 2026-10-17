@@ -90,7 +90,9 @@ async function tick(p, roles) {
 const msgState = (p) => p.evaluate(() => {
   const e = document.querySelector("#pwErr"); if (!e) return { text: "", inView: false, focus: "" };
   const r = e.getBoundingClientRect();
-  return { text: e.textContent, inView: r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight, focus: (document.activeElement || {}).id || "", role: e.getAttribute("role") };
+  return { text: e.textContent, inView: r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight, topHalf: r.bottom <= window.innerHeight / 2,
+    first: e === document.querySelector("#flowBody").firstElementChild, focus: (document.activeElement || {}).id || "", role: e.getAttribute("role"),
+    invalid: [...document.querySelectorAll('#flowBody [aria-invalid="true"]')].map((x) => x.id) };
 });
 // tick, type the current values, Check: lands on the new-values step
 async function toNewValues(p, roles) {
@@ -155,12 +157,13 @@ const cases = {
       await waitFlow(p, "Which password?"); await tick(p, ["ed"]); await shot(p, "step1");
       await flowClick(p, "Next"); await waitFlow(p, "Check the current passwords");
       problems.push(...ok(!(await p.$("#pwNew_ed")), "the new-password fields are asked for before Check"));
+      problems.push(...ok((await p.$eval("#flowBody", (e) => e.textContent)).includes("All three are needed so the new one can't match a password in use."), "no reason given for the three current passwords"));
       await shot(p, "step2");
       // Check with a current value missing: the message is in view, right above the buttons
       await type(p, "pwCur_leadership", OLD.leadership);
       await flowClick(p, "Check"); await sleep(300);
       let m = await msgState(p);
-      problems.push(...ok(m.text.includes("Type the current ED password.") && m.inView && m.focus === "pwCur_ed" && m.role === "alert", `error after Check: ${JSON.stringify(m)}`));
+      problems.push(...ok(m.text.includes("Type the current ED password.") && m.inView && m.first && m.focus === "pwCur_ed" && m.invalid.join() === "pwCur_ed" && m.role === "alert", `error after Check: ${JSON.stringify(m)}`));
       await shot(p, "step2-error");
       await fillCurrent(p);
       await p.evaluate(() => document.querySelector("#flowBody .pwfield button").click());   // Show
@@ -180,7 +183,7 @@ const cases = {
       await type(p, "pwNew_ed", NEW.ed); await type(p, "pwRep_ed", NEW.ed + "x");
       await flowClick(p, "Change now"); await sleep(300);
       m = await msgState(p);
-      problems.push(...ok(m.text.includes("don't match") && m.inView && m.focus === "pwRep_ed", `mismatch: ${JSON.stringify(m)}`));
+      problems.push(...ok(m.text.includes("don't match") && m.inView && m.first && m.focus === "pwRep_ed", `mismatch: ${JSON.stringify(m)}`));
       await shot(p, "step3-error");
       await type(p, "pwRep_ed", NEW.ed);
       await flowClick(p, "Change now"); await waitFlow(p, "Done", 30000);
@@ -253,8 +256,18 @@ const cases = {
       problems.push(...ok(!btns.includes("Back") && !(await q.$("#pwNew_ed")), `finishing: Back offered or new fields early: ${btns}`));
       await fillCurrent(q);
       await shot(q, "finish-current");
-      await flowClick(q, "Next"); await waitFlow(q, "Finish the password change");
-      await q.waitForSelector("#pwNew_ed");
+      // finishing runs Check too, on the accounts not changed yet
+      await flowClick(q, "Check"); await q.waitForSelector("#pwNew_ed", { timeout: 30000 });
+      const fin = await q.$eval("#flowBody", (e) => e.textContent);
+      problems.push(...ok(fin.includes("Use the same new password as the first time") && fin.includes("Physician Hiring, Guest account: ready")
+        && !fin.includes("Motion Voting, ED account"), `finish step: ${fin.slice(0, 300)}`));
+      // a different new password than the first time: said plainly, back to the new values
+      for (const r of ["leadership", "ed", "guest"]) { await type(q, "pwNew_" + r, NEW[r] + " two"); await type(q, "pwRep_" + r, NEW[r] + " two"); }
+      await flowClick(q, "Finish the change"); await waitFlow(q, "Not finished", 30000);
+      const diff = await q.$eval("#flowBody", (e) => e.textContent);
+      problems.push(...ok(diff.includes("already has the new password from the first try") && diff.includes("Type the same new password as the first time"), `different value: ${diff}`));
+      await shot(q, "finish-different");
+      await flowClick(q, "Back"); await q.waitForSelector("#pwNew_ed");
       await fillNew(q, ["leadership", "ed", "guest"]);
       await shot(q, "finish-new");
       await flowClick(q, "Finish the change"); await waitFlow(q, "Done", 30000);

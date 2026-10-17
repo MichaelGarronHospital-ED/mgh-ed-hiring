@@ -2,7 +2,8 @@
 // anything" because the message landed below the fold of a long dialog. This
 // drives the passwords page in WebKit (Safari's engine) at iPhone size against
 // the local emulators and checks that, after tapping Check with a current
-// password missing, the message is on screen and the field to fix has focus.
+// password missing, the message is in the top half of the screen (the iPhone
+// keyboard covers the bottom half) and the field to fix is marked, not focused.
 // Run inside the emulators by `npm run passwords` (after passwords.mjs).
 //   node passwords-webkit.mjs [outdir]   (outdir: also save a screenshot)
 import path from "node:path";
@@ -45,11 +46,14 @@ try {
     await p.waitForTimeout(400);
     const m = await p.evaluate(() => {
       const e = document.querySelector("#pwErr"); const r = e.getBoundingClientRect();
-      return { text: e.textContent, top: r.top, bottom: r.bottom, h: window.innerHeight, focus: (document.activeElement || {}).id };
+      return { text: e.textContent, top: r.top, bottom: r.bottom, h: window.innerHeight, focus: (document.activeElement || {}).id,
+        invalid: [...document.querySelectorAll('#flowBody [aria-invalid="true"]')].map((x) => x.id), coarse: matchMedia("(pointer: coarse)").matches };
     });
     ok(m.text.includes("Type the current ED password."), `${scheme}: no message after Check: ${JSON.stringify(m)}`);
-    ok(m.top >= 0 && m.bottom <= m.h && m.bottom > m.top, `${scheme}: the message is not on screen: ${JSON.stringify(m)}`);
-    ok(m.focus === "pwCur_ed", `${scheme}: the field to fix has no focus (${m.focus})`);
+    // in the TOP half: the iPhone keyboard covers the bottom half
+    ok(m.top >= 0 && m.bottom > m.top && m.bottom <= m.h / 2, `${scheme}: the message is not in the top half of the screen: ${JSON.stringify(m)}`);
+    // on a phone the field is marked, not focused (focus would open the keyboard over the message)
+    ok(m.coarse && m.invalid.join() === "pwCur_ed" && m.focus !== "pwCur_ed", `${scheme}: field to fix not marked, or focused on a phone: ${JSON.stringify(m)}`);
     if (OUT) await p.screenshot({ path: path.join(OUT, `pwpage-webkit-check-error-phone-${scheme}.png`) });
     await ctx.close();
   }
