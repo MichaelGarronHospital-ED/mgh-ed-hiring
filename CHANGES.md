@@ -45,6 +45,11 @@ role must be known by its account's uid, which never changes, and not by its ema
   "never delete", the lost-password steps no longer delete and re-add an account), DESIGN, CLAUDE.
 - Version `R7c`.
 
+**Precondition for every later hiring branch:** R8 and every hiring branch after it must
+contain R7c AND R7d (merge `main` into it once both are there) before it merges. A branch made
+before them (`hiring-r8` at 689b3f8 is one) still signs in with the old emails and decides roles
+by email: merged after the email switch, it would lock everyone out.
+
 Tests: NEW `tests/rules-uids.test.mjs` (for each role: right uid with the old email allowed, with
 the new `.invalid` email allowed, right email with another uid refused, anonymous and custom-token
 sign-ins refused; no role's uid acts as another); NEW `tests/uids.test.mjs` (config uids equal
