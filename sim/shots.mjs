@@ -86,5 +86,20 @@ const shots = {
       { state: { ...STATE, candidates: STATE.candidates.map((c) => c.id === "c-3" ? { ...c, removed: true } : c) } });
     await shoot("shared-surname-attention", async (p) => { await landAsAdmin(p); await tab(p, "panels"); }, { state: kims });
   },
+  R5: async () => {
+    const lockedSt = { ...STATE, settings: { ...STATE.settings, interviewInfo: { location: "ED admin office, 2nd floor" }, deadlines: { reply: daysAhead(10) },
+        times: [{ ...STATE.settings.times[0], rooms: 2 }, STATE.settings.times[1]], days: { [STATE.settings.times[0].date]: { room2Chair: "Chen" } } },
+      schedule: { locked: true, lockedAt: new Date().toISOString(), publishedAt: new Date().toISOString(), panels: {
+        "c-1": { slot: "t0", room: 1, chair: "Abara", members: ["Abara", "Bruns", "Chen"], modality: "ip" },
+        "c-2": { slot: "t0", room: 2, chair: "Chen", members: ["Chen", "Dufour", "Abara"], modality: "zoom" } } },
+      notices: { ashcombe: { date: STATE.settings.times[0].date, start: "09:00", end: "10:00", label: "", format: "ip", room: 1, location: "ED admin office, 2nd floor", zoomLink: "", replyBy: daysAhead(10) } },
+      replies: { kim: { reply: "withdrawn", replyAt: new Date().toISOString() } } };
+    await shoot("panels-notices", async (p) => { await landAsAdmin(p); await tab(p, "panels"); }, { state: lockedSt });
+    await shoot("setup-times-rooms", async (p) => { await landAsAdmin(p); await openCard(p, "setSlots"); }, { state: lockedSt });
+    await shoot("score-my-panels", async (p) => { await pickMember(p, "Bruns"); await tab(p, "score"); }, { code: "staffpw", state: lockedSt });
+    await shoot("applicant-notice", async (p) => { await p.waitForSelector("#candName"); await p.type("#candFirst", "Rosalind"); await p.type("#candName", "Ashcombe");
+      await p.click("#candGo"); await p.waitForSelector(".noticecard"); }, { code: "guestpw", state: lockedSt });
+    await shoot("applicant-paused", async (p) => { await sleep(300); }, { code: "guestpw", state: { ...STATE, booking: "paused" } });
+  },
 };
 if (shots[rel]) { await shots[rel](); await done(); }

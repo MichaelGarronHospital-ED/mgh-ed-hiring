@@ -291,6 +291,21 @@ it, so every leadership save would fail.
   second applicant with an existing surname is added, both get their own answers (the page
   says so); applicants with a unique surname see no difference. If answers were already saved
   under the shared surname, Panels, Needs attention asks whose they are.
+- **Two rooms and day chairs (Setup, Interview times).** Each time can be "1 room" or "2 rooms"
+  (two interviews at once, two separate panels). Each day can have its own chair ("Chair this
+  day"), or none; a day with two-room times also picks who leads room 2.
+- **Your interviews (Score tab).** Nobody is pre-selected. Once the schedule is locked, a reviewer
+  sees only the applicants on their own panels, with "Show all applicants" to widen.
+- **Messages and calendar files (Panels).** For each panel: "Copy email to applicant", "Copy email
+  to panel", and calendar files (.ics) for the panel and for the applicant; also "Calendar file
+  for all interviews" and "Copy all applicant emails". Setup, Interview details holds the
+  location, Zoom link and contact used in them. Availability: "Email who we're waiting on"
+  opens your mail app with the interviewers' work emails (from Setup) in Bcc; for applicants it
+  copies a reminder (applicant emails are never stored). Nothing is sent by the tool itself.
+- **Applicants see their confirmed time (Panels, Send times to applicants, once locked).** An
+  applicant then sees their time when they sign in, and can confirm ("I'll be there") or
+  withdraw ("I can't come", with Undo). Leadership sees "Withdrew" on the panel row (and in Needs
+  attention), and "No reply yet" only after the reply date. Applicant links now end in `#apply`.
 - **Lock the schedule (Panels)** freezes every panel; later availability changes don't move
   an interview, and Needs attention names anyone no longer free or no longer on the
   committee. You can still edit a locked panel, and unlock.

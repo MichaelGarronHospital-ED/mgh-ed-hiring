@@ -180,7 +180,8 @@ export const cases = {
     await signIn(g, "guestpw");
     await g.waitForFunction(() => /Booking is closed/.test(document.querySelector("#candview").textContent), { timeout: 8000 }).catch(() => {});
     const gt = await g.$eval("#candview", (e) => e.textContent);
-    problems.push(...ok(gt.includes("Booking is closed") && !(await g.$("#candName")), `applicant sees: ${gt.slice(0, 120)}`));
+    // (from R5 the closed page still asks for a name, to show a confirmed time)
+    problems.push(...ok(gt.includes("Booking is closed"), `applicant sees: ${gt.slice(0, 120)}`));
     await closePage(g);
     await p.evaluate(() => [...document.querySelectorAll("#settings button")].find((b) => b.textContent.trim() === "Reopen").click());
     const pub2 = await until(async () => { const d = await emu.getDocument("interviews_public/slots"); return d && d.booking === "open" && d; });
@@ -217,6 +218,62 @@ export const cases = {
     problems.push(...ok(!plain, "something was written under plain kim"));
     await closePage(app);
     return [...problems, ...log.filter((l) => !l.includes("permission"))];
+  },
+
+  // R5 (H11): leadership locks the schedule and sends the times; the applicant
+  // sees their time, confirms and withdraws through the real rules; with
+  // availability closed a reply still saves.
+  async applicantNotice() {
+    const problems = [], log = [];
+    await emu.seed({ "interviews_availCand/ashcombe": { slots: { t0: "ip" } },
+      "interviews_meta/config": { committee: COMMITTEE, chair: "Abara", times: TIMES, oneDrive: "#", panelOverrides: {},
+        interviewInfo: { location: "ED admin office, 2nd floor" }, deadlines: { reply: daysAhead(20) } } });
+    for (const m of COMMITTEE) await emu.setDocument(`interviews_availIv/${m.name}`, { slots: { t0: "ip", t1: "ip" } });
+    const lead = await freshPage({ log });
+    await asLeadership(lead); await tab(lead, "panels");
+    const click = (p, t) => p.evaluate((t) => [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === t).click(), t);
+    await click(lead, "Lock the schedule"); await lead.waitForSelector("#confirmWrap:not(.hidden)"); await lead.click("#confirmYes");
+    await lead.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Send times to applicants"), { timeout: 8000 });
+    await click(lead, "Send times to applicants"); await lead.waitForSelector("#confirmWrap:not(.hidden)"); await lead.click("#confirmYes");
+    const n = await until(() => emu.getDocument("interviews_applicant/ashcombe"));
+    problems.push(...ok(n && n.date && n.publishedAt && n.publishedAt.__ts && !JSON.stringify(n).includes("Ashcombe"), `notice: ${JSON.stringify(n)}`));
+    await closePage(lead);
+    const app = await freshPage({ log });
+    await signIn(app, "guestpw"); await app.waitForSelector("#candName");
+    await app.type("#candFirst", "Rosalind"); await app.type("#candName", "Ashcombe"); await app.click("#candGo");
+    await app.waitForSelector(".noticecard", { timeout: 8000 });
+    await click(app, "I'll be there");
+    let d = await until(async () => { const x = await emu.getDocument("interviews_availCand/ashcombe"); return x && x.reply === "confirmed" && x; });
+    problems.push(...ok(d && d.replyAt && d.replyAt.__ts && d.slots.t0 === "ip", `after confirm: ${JSON.stringify(d)}`));
+    // availability closes: a withdrawal still saves (reply only)
+    await emu.setDocument("interviews_meta/state", { stages: { availability: { closed: true } } });
+    await emu.setDocument("interviews_public/slots", { times: TIMES, booking: "closed" });
+    await sleep(500);
+    await click(app, "I can't come"); await app.waitForSelector("#flowWrap:not(.hidden)");
+    await app.evaluate(() => [...document.querySelectorAll("#flowBtns button")].find((b) => b.textContent.trim() === "Withdraw").click());
+    d = await until(async () => { const x = await emu.getDocument("interviews_availCand/ashcombe"); return x && x.reply === "withdrawn" && x; });
+    problems.push(...ok(d, "a withdrawal with availability closed didn't save"));
+    await closePage(app);
+    return [...problems, ...log];
+  },
+
+  // R5 (H11, review M6): while a round is closing, booking is paused: the
+  // applicant page shows so and sends no name probe at all.
+  async bookingPausedNoProbe() {
+    const problems = [], log = [];
+    await emu.setDocument("interviews_public/slots", { times: TIMES, booking: "paused" });
+    await emu.setDocument("interviews_meta/state", { roundStatus: "closing", closingTab: "p-X", lease: { tab: "p-X", at: { __ts: new Date().toISOString() } } });
+    const app = await freshPage({ log });
+    const writes = [];
+    app.on("request", (r) => { if (/Firestore\/Write/.test(r.url()) || (r.method() === "POST" && /documents:commit/.test(r.url()))) writes.push(r.url()); });
+    await signIn(app, "guestpw");
+    await app.waitForSelector("#candview:not(.hidden)"); await sleep(1500);
+    const t = await app.$eval("#candview", (e) => e.textContent);
+    problems.push(...ok(t.includes("Booking is paused. Please try again later.") && !(await app.$("#candName")), `page: ${t.slice(0, 160)}`));
+    problems.push(...ok(!writes.length, `writes were sent: ${writes.length}`));
+    problems.push(...ok(!(await emu.getDocument("interviews_availCand/ashcombe")), "something was written"));
+    await closePage(app);
+    return [...problems, ...log];
   },
 };
 

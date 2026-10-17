@@ -709,6 +709,27 @@ details.more > summary::-webkit-details-marker { display:none; }
 .candlabel { display:block; text-align:left; margin-top:10px; }
 .candlabel input { margin-top:6px; }
 
+/* ---- rooms, day chairs, notices, the applicant's interview (H8, H9, H11, H13) -- */
+.dayctl { display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; margin:4px 0 6px; }
+.daychair { display:inline-flex; align-items:center; gap:6px; color:var(--ed-ink-2); }
+.daychair select { margin:0; width:auto; min-height:36px; padding:4px 10px; font-size:var(--ed-text-sm); }
+.roomseg { margin-left:6px; vertical-align:middle; }
+.roomseg button { min-height:30px; padding:0 10px; font-size:var(--ed-text-xs); }
+.panelacts { display:flex; flex-wrap:wrap; gap:4px 14px; margin-top:6px; }
+.panelacts .linky { padding:4px 0; min-height:32px; }
+.scoretoggle { margin-top:8px; }
+.noticecard p { margin:0 0 10px; }
+.replybtns { display:flex; gap:10px; flex-wrap:wrap; margin-top:4px; }
+.replybtn { min-height:var(--ed-tap); }
+@media (max-width:640px) {
+  .replybtns { flex-direction:column; }
+  .replybtns .replybtn, .noticecard > .replybtn { width:100%; }
+  /* on a phone the four message links live in the panel's expanded view */
+  .prow:not(.open) > .panelacts { display:none; }
+  .panelacts { flex-direction:column; gap:2px; }
+  .panelacts .linky { min-height:40px; text-align:left; }
+}
+
 /* ---- mobile field sizing: MUST STAY LAST ---------------------------------
    iOS Safari zooms the whole page whenever a focused field's text is smaller
    than 16px. Several fields here are set smaller for density (the times form,
@@ -723,5 +744,5 @@ details.more > summary::-webkit-details-marker { display:none; }
   input, select, textarea,
   .overlay-box input, .overlay-box select,
   .tform input, .tform select,
-  .ofnote textarea, .ofdates input[type=date], .overall input[type=text], .numin { font-size:16px; }
+  .ofnote textarea, .ofdates input[type=date], .overall input[type=text], .numin, .daychair select { font-size:16px; }
 }

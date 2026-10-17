@@ -45,7 +45,7 @@ export function feasible(slot, candMod, committee, availIv, chair) {
       return av !== undefined && compat(av, pm);
     });
     return pool.length >= 3
-      && pool.some((m) => m.name === chair)
+      && (chair === null || pool.some((m) => m.name === chair))
       && pool.some((m) => m.gender === "F")
       && pool.some((m) => m.gender === "M");
   });
@@ -123,8 +123,13 @@ function mostPeopleUsable(schedule, committee, availIv, chair) {
 
 // `schedule` is what the UI showed: [{ cand (id), slot, modality, members:[names] }]
 // `attention` is { unschedulable:[id], understaffed:[slotId], doubleBooked:[...] }
-export function checkSchedule(state, { committee, chair, schedule, unschedulable = [], understaffed = [], manualIds = new Set(), slotIds = null }) {
+// H13, restated: `rooms` = { slotId: 2 } for two interviews at once; chairFor(slot,
+// room) = the chair that panel needs (a day chair, a room-2 lead, or null for none).
+export function checkSchedule(state, { committee, chair, schedule, unschedulable = [], understaffed = [], manualIds = new Set(), slotIds = null,
+  rooms = {}, chairFor = null, reasons = {} }) {
   const problems = [];
+  const roomsMode = !!chairFor || Object.keys(rooms).length > 0;
+  const chairAt = (s, room = 1) => (chairFor ? chairFor(String(s), room) : chair);
   const bad = (m) => problems.push(m);
   slotIds = slotIds || effSlotIds(state);
   const availIv = state.availIv || {};
@@ -140,7 +145,7 @@ export function checkSchedule(state, { committee, chair, schedule, unschedulable
     if (!activeIds.has(p.cand)) bad(`${who}: scheduled but not on the interview list`);
     if (seenCand.has(p.cand)) bad(`${who}: scheduled twice`);
     seenCand.add(p.cand);
-    (bySlot[p.slot] = bySlot[p.slot] || []).push(who);
+    (bySlot[p.slot] = bySlot[p.slot] || []).push({ who, room: p.room || 1, members: p.members });
     if (!slotIds.includes(String(p.slot))) bad(`${who}: scheduled at a time that no longer exists (${p.slot})`);
 
     const cm = candAvail(state, { id: p.cand, name: who })[p.slot];
@@ -152,7 +157,8 @@ export function checkSchedule(state, { committee, chair, schedule, unschedulable
     const members = p.members;
     if (new Set(members).size !== members.length) bad(`${who}: duplicate panellist`);
     if (members.length < 3 || members.length > 5) bad(`${who}: panel of ${members.length}`);
-    if (!members.includes(chair)) bad(`${who}: chair (${chair}) not on the panel`);
+    const ch = chairAt(p.slot, p.room || 1);
+    if (ch !== null && !members.includes(ch)) bad(`${who}: chair (${ch}) not on the panel`);
     const gs = members.map((m) => (byName.get(m) || {}).gender);
     if (gs.some((g) => !g)) bad(`${who}: panellist not on the committee (${members.filter((m) => !byName.has(m)).join(", ")})`);
     if (!gs.includes("F") || !gs.includes("M")) bad(`${who}: panel is not balanced (${members.join(", ")})`);
@@ -164,7 +170,13 @@ export function checkSchedule(state, { committee, chair, schedule, unschedulable
       }
     }
   }
-  for (const [s, cs] of Object.entries(bySlot)) if (cs.length > 1) bad(`double-booked ${s}: ${cs.join(", ")}`);
+  for (const [s, ps] of Object.entries(bySlot)) {
+    // at most rooms(t) applicants at one time, each in its own room, and panels
+    // at the same time share nobody
+    if (ps.length > (rooms[s] || 1) || new Set(ps.map((p) => p.room)).size < ps.length) bad(`double-booked ${s}: ${ps.map((p) => p.who).join(", ")}`);
+    const seen = new Set();
+    ps.forEach((p) => p.members.forEach((m) => { if (seen.has(m)) bad(`${m} is on two panels at ${s}`); seen.add(m); }));
+  }
 
   // every active candidate is either scheduled or listed as unschedulable
   for (const c of active) {
@@ -176,20 +188,27 @@ export function checkSchedule(state, { committee, chair, schedule, unschedulable
   }
 
   // maximality: could a different pairing have interviewed more people?
+  // seats: one per time, two for a two-room time
   const feas = {};
   for (const c of active) {
-    feas[c.id] = Object.entries(candAvail(state, c))
-      .filter(([s, m]) => slotIds.includes(s) && feasible(s, m, committee, availIv, chair))
-      .map(([s]) => s);
+    feas[c.id] = [];
+    Object.entries(candAvail(state, c)).forEach(([s, m]) => {
+      if (!slotIds.includes(s)) return;
+      if (feasible(s, m, committee, availIv, chairAt(s, 1))) feas[c.id].push(s);
+      if (rooms[s] === 2 && feasible(s, m, committee, availIv, chairAt(s, 2))) feas[c.id].push(s + "#2");
+    });
   }
+  // an applicant the tab says couldn't be seated because two balanced panels
+  // can't run at once still counts as matched (the matching itself was possible)
+  const twoRoomMisses = unschedulable.filter((id) => /two balanced panels at once/.test(reasons[id] || "")).length;
   const autoOnly = schedule.filter((p) => !manualIds.has(p.cand));
   if (!manualIds.size) {
     const best = maxMatching(feas);
-    if (schedule.length < best) bad(`only ${schedule.length} scheduled, but ${best} could have been`);
+    if (schedule.length + twoRoomMisses < best) bad(`only ${schedule.length} scheduled, but ${best} could have been`);
     if (active.length <= 9) {
       const bf = bruteMatching(feas, active.map((c) => c.id));
       if (bf !== best) bad(`checker disagreement: kuhn ${best} vs brute force ${bf}`);
-      if (schedule.length < bf) bad(`only ${schedule.length} scheduled, brute force finds ${bf}`);
+      if (schedule.length + twoRoomMisses < bf) bad(`only ${schedule.length} scheduled, brute force finds ${bf}`);
     }
   }
 
@@ -202,13 +221,14 @@ export function checkSchedule(state, { committee, chair, schedule, unschedulable
     const answered = Object.keys(candAvail(state, c)).filter((s) => slotIds.includes(s));
     diagnosis[id] = !answered.length ? "no-answer"
       : !(feas[id] || []).length ? "infeasible"
+      : roomsMode && /two balanced panels at once/.test(reasons[id] || "") ? "two-rooms"
       : "contested";          // their times could host a panel — someone else has them
   }
 
   // understaffed = a time somebody is available for, where no balanced panel can form
   const expectUnder = slotIds.filter((s) =>
     committee.some((m) => (availIv[m.name] || {})[s] !== undefined)
-    && !feasible(s, "either", committee, availIv, chair));
+    && !feasible(s, "either", committee, availIv, chairAt(s, 1)));
   const gotU = [...understaffed].sort(), wantU = expectUnder.sort();
   if (gotU.join("|") !== wantU.join("|")) bad(`understaffed list is [${gotU}] but should be [${wantU}]`);
 
@@ -235,7 +255,9 @@ export function checkSchedule(state, { committee, chair, schedule, unschedulable
   // interviewer is arithmetic — the balance rule or their own availability —
   // and not the builder giving seats away to people who already had one.
   let bestPeople = null;
-  if (idleButFree.length) bestPeople = mostPeopleUsable(schedule, committee, availIv, chair);
+  // (one chair on every panel is what this enumeration assumes; with rooms or
+  // day chairs the share is not judged here)
+  if (idleButFree.length && !roomsMode) bestPeople = mostPeopleUsable(schedule, committee, availIv, chair);
   const usedPeople = seated.size;
   const shortfall = bestPeople != null && usedPeople < bestPeople;
 

@@ -37,6 +37,7 @@ the usual system paths is used.
 | `npm run editors` | Setup's committee editor and questions editor (in `npm test`): rename keeps input, someone who left still counts but leaves every list, screens-only people are never on a panel, the chair can't leave, and the questions lock once scoring starts. |
 | `npm run stages` | Round stages, deadlines, the schedule lock and the interview-list decisions (in `npm test`): closing screening freezes the list and disables a reviewer's buttons, reopening clears only the frozen answers, a locked schedule doesn't move when someone's availability changes (and Needs attention names them), the countdown reads Setup, notes never count, Make this a note keeps the words (and undoes), On overrides concerns, threshold 0, revealing the ranking can close scoring. |
 | `npm run applicants` | Shared surnames and rename, merge, delete in the app (in `npm test`): a second Kim is prompted and the old answers move only to the chosen Kim, each Kim books under their own key (plain Kim refused, a unique surname still books with the last name only), rename moves availability, the merge preview matches what moves, delete needs the typed surname and leaves nothing, four quick roster edits all go out, and an older tab rewriting the allowed list is capped at 3 writes with a reload message. |
+| `npm run notices` | Two rooms and day chairs, my panels on the Score tab, copy-ready emails and calendar files, and the applicant's confirmed time (in `npm test`): only my panels listed once the schedule is locked (switching keeps an unsaved note), the applicant confirms or withdraws and Undo, booking closed still takes a reply, booking paused shows no name step, a late reply shows to leadership only, and Setup's 2 rooms and no-chair day give disjoint, legal panels. |
 | `npm run emulator` | The REAL page (Firestore and Firebase Auth code, real `firestore.rules`) against the local emulators, project `mgh-ed-hiring-test-emu`. Needs `../tests` installed (it uses that `firebase-tools`) and Java. `make-site.sh --emulator` builds `site-emulator/` by patching the copy only. Not part of `npm test` (it starts emulators). |
 | `npm run stress` | Random panellist behaviour on the Score tab, checked against a model after every pause: plain, with write latency, and with 15% failed writes. `node score-stress.mjs 1 <seed>` replays one; `FULL=1` prints its whole trail. |
 
@@ -48,7 +49,7 @@ above does.
 
 ## What it checks
 
-`check.mjs` deliberately **does not import `panels.js`**. It re-states the rules
+`check.mjs` deliberately **does not import `panels.js`**. Since Oct 2026 it also restates two-room times and day chairs (at most that many applicants at a time, panels at one time share nobody, each panel has its own day's chair or none), and every even fuzz round uses them. It re-states the rules
 from DESIGN.md and checks the schedule on screen against them:
 
 - every panel has the chair, 3–5 members, one of each gender, and everyone on it

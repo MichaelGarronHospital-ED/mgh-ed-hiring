@@ -26,9 +26,9 @@
 //  with the server time. There is no "saved but not logged".
 // ============================================================================
 
-import { effectiveSlots, toStored } from "./slots.js?v=R4";
-import { lastKey, candKey, ls } from "./util.js?v=R4";
-import { ROUND_COLLECTIONS } from "./backup.js?v=R4";
+import { effectiveSlots, toStored } from "./slots.js?v=R5";
+import { lastKey, candKey, ls } from "./util.js?v=R5";
+import { ROUND_COLLECTIONS } from "./backup.js?v=R5";
 
 export const key = (member, candId) => `${member}~${candId}`;
 
@@ -75,7 +75,12 @@ class BaseStore {
   async syncPublicSlots() { /* no-op except on Firestore */ }
   // Forget this browser's own copies of scores, screening and an applicant's
   // picks (H12, at log out). The server copy is untouched.
-  clearLocalCopies() { ls.del(ECHO_KEY); ls.del(CAND_ECHO_KEY); }
+  clearLocalCopies() { ls.del(ECHO_KEY); ls.del(CAND_ECHO_KEY); ls.del(REPLY_ECHO_KEY); }
+  // H11: the applicant's own reply as this device last sent it
+  replyEcho(key) { try { return JSON.parse(ls.get(REPLY_ECHO_KEY) || "{}")[key] || null; } catch { return null; } }
+  _saveReplyEcho(key, r) {
+    try { const all = JSON.parse(ls.get(REPLY_ECHO_KEY) || "{}"); all[key] = r; ls.set(REPLY_ECHO_KEY, JSON.stringify(all)); } catch { /* blocked */ }
+  }
 }
 
 // A field value that removes the field (deleteField() on Firestore).
@@ -301,6 +306,31 @@ export class LocalStore extends BaseStore {
     this._hist(histOf(history));
     this._save();
   }
+  // ---- H11 (local twins of the applicant notice and reply)
+  async getMyNotice(key) { this._load(); return (this.state.notices || {})[key] || null; }
+  async setReply(key, reply) {
+    this._load();
+    const at = new Date().toISOString();
+    this.state.replies = { ...(this.state.replies || {}), [key]: { reply, replyAt: at } };
+    this._saveReplyEcho(key, { reply, at });
+    this._save();
+  }
+  async refreshPublic() { const was = this.state.booking; this._load(); if (this.state.booking !== was) this._emit(); return this.state.booking || "open"; }
+  async publishNotices(desired, history) {
+    this._load();
+    const cur = this.state.notices || {}, next = {}, res = { sent: 0, updated: 0, removed: 0 };
+    const same = (a, b) => JSON.stringify({ ...a, publishedAt: 0 }) === JSON.stringify({ ...b, publishedAt: 0 });
+    Object.entries(desired).forEach(([k, n]) => {
+      if (!cur[k]) res.sent++; else if (!same(cur[k], n)) res.updated++;
+      next[k] = cur[k] && same(cur[k], n) ? cur[k] : { ...n, publishedAt: new Date().toISOString() };
+    });
+    res.removed = Object.keys(cur).filter((k) => !desired[k]).length;
+    this.state.notices = next;
+    this.state.schedule = { ...(this.state.schedule || {}), publishedAt: new Date().toISOString() };
+    this._hist(histOf(history, null, res));
+    this._save();
+    return res;
+  }
   // H5/H14/H1: apply a plan (candidates.js / backup.js). Copies before deletes.
   async applyPlan(plan, history) {
     this._load();
@@ -358,6 +388,8 @@ export class LocalStore extends BaseStore {
 const ALL_SCOPES = ["candidates", "screening", "availIv", "availCand", "scores", "meta", "offers"];
 const ECHO_KEY = "ed_iv_echo_v1";
 const CAND_ECHO_KEY = "ed_iv_cand_echo_v1";
+// H11: an applicant's own reply, remembered on this device (they can't read it back)
+export const REPLY_ECHO_KEY = "ed_iv_cand_reply_v1";
 
 export class FirestoreStore extends BaseStore {
   constructor(fb, opts = {}) {
@@ -832,6 +864,50 @@ export class FirestoreStore extends BaseStore {
       await b.commit();
       if (onProgress) onProgress(Math.min(i + CHUNK, ops.length), ops.length);
     }
+  }
+  // ---- H11: applicant notices and replies
+  // The applicant's own notice: ONE get by their own key (never a listener,
+  // never a list; the rules allow nothing else).
+  async getMyNotice(key) {
+    const { getDoc } = this._fb;
+    const snap = await getDoc(this._doc("interviews_applicant", key));
+    return snap.exists() ? snap.data() : null;
+  }
+  async setReply(key, reply) {
+    const { setDoc, serverTimestamp } = this._fb;
+    await setDoc(this._doc("interviews_availCand", key), { reply, replyAt: serverTimestamp() }, { merge: true });
+    this._saveReplyEcho(key, { reply, at: new Date().toISOString() });
+  }
+  // Re-read the public times document once (the booking flag can be a moment
+  // behind the listener when a write is refused).
+  async refreshPublic() {
+    const { getDoc } = this._fb;
+    const snap = await getDoc(this._doc("interviews_public", "slots"));
+    const b = ((snap.exists() && snap.data()) || {}).booking || "open";
+    const was = (this.state.publicInfo || {}).booking;
+    this.state.publicInfo = { ...(this.state.publicInfo || {}), booking: b };
+    if (b !== was) this._emit();
+    return b;
+  }
+  // Leadership: write the notices that changed, delete the ones nobody should
+  // see any more, stamp schedule.publishedAt, and log it, in one batch.
+  async publishNotices(desired, history) {
+    const { db, collection, getDocs, writeBatch, serverTimestamp } = this._fb;
+    const snap = await getDocs(collection(db, "interviews_applicant"));
+    const cur = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]));
+    const strip = (x) => { const { publishedAt, ...rest } = x || {}; return JSON.stringify(Object.keys(rest).sort().map((k) => [k, rest[k]])); };
+    const b = writeBatch(db), res = { sent: 0, updated: 0, removed: 0 };
+    Object.entries(desired).forEach(([k, n]) => {
+      if (cur[k] && strip(cur[k]) === strip(n)) return;
+      if (cur[k]) res.updated++; else res.sent++;
+      b.set(this._doc("interviews_applicant", k), { ...n, publishedAt: serverTimestamp() });
+    });
+    Object.keys(cur).filter((k) => !desired[k]).forEach((k) => { res.removed++; b.delete(this._doc("interviews_applicant", k)); });
+    b.set(this._doc("interviews_meta", "schedule"), { publishedAt: serverTimestamp() }, { mergeFields: ["publishedAt"] });
+    const h = histOf(history, null, res);
+    if (h) b.set(...this._histDoc(h));
+    await b.commit();
+    return res;
   }
   async txDoc(coll, id, mutate, history) {
     const { db, runTransaction } = this._fb;

@@ -80,6 +80,8 @@ async function runSeed(seed, b, srv) {
   await signIn(page, "staffpw");
   const me = (await page.$$eval("#memberSel option", (o) => o.map((x) => x.value).filter(Boolean)))[0];
   await pickMember(page, me); await tab(page, "score");
+  // H9: nobody is pre-selected; start on the first applicant, as the model does
+  await page.select(".scorebar select", cands.slice().sort((a, b) => a.name.localeCompare(b.name))[0].id); await sleep(80);
   const nQ = await page.$$eval("textarea[id^='note-']", (t) => t.length);
 
   const M = { cur: 0, focus: null, box: "", pending: null, saved: {}, notes: {}, invalidLeft: false };
