@@ -11,6 +11,8 @@ check), and `store.snapshot` / `store.questions` drive `FirestoreStore` against 
 backup never contains an entry that exists only in this browser's echo; the questions arrive
 through the meta listener the ED page already has).
 
+`close-scope.test.mjs` pins what a close may delete (`CLEAR_COLLECTIONS`, never meta, public or the archive) and drives a whole close through the real `rounds.js` and `FirestoreStore` on `helpers/memfirestore.mjs` (a small in-memory stand-in for the Firestore functions), recording every delete.
+
 Two older files here are not rules tests either. `panels.share.test.mjs` covers the pure
 scheduler: that nobody is left off every panel when a seat exists for them
 (`shareOut`), that the repair never breaks a panel, and that an applicant with no

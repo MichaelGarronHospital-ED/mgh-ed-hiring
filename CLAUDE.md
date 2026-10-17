@@ -67,6 +67,19 @@ Full design and reference data (committee, candidates, questions, rules) live in
   stage change, and the booking flag applicants read, goes through `store.updateState` in one
   commit with its history entry. While the schedule is locked, panels come from
   `interviews_meta/schedule` only; never recompute or silently move a locked panel.
+- **The close flow deletes a document only if it equals its archived copy, only in
+  `CLEAR_COLLECTIONS` (never `interviews_meta` or `interviews_public`), and only inside a
+  transaction that checks this page still holds the close.** Nothing in meta changes until the
+  single finish batch. EVERY write the close flow makes (pause, heartbeat, parts, copy saved, step
+  changes, delete chunks, put-back, finish, auto-stop, both Stop buttons, Try again, takeover)
+  goes through `closeTx` (`js/rounds.js` → `store.closeTx`), which re-reads `state` and the
+  attempt and commits only if this page (its id and this load's nonce) holds the lease and the
+  attempt has the expected status. Before any timer of the flow acts, and on wake, the page
+  re-checks ownership. The flow's transactions run one at a time (one chain in `rounds.js`). Never add a plain write to this flow; `sim/emulator.mjs` "sleeping laptop"
+  fails if one comes back.
+- **Backup `version` goes up on any stored shape change; restore must still accept every older
+  file; `ROUND_COLLECTIONS` must match the rules (test).** A restore plan is always made from a
+  fresh `snapshotRaw()`, never page state; the round comes back open with a new `roundId`.
 - **Questions lock once scoring starts** (any score with a number or a note): only the wording
   may change. Never add, remove or reorder mid-round; notes are filed under the ids.
 - **Score notes are keyed by question id. Legacy ids are `"0"`..`"9"`; never renumber.** The

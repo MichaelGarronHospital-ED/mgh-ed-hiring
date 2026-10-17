@@ -52,6 +52,23 @@ open(p, 'w').write(s)
 PY
 fi
 
+# Both copies: let the round-close tests shorten the lease timings and reach the
+# flow's controller (test hooks). Copy only; the repo's own files never do this.
+python3 - "$DST/js/rounds.js" "$DST/js/app.js" <<'PY'
+import sys
+r, a = sys.argv[1], sys.argv[2]
+s = open(r).read()
+old = "  keptMax: 200, chunk: 450, partBytes: 900000, keptHistoryBytes: 400000 };\n"
+if s.count(old) != 1: sys.exit("make-site: TIMING not found in rounds.js")
+s = s.replace(old, old + "Object.assign(TIMING, globalThis.__edRoundsTiming || {});\n")
+open(r, "w").write(s)
+s = open(a).read()
+old = "  onActive: (on) => { ui.closing = on; },\n});\n"
+if s.count(old) != 1: sys.exit("make-site: createRounds call not found in app.js")
+s = s.replace(old, old + "window.__edRounds = rounds;\n")
+open(a, "w").write(s)
+PY
+
 cat > "$DST/js/data.js" <<'JS'
 // TEST DOUBLE — no crypto, no real codes.
 export async function decryptContent(code) {

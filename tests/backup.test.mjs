@@ -114,3 +114,78 @@ test("toState builds the store's shape from raw documents", () => {
   assert.equal(st.settings.committee[0].name, "Marrocco");
   assert.equal(st.questions.questions[0].id, "0");
 });
+
+// ---- R6: chunking and restore plans -------------------------------------------
+import { chunkBytes, unchunk, utf8Length, planRestore, checkBackup, shapeProblem, roundIsEmpty, MAX_RESTORE_DOCS } from "../js/backup.js";
+
+test("chunkBytes cuts 2 MB of accented text and curly quotes by UTF-8 bytes, never inside a character", () => {
+  const text = "Rosalind Ashcombe’s “answer”: é ü ñ ç 😀 ".repeat(50000);
+  const parts = chunkBytes(text, 900000);
+  assert.ok(parts.length >= 2);
+  parts.forEach((p) => assert.ok(utf8Length(p) <= 900000, `part of ${utf8Length(p)} bytes`));
+  assert.equal(new TextEncoder().encode(parts[0]).length, utf8Length(parts[0]));
+  assert.equal(unchunk(parts.map((json, i) => ({ i, json })).reverse()), text);
+  parts.forEach((p) => assert.ok(!/^[\uDC00-\uDFFF]/.test(p) && !/[\uD800-\uDBFF]$/.test(p), "a surrogate pair was split"));
+});
+
+const fileFrom = async (over = {}) => {
+  const r = raw();
+  r.interviews_meta.state = { roundId: "r-1", roundName: "Hiring round 2027", stages: { availability: { closed: true } } };
+  Object.assign(r, over);
+  return buildBackup(r);
+};
+const liveWith = (over = {}) => ({ ...Object.fromEntries(ROUND_COLLECTIONS.map((c) => [c, {}])),
+  interviews_meta: { state: { roundId: "r-1" }, config: { committee: [{ name: "Marrocco", gender: "F" }] }, questions: { version: 1, questions: [{ id: "0", text: "Tell us about yourself" }] } }, ...over });
+
+test("restore, missing items only: adds what is missing, never changes what exists", async () => {
+  const b = await fileFrom();
+  const live = liveWith({ interviews_candidates: { "c-1": { name: "Dr Rosalind Ashcombe", removed: true } } });
+  const p = planRestore(b, live, "missing", { committee: [{ id: "Marrocco", name: "Marrocco", active: true }] });
+  assert.ok(p.ok, p.why);
+  const row = p.rows.find((x) => x.coll === "interviews_candidates");
+  assert.deepEqual([row.inFile, row.now, row.add, row.same, row.different], [1, 1, 0, 0, 1]);
+  assert.ok(p.writes.some((w) => w.coll === "interviews_screening" && w.id === "Marrocco~c-1"));
+  assert.ok(!p.writes.some((w) => w.coll === "interviews_candidates"), "an existing (different) document was overwritten");
+  const h = p.writes.find((w) => w.coll === "interviews_history");
+  assert.equal(h.data.restored, true);
+  // a note under q1k9z that the current list lacks comes back as an archived question
+  assert.deepEqual(p.meta.questions.questions.map((q) => [q.id, !!q.archived]), [["0", false], ["q1k9z", true]]);
+  assert.equal(p.meta.config, undefined, "setup must never be overwritten in this mode");
+});
+
+test("restore, missing items only: refused for a file from another round", async () => {
+  const b = await fileFrom();
+  const p = planRestore(b, liveWith({ interviews_meta: { state: { roundId: "r-2" } } }), "missing", {});
+  assert.equal(p.ok, false);
+  assert.match(p.why, /not the round you are working on\. To look at it again, use Past rounds, Bring back\./);
+  // brought back from that file: allowed
+  assert.equal(planRestore(b, liveWith({ interviews_meta: { state: { roundId: "r-9", broughtBackFrom: "r-1" } } }), "missing", {}).ok, true);
+});
+
+test("restore, replace: only into an empty round; comes back open with a new id, members as left, booking from the stages", async () => {
+  const b = await fileFrom();
+  assert.equal(planRestore(b, liveWith({ interviews_candidates: { "c-9": { name: "X" } } }), "replace", {}).ok, false);
+  const p = planRestore(b, liveWith(), "replace", { committee: [{ id: "Vojdani", name: "Vojdani", active: true }], newRoundId: "r-new", nowIso: "2027-04-01T00:00:00.000Z" });
+  assert.ok(p.ok, p.why);
+  assert.equal(p.meta.state.roundStatus, "open");
+  assert.equal(p.meta.state.roundId, "r-new");
+  assert.equal(p.meta.state.broughtBackFrom, "r-1");
+  for (const k of ["closingTab", "closingAttemptId", "closingStartedAt"]) assert.equal(p.meta.state[k], null);
+  assert.equal(p.meta.public.booking, "closed");
+  assert.ok(p.meta.config.committee.some((m) => m.id === "Marrocco" && m.active === false), "a member from the file wasn't added as left");
+  assert.ok(roundIsEmpty(liveWith()));
+});
+
+test("checks: ids, document size, the 10,000 cap, and the shapes the rules check", async () => {
+  const b = await fileFrom();
+  assert.deepEqual(checkBackup(b).errors, []);
+  const big = JSON.parse(JSON.stringify(b));
+  big.data.interviews_screening = Object.fromEntries(Array.from({ length: MAX_RESTORE_DOCS + 1 }, (_, i) => [`m~c-${i}`, { rating: 1 }]));
+  assert.ok(checkBackup(big).errors.includes("This backup is too big to restore in one day on the free plan."));
+  const badId = JSON.parse(JSON.stringify(b)); badId.data.interviews_offers["a/b"] = { status: "" };
+  assert.ok(checkBackup(badId).errors.length);
+  assert.equal(shapeProblem("interviews_availCand", { slots: { t1: "maybe" } }), "times in an unknown form");
+  assert.equal(shapeProblem("interviews_offers", { status: "pending" }), "an unknown status or a note too long");
+  assert.equal(shapeProblem("interviews_history", { by: "x", action: "a", text: "t" }), "no time");
+  assert.equal(shapeProblem("interviews_history", { at: { __ts: "2027-01-01T00:00:00.000Z" }, by: "x", action: "a", text: "t" }), null);
+});

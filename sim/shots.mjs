@@ -21,9 +21,10 @@ export const STATE = {
     h3: { at: new Date(Date.now() - 600e3).toISOString(), by: "leadership", action: "times.add", text: "Added 2 interview times" },
   },
 };
-export async function shoot(name, prep, { code = "adminpw", state = STATE } = {}) {
+export async function shoot(name, prep, { code = "adminpw", state = STATE, before = null } = {}) {
   for (const [w, label] of [[390, "phone"], [1280, "desktop"]]) for (const scheme of ["light", "dark"]) {
     const page = await b.newPage();
+    if (before) await page.evaluateOnNewDocument(before);
     await page.setViewport({ width: w, height: w < 500 ? 844 : 900, deviceScaleFactor: 1 });
     await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: scheme }]);
     await page.goto(site.url, { waitUntil: "domcontentloaded" });
@@ -100,6 +101,27 @@ const shots = {
     await shoot("applicant-notice", async (p) => { await p.waitForSelector("#candName"); await p.type("#candFirst", "Rosalind"); await p.type("#candName", "Ashcombe");
       await p.click("#candGo"); await p.waitForSelector(".noticecard"); }, { code: "guestpw", state: lockedSt });
     await shoot("applicant-paused", async (p) => { await sleep(300); }, { code: "guestpw", state: { ...STATE, booking: "paused" } });
+  },
+  R6: async () => {
+    const st = { ...STATE, meta: { roundId: "r-2026", roundName: "Hiring round 2026" }, settings: { ...STATE.settings, retentionMonths: 24 } };
+    const flowTo = async (p, title) => p.waitForFunction((t) => (document.querySelector("#flowTitle") || {}).textContent === t, { timeout: 15000 }, title);
+    await shoot("setup-this-round", async (p) => { await landAsAdmin(p); await openCard(p, "setRound");
+      await p.evaluate(() => { for (const s of ["setRetention", "setRestore"]) document.querySelector(`details[data-sec="${s}"]`).open = true; }); }, { state: st });
+    await shoot("close-step1", async (p) => { await landAsAdmin(p); await p.evaluate(() => window.IV.closeRound()); await flowTo(p, "Close the round?"); }, { state: st });
+    await shoot("close-step5", async (p) => { await landAsAdmin(p); await p.evaluate(() => window.IV.closeRound()); await flowTo(p, "Close the round?");
+      await p.evaluate(() => [...document.querySelectorAll("#flowBtns button")].find((x) => x.textContent === "Continue").click()); await flowTo(p, "Now save the backup"); }, { state: st });
+    const closed = new Date(Date.now() - 400 * 864e5).toISOString(), due = new Date(Date.now() - 864e5).toISOString();
+    const withPast = { ...st, archive: {
+      "a-20250901-x": { roundId: "r-2025", name: "Hiring round 2025", status: "closed", closedAt: closed, deleteAfter: due, counts: { interviews_candidates: 14 }, _chunks: {} },
+      "a-20260901-y": { roundId: "r-2026a", name: "Spring hiring 2026", status: "closed", closedAt: new Date(Date.now() - 40 * 864e5).toISOString(),
+        deleteAfter: new Date(Date.now() + 690 * 864e5).toISOString(), counts: { interviews_candidates: 9 }, _chunks: {} },
+      "a-20261001-z": { roundId: "r-2026", name: "Hiring round 2026", status: "abandoned", startedAt: new Date().toISOString(), _chunks: {} } } };
+    await shoot("past-rounds", async (p) => { await landAsAdmin(p); await openCard(p, "setPast"); }, { state: withPast });
+    await shoot("round-line-stale", async (p) => { await landAsAdmin(p); await sleep(1500); }, { state: { ...st,
+      meta: { ...st.meta, roundStatus: "closing", closingTab: "p-other", closingAttemptId: "a-1", closingStartedAt: new Date().toISOString(),
+        lease: { tab: "p-other", load: "l", at: new Date(Date.now() - 600000).toISOString() } },
+      archive: { "a-1": { status: "clearing", name: "Hiring round 2026", _chunks: {} } } },
+      before: () => { globalThis.__edRoundsTiming = { staleMs: 500 }; } });
   },
 };
 if (shots[rel]) { await shots[rel](); await done(); }
