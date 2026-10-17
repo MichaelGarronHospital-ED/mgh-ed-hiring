@@ -28,16 +28,19 @@
 
 import { effectiveSlots, toStored } from "./slots.js?v=R6";
 import { lastKey, candKey, ls } from "./util.js?v=R6";
-import { ROUND_COLLECTIONS, quarantineSet } from "./backup.js?v=R6";
+import { ROUND_COLLECTIONS, quarantineSet, isQuarantined } from "./backup.js?v=R6";
 
 // R6 (review 3 m2): documents kept by a close because they changed after the
 // copy belong to no round until leadership decides. Every view leaves them out.
 const QUAR_FIELDS = [["screening", "interviews_screening"], ["scores", "interviews_scores"], ["availIv", "interviews_availIv"],
   ["availCand", "interviews_availCand"], ["availRaw", "interviews_availCand"], ["offers", "interviews_offers"], ["notices", "interviews_applicant"]];
-function quarantineView(state) {
+// rawDocs: the raw documents as the server has them ({ coll: { id: doc } }), to
+// tell a kept document from a new one with the same id; null = unknown (kept).
+function quarantineView(state, rawDocs = null) {
   const q = quarantineSet(((state || {}).meta || {}).keptFromClose);
   if (!q.size) return state;
-  const has = (c, id) => q.has(`${c}/${id}`);
+  const raw = rawDocs ? rawDocs() : null;
+  const has = (c, id) => isQuarantined(q, c, id, raw ? (raw[c] || {})[id] : undefined);
   const v = { ...state, candidates: (state.candidates || []).filter((c) => !has("interviews_candidates", c.id)) };
   QUAR_FIELDS.forEach(([f, c]) => { if (v[f]) v[f] = Object.fromEntries(Object.entries(v[f]).filter(([id]) => !has(c, id))); });
   return v;
@@ -46,7 +49,7 @@ function quarantineRaw(raw) {
   const q = quarantineSet((((raw || {}).interviews_meta || {}).state || {}).keptFromClose);
   if (!q.size) return raw;
   const out = { ...raw };
-  Object.keys(out).forEach((c) => { out[c] = Object.fromEntries(Object.entries(out[c] || {}).filter(([id]) => !q.has(`${c}/${id}`))); });
+  Object.keys(out).forEach((c) => { out[c] = Object.fromEntries(Object.entries(out[c] || {}).filter(([id, d]) => !isQuarantined(q, c, id, d))); });
   return out;
 }
 // Thrown when this page no longer holds the close (review 3 M1).
@@ -91,9 +94,10 @@ class BaseStore {
   // The UI branches on it rather than promising "on any device" and being wrong
   // for however long it takes someone to paste the rules into the console.
   screeningReadBack = true;
-  getState() { return quarantineView(this.state); }
-  subscribe(cb) { this._subs.add(cb); cb(quarantineView(this.state)); return () => this._subs.delete(cb); }
-  _emit() { const v = quarantineView(this.state); for (const cb of this._subs) cb(v); }
+  getState() { return quarantineView(this.state, () => this._rawDocs()); }
+  subscribe(cb) { this._subs.add(cb); cb(this.getState()); return () => this._subs.delete(cb); }
+  _emit() { const v = this.getState(); for (const cb of this._subs) cb(v); }
+  _rawDocs() { return null; }
   async syncPublicSlots() { /* no-op except on Firestore */ }
   // Forget this browser's own copies of scores, screening and an applicant's
   // picks (H12, at log out). The server copy is untouched.
@@ -174,7 +178,10 @@ export class LocalStore extends BaseStore {
   // the stored state, re-shaped as the raw documents of every round collection
   async snapshotRaw() {
     this._load();
-    const st = JSON.parse(JSON.stringify(this.state));
+    return quarantineRaw(this._rawOf(JSON.parse(JSON.stringify(this.state))));
+  }
+  _rawDocs() { return this._rawOf(this.state); }
+  _rawOf(st) {
     const raw = Object.fromEntries(ROUND_COLLECTIONS.map((n) => [n, {}]));
     (st.candidates || []).forEach(({ id, ...d }) => { raw.interviews_candidates[id] = d; });
     raw.interviews_screening = st.screening || {};
@@ -195,7 +202,7 @@ export class LocalStore extends BaseStore {
     if (st.passwordsMeta) meta.passwords = st.passwordsMeta;
     raw.interviews_meta = meta;
     raw.interviews_history = st.history || {};
-    return quarantineRaw(raw);
+    return raw;
   }
   // -- mutations
   async addCandidate(name, history) {
@@ -389,6 +396,7 @@ export class LocalStore extends BaseStore {
       attemptCreate: (id, d) => ops.push(() => { this.state.archive = { ...(this.state.archive || {}), [id]: { ...d, owner: claim, _chunks: {} } }; }),
       attemptDelete: (id) => ops.push(() => { const a = { ...(this.state.archive || {}) }; delete a[id]; this.state.archive = a; }),
       part: (i, json) => ops.push(() => { const a = this.state.archive[ctx.attemptId]; a._chunks = { ...(a._chunks || {}), [i]: { i, json } }; }),
+      partDelete: (id, i) => ops.push(() => { const a = (this.state.archive || {})[id]; if (a && a._chunks) { const c = { ...a._chunks }; delete c[i]; a._chunks = c; } }),
       set: (coll, id, data, opts) => ops.push(() => this._applyOne({ coll, id, data, merge: !!opts })),
       del: (coll, id) => ops.push(() => this._applyOne({ coll, id, del: true })),
       get: async (coll, id) => { const raw = await this._rawAll(); return (raw[coll] || {})[id] || null; },
@@ -433,7 +441,7 @@ export class LocalStore extends BaseStore {
   async keptDecision(deleteThem, list, history) {
     this._load();
     if (deleteThem) this.applyPlanSync({ deletes: list.filter((k) => k.coll !== "interviews_history") });
-    this.state.meta = { ...(this.state.meta || {}), keptFromClose: [] };
+    this.state.meta = { ...(this.state.meta || {}), keptFromClose: [], keptFromAttempt: null };
     this._hist(histOf(history));
     this._save();
   }
@@ -524,6 +532,7 @@ const CAND_ECHO_KEY = "ed_iv_cand_echo_v1";
 export const REPLY_ECHO_KEY = "ed_iv_cand_reply_v1";
 
 export class FirestoreStore extends BaseStore {
+  _rawDocs() { return this._raw || null; }
   constructor(fb, opts = {}) {
     super();
     this._fb = fb; // { db, ...firestore fns }
@@ -551,8 +560,13 @@ export class FirestoreStore extends BaseStore {
     setTimeout(() => { if (!this.ready) { arrive(); this._emit(); } }, 5000);
     this._candEcho = !on("availCand"); // applicants: no read access to availCand
     if (this._candEcho) this._loadCandEcho();
+    // the raw documents of each watched collection, as the server sent them, so
+    // a kept item can be told from a new document with the same id
+    const RAWC = { candidates: "interviews_candidates", screening: "interviews_screening", availIv: "interviews_availIv",
+      availCand: "interviews_availCand", scores: "interviews_scores", offers: "interviews_offers" };
+    this._raw = {};
     const watch = (name, ref, apply) =>
-      onSnapshot(ref, (snap) => { apply(snap); this._emit(); },
+      onSnapshot(ref, (snap) => { if (RAWC[name] && snap.docs) this._raw[RAWC[name]] = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()])); apply(snap); this._emit(); },
                  (err) => { console.warn("snapshot denied:", name, err && err.code); });
 
     // A reviewer may `get` a screening document but not `list` the collection
@@ -1083,6 +1097,7 @@ export class FirestoreStore extends BaseStore {
         attemptCreate: (id, d) => tx.set(this._doc("interviews_archive", id), { ...d, owner: claim }),
         attemptDelete: (id) => tx.delete(this._doc("interviews_archive", id)),
         part: (i, json) => tx.set(doc(db, "interviews_archive", ctx.attemptId, "parts", String(i)), { i, json }),
+        partDelete: (id, i) => tx.delete(doc(db, "interviews_archive", id, "parts", String(i))),
         set: (coll, id, data, opts) => (opts ? tx.set(this._doc(coll, id), data, opts) : tx.set(this._doc(coll, id), data)),
         del: (coll, id) => tx.delete(this._doc(coll, id)),
         get: async (coll, id) => { const x = await tx.get(this._doc(coll, id)); return x.exists() ? x.data() : null; },
@@ -1121,7 +1136,7 @@ export class FirestoreStore extends BaseStore {
   async keptDecision(deleteThem, list, history) {
     await this._withHistory((b) => {
       if (deleteThem) list.filter((k) => k.coll !== "interviews_history").forEach((k) => b.delete(this._doc(k.coll, k.id)));
-      b.set(this._doc("interviews_meta", "state"), { keptFromClose: [] }, { mergeFields: ["keptFromClose"] });
+      b.set(this._doc("interviews_meta", "state"), { keptFromClose: [], keptFromAttempt: null }, { mergeFields: ["keptFromClose", "keptFromAttempt"] });
     }, history);
   }
 

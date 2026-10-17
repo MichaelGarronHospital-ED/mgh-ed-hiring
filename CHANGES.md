@@ -65,6 +65,27 @@ the three role-account sign-ins (see the console steps in README).
   while a round is closing, and they are a log); the test-only timing override and controller
   access exist in the sim and emulator copies only (`make-site.sh` patches them in).
 
+- **Review fixes:**
+  - A tab duplicated before a close shares the tab id; it now takes its own id on the first
+    state it sees unless that id holds a close, carries a close on only on that first state
+    (a real reload), and is otherwise read-only, so it can never take over its twin's close.
+    A reloaded page accepts its own claim from before the reload, and a page that stood down
+    is reset once no close is running. A close with no holder is offered at once.
+  - Every close transaction waits for the one before it (heartbeat and Try again never race).
+  - Clearing collects kept items afresh each run, decided inside each transaction, so a retry
+    never counts one twice. More than 200 kept items offers only "Stop closing and put
+    everything back", with why.
+  - Kept items carry the hash of the document as kept, and count as kept only while the
+    document is unchanged: availability under the same member or surname in the next round is
+    the new round's as soon as it is written. "Download and delete them" deletes only what is
+    still exactly the kept document. History written after the copy goes with the closed round
+    (on its saved copy, removed from the new round in the finish batch) and is in the kept
+    download.
+  - Replace and Bring back are refused until Leadership decides about kept items; "missing
+    items only" accepts a file from before rounds for a round brought back from such a file.
+  - "Try again" deletes the failed copy's parts inside its own transaction (no plain delete).
+  - Other pages are made read-only with `inert`, not only greyed out.
+
 Tests: `tests/close-scope.test.mjs` (with `tests/helpers/memfirestore.mjs`), R6 cases in
 `tests/backup.test.mjs`; `sim/rounds.mjs` (6 scenarios); emulator: quiet close then bring back
 (ED rating saves at once) and close again, killed mid-parts and finished elsewhere, killed

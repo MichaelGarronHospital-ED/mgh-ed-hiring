@@ -20,7 +20,7 @@
 // ============================================================================
 
 import { buildBackup, chunkBytes, unchunk, parseBackup, CLEAR_COLLECTIONS, canonical, encodeValue, utf8Length,
-         FORMAT, VERSION } from "./backup.js?v=R6";
+         FORMAT, VERSION, docHash } from "./backup.js?v=R6";
 import { entry as hEntry } from "./history.js?v=R6";
 import { escapeHtml, flowDialog, toast, ss } from "./util.js?v=R6";
 import { bookingFor } from "./stages.js?v=R6";
@@ -33,12 +33,19 @@ const ymd = (d = new Date()) => `${d.getFullYear()}${String(d.getMonth() + 1).pa
 
 // The page id lives in sessionStorage, so a page that reloads mid-close is
 // still the holder; where storage is blocked it lives in memory only. Every
-// page load also makes a fresh nonce: two copies of a duplicated tab share an
-// id, and the copy that loaded last wins (review 5 m2).
+// page load also makes a fresh nonce. A duplicated tab copies sessionStorage,
+// so twins start with the same id: on the first state the page sees, it keeps
+// the id only if that id holds a close (a reload mid-close carries on) and
+// otherwise takes a new one, so the twins part ways (review M4).
 let TAB = null;
 export function pageId() {
   if (TAB) return TAB;
   TAB = ss.get("ed_iv_tab") || `p-${rand()}${rand()}`;
+  ss.set("ed_iv_tab", TAB);
+  return TAB;
+}
+export function newPageId() {
+  TAB = `p-${rand()}${rand()}`;
   ss.set("ed_iv_tab", TAB);
   return TAB;
 }
@@ -48,16 +55,24 @@ export const holds = (st) => !!st && st.closingTab === pageId() && !!st.lease &&
 // deps: { store(), state() (page state S), byWho(), release, roundName(), retentionMonths(),
 //         downloadText(name, text, mime), excelFromData(data), rerender(), onActive(bool) }
 export function createRounds(deps) {
-  const C = { active: false, attemptId: null, half: 1, backup: null, text: null, ctl: null, kept: [], name: "",
+  const C = { active: false, attemptId: null, half: 1, backup: null, text: null, ctl: null, kept: [], keptHistory: [], name: "",
     lastAction: 0, lastProgress: 0, lastTick: 0, timer: null, resuming: false, resumed: false, stoodDown: false,
-    leaseSeen: { key: "", since: 0 } };
+    seenFirst: false, preResumeLoad: null, partsTried: 0, leaseSeen: { key: "", since: 0 } };
   const hooks = {};               // test hooks (the emulator build reaches them); empty in normal use
   const store = () => deps.store();
   const ctx = () => ({ tab: pageId(), load: LOAD, attemptId: C.attemptId });
   const acted = () => { C.lastAction = Date.now(); };
 
   // ---- the only way this flow writes -----------------------------------
-  async function tx(expect, fn) {
+  // One at a time: every close transaction waits for the one before it (the
+  // heartbeat and a "Try again" must never race each other).
+  let chain = Promise.resolve();
+  function tx(expect, fn) {
+    const run = chain.then(() => tx1(expect, fn));
+    chain = run.catch(() => {});
+    return run;
+  }
+  async function tx1(expect, fn) {
     try { return await store().closeTx(ctx(), expect, fn); }
     catch (e) {
       if (e && e.code === "took-over") { tookOver(); throw e; }
@@ -156,9 +171,12 @@ export function createRounds(deps) {
       if (create) await tx(["missing"], (w) => w.attemptCreate(C.attemptId, { roundId, name: b.round.name, status: "saving",
         startedAt: w.claim.at, closedBy: deps.byWho(), format: FORMAT, version: VERSION, parts: parts.length, bytes: utf8Length(text),
         checksum: b.checksum, counts: b.counts, restoredAt: null }));
+      C.partsTried = Math.max(C.partsTried, parts.length);
       for (let i = 0; i < parts.length; i++) {
         if (hooks.beforePart) await hooks.beforePart(i);
-        await tx(["saving"], (w) => w.part(i, parts[i]));
+        // the first write also says how many parts there are, so a later "Try
+        // again" can delete every one of them inside its own transaction
+        await tx(["saving"], (w) => { if (i === 0 && !create) w.attempt({ parts: parts.length }); w.part(i, parts[i]); });
         C.lastProgress = Date.now();
       }
       const back = unchunk(await store().readParts(C.attemptId));
@@ -176,7 +194,8 @@ export function createRounds(deps) {
     }
   }
   // "Try again": a new attempt id in state and the new attempt in one
-  // transaction; the failed attempt is only a copy and is deleted.
+  // transaction; the failed attempt is only a copy, and it and its parts are
+  // deleted in that same transaction (no write outside closeTx).
   async function retry() {
     const old = C.attemptId, next = `a-${ymd()}-${rand()}`;
     try {
@@ -184,11 +203,14 @@ export function createRounds(deps) {
         w.state({ closingAttemptId: next });
         w.attemptCreate(next, { roundId: "pending", name: C.name, status: "saving", startedAt: w.claim.at, closedBy: deps.byWho(),
           format: FORMAT, version: VERSION, restoredAt: null });
-        if (w.att) w.attemptDelete(old);
+        if (w.att) {
+          const n = Math.max(Number(w.att.parts) || 0, C.partsTried || 0);
+          for (let i = 0; i < n; i++) w.partDelete(old, i);
+          w.attemptDelete(old);
+        }
       });
     } catch (e) { if (e && e.code === "took-over") return; show({ title: "Couldn't try again", html: `<p>${escapeHtml((e && e.message) || "Check your connection.")}</p>`, buttons: [stopButton(), { label: "Try again", kind: "filled", run: retry }] }); return; }
-    C.attemptId = next;
-    store().deleteArchive(old).catch(() => { /* a leftover copy is harmless */ });
+    C.attemptId = next; C.partsTried = 0;
     await saveCopy(false);
     // the real roundId and counts, now that the copy is saved
   }
@@ -225,37 +247,48 @@ export function createRounds(deps) {
   async function clear(resumed) {
     C.half = 2; C.lastProgress = Date.now();
     progress("Closing the round", "Clearing the working round. Keep this page open.");
+    // collected afresh on every run (a "Try again" starts from nothing)
+    C.kept = []; C.keptHistory = [];
     try {
       if (!resumed) await tx(["saved"], (w) => w.attempt({ status: "clearing" }));
       const copy = C.backup.data;
       for (const coll of CLEAR_COLLECTIONS) {
         const live = (await store().readCollections([coll]))[coll];
-        const same = [], keptHere = [];
+        const same = [], keptHere = new Map();
+        // kept: changed (or new) after the copy. Each carries the hash of the
+        // document as kept; history written after the copy goes with the old
+        // round (on the attempt) and is removed from the new one at finish.
+        const keep = (id, d) => keptHere.set(id, coll === "interviews_history" ? { id, data: encodeValue(d) } : { coll, id, hash: docHash(d) });
         Object.entries(live).forEach(([id, d]) => {
           const c = (copy[coll] || {})[id];
           if (c !== undefined && canonical(encodeValue(d)) === canonical(c)) same.push(id);
-          else if (coll !== "interviews_history") keptHere.push(id);   // history written after the copy simply stays
+          else keep(id, d);
         });
         for (let i = 0; i < same.length; i += TIMING.chunk) {
           const ids = same.slice(i, i + TIMING.chunk);
           if (hooks.beforeChunk) await hooks.beforeChunk(coll, ids);
-          await tx(["clearing"], async (w) => {
+          // decided inside the transaction, kept outside it: a transaction that
+          // runs its function twice must not count an item twice
+          const chunkKept = await tx(["clearing"], async (w) => {
+            const mine = [];
             const cur = await Promise.all(ids.map((id) => w.get(coll, id)));
             ids.forEach((id, j) => {
               if (cur[j] && canonical(encodeValue(cur[j])) === canonical(copy[coll][id])) w.del(coll, id);
-              else if (cur[j] && coll !== "interviews_history") keptHere.push(id);
+              else if (cur[j]) mine.push([id, cur[j]]);
             });
+            return mine;
           });
+          (chunkKept || []).forEach(([id, d]) => keep(id, d));
           C.lastProgress = Date.now();
         }
-        keptHere.forEach((id) => C.kept.push({ coll, id }));
+        keptHere.forEach((k) => (coll === "interviews_history" ? C.keptHistory : C.kept).push(k));
       }
-      if (C.kept.length > TIMING.keptMax) {
+      if (C.kept.length > TIMING.keptMax || C.keptHistory.length > TIMING.keptMax) {
         show({ title: "The round was not closed",
-          html: `<p>More than ${TIMING.keptMax} items changed after the copy was saved, so the round was not closed. Reload every Physician Hiring page,
-            then choose Finish closing, or Stop closing and put everything back.</p>`,
-          buttons: [{ label: "Stop closing and put everything back", kind: "ghost", run: () => { acted(); putBack(); } },
-            { label: "Finish closing", kind: "filled", run: () => { acted(); C.kept = []; clear(true); } }] });
+          html: `<p>More than ${TIMING.keptMax} items changed after the copy was saved, so the round was not closed. Something is still
+            writing to it (often an older Physician Hiring page left open). Reload or close every other Physician Hiring page, then stop
+            closing, which puts everything back exactly as it was, and close the round again.</p>`,
+          buttons: [{ label: "Stop closing and put everything back", kind: "filled", run: () => { acted(); putBack(); } }] });
         return;
       }
       await finish();
@@ -274,16 +307,19 @@ export function createRounds(deps) {
     const name = C.backup.round.name;
     const applicants = Object.keys(C.backup.data.interviews_candidates || {}).length;
     const nextRound = `r-${ymd()}-${rand()}`;
-    const kept = C.kept.slice(0, TIMING.keptMax);
+    const kept = C.kept.slice(0, TIMING.keptMax), keptHistory = C.keptHistory.slice(0, TIMING.keptMax);
     await tx(["clearing"], (w) => {
+      keptHistory.forEach((h) => w.del("interviews_history", h.id));
       w.set("interviews_meta", "config", { times: [], slots: [], panelOverrides: {}, days: {}, deadlines: {} },
         { mergeFields: ["times", "slots", "panelOverrides", "days", "deadlines"] });
       w.set("interviews_meta", "allowed", { keys: [] }, { mergeFields: ["keys"] });
       w.set("interviews_meta", "schedule", { locked: false, panels: {} });
       w.set("interviews_public", "slots", { times: [], slots: [], booking: "open" }, { mergeFields: ["times", "slots", "booking"] });
-      w.attempt({ status: "closed", closedAt: store().now(), deleteAfter: months ? store().tsFromMillis(Date.now() + months * 30.44 * 864e5) : null });
+      w.attempt({ status: "closed", closedAt: store().now(), deleteAfter: months ? store().tsFromMillis(Date.now() + months * 30.44 * 864e5) : null,
+        ...(keptHistory.length ? { keptHistory } : {}) });
       w.stateReplace({ interviewsComplete: false, stages: {}, roundStatus: "open", roundId: nextRound, roundName: "", roundOpenedAt: store().now(),
-        closingAttemptId: null, closingStartedAt: null, closingTab: null, keptFromClose: kept, keptFromRound: kept.length ? name : null, broughtBackFrom: null });
+        closingAttemptId: null, closingStartedAt: null, closingTab: null, keptFromClose: kept, keptFromRound: kept.length ? name : null,
+        keptFromAttempt: kept.length ? C.attemptId : null, broughtBackFrom: null });
       w.history(hEntry("round.close", `Closed the round '${name}' (${applicants} applicant${applicants === 1 ? "" : "s"}`
         + `${kept.length ? `, ${kept.length} item${kept.length === 1 ? "" : "s"} kept because ${kept.length === 1 ? "it" : "they"} changed after the copy` : ""})`, { by: deps.byWho() }));
     });
@@ -370,6 +406,9 @@ export function createRounds(deps) {
     if (C.resuming) return;
     C.resuming = true;
     try {
+      // until the reclaim's own snapshot arrives, a snapshot may still carry the
+      // previous load's claim: that is this page before the reload, not a twin
+      C.preResumeLoad = st.lease && st.lease.load;
       await store().reclaim(ctx());                    // a holder write with this load's nonce
       C.attemptId = st.closingAttemptId;
       C.name = st.roundName || "";
@@ -390,17 +429,31 @@ export function createRounds(deps) {
   //   "fresh"    another page holds it and is renewing: read-only, no buttons
   //   "stale"    the lease hasn't changed for 5 minutes on THIS page's clock:
   //              offer Finish closing / Stop closing (a takeover first)
+  // Call it only once the state document has loaded (the first call decides
+  // whether this page is a reload of the holder).
   function onState(st) {
     st = st || {};
-    if (st.roundStatus !== "closing" || !st.closingTab) { C.leaseSeen = { key: "", since: 0 }; return "none"; }
+    const first = !C.seenFirst;
+    C.seenFirst = true;
+    if (st.roundStatus !== "closing") {
+      C.leaseSeen = { key: "", since: 0 }; C.stoodDown = false; C.resumed = false; C.preResumeLoad = null;
+      if (first) newPageId();
+      return "none";
+    }
+    // a close with no holder (left that way by an older page) is offered at once
+    if (!st.closingTab) { C.leaseSeen = { key: "", since: 0 }; if (first) newPageId(); return "stale"; }
+    const load = st.lease && st.lease.load;
     if (st.closingTab === pageId() && !C.stoodDown) {
-      if (st.lease && st.lease.load === LOAD) return "holder";
+      if (load === LOAD) return "holder";
+      if (C.active && load && load === C.preResumeLoad) return "holder";   // our own claim from before the reload
       // another copy of this page (a duplicated tab) wrote a newer claim: it wins
       if (C.active) { C.stoodDown = true; tookOver("This close is continuing in another copy of this page."); return "fresh"; }
-      // this page reloaded mid-close: carry on, once per load
-      if (!C.resuming && !C.resumed) { C.resumed = true; resume(st); }
-      return "holder";
-    }
+      // this page reloaded mid-close: carry on. Only on the first state after
+      // loading: later, the same id with another load is a twin's close, and
+      // this page stays read-only (review M4)
+      if (first && !C.resuming && !C.resumed) { C.resumed = true; resume(st); return "holder"; }
+      if (C.resuming || C.resumed) return "holder";
+    } else if (first && st.closingTab !== pageId()) newPageId();
     const key = JSON.stringify(st.lease || null);
     if (C.leaseSeen.key !== key) C.leaseSeen = { key, since: Date.now() };
     return Date.now() - C.leaseSeen.since >= TIMING.staleMs ? "stale" : "fresh";

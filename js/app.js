@@ -23,7 +23,7 @@ import { fromLegacy, normalizeQuestions, liveQuestions, idsWithNotes, scoringSta
          toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R6";
 import { entry as hEntry, newHistoryId, panelUndo, shortlistUndo, screeningUndo, canUndo, undoneIds, textFor, whoFor, whenFor,
          hashOf, toDate } from "./history.js?v=R6";
-import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS } from "./backup.js?v=R6";
+import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R6";
 import { createRounds, pageId } from "./rounds.js?v=R6";
 import { icsEvent, icsCalendar } from "./ics.js?v=R6";
 import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R6";
@@ -3305,7 +3305,14 @@ window.IV = {
     if (!kept.length) return;
     const raw = await store.readCollections([...new Set(kept.map((k) => k.coll))]);
     const docs = kept.map((k) => ({ ...k, data: (raw[k.coll] || {})[k.id] || null }));
-    downloadFile(`ed-hiring-kept-items-${todayIso()}.json`, JSON.stringify(docs, null, 1), "application/json");
+    // history written after the copy went with the closed round (on its saved copy)
+    let history = [];
+    const from = (S.meta || {}).keptFromAttempt;
+    if (from) { try { history = ((await store.readAttempt(from)) || {}).keptHistory || []; } catch { /* still download the rest */ } }
+    downloadFile(`ed-hiring-kept-items-${todayIso()}.json`, JSON.stringify({ items: docs, history }, null, 1), "application/json");
+    // delete only what is still exactly the kept document: an id the new round
+    // has written since (availability under the same name) is the new round's
+    const stillKept = docs.filter((d) => d.data && (!d.hash || docHash(d.data) === d.hash));
     const name = (S.meta || {}).keptFromRound || "delete";
     const ok = await flowDialog((ctl) => {
       ctl.step({ title: "Delete the kept items", html: `<p>The file with these ${kept.length} items was downloaded. Delete them from the tool now?
@@ -3315,7 +3322,7 @@ window.IV = {
       $("#kdIn").addEventListener("input", (e) => { $("#kdGo").disabled = e.target.value.trim().toLowerCase() !== name.toLowerCase(); });
     });
     if (!ok) return;
-    await withBusy(btn, () => track(store.keptDecision(true, kept, hEntry("round.delete", `Deleted ${kept.length} items kept from the last close`, { by: byWho() }))),
+    await withBusy(btn, () => track(store.keptDecision(true, stillKept, hEntry("round.delete", `Deleted ${stillKept.length} items kept from the last close`, { by: byWho() }))),
       "Deleted").catch(() => {});
   },
   keptKeep: (btn) => withBusy(btn, () => track(store.keptDecision(false, [], hEntry("settings.save", "Kept the items from the last close in this round", { by: byWho() }))),
@@ -3852,10 +3859,14 @@ const rounds = createRounds({
 // finish or stop it (a takeover first, which the server refuses if it is fresh).
 function renderRoundLine() {
   const el = $("#roundLine"); if (!el) return;
+  if (!store || !store.metaLoaded) return;        // the first state decides reload vs twin (rounds.js)
   const st = S.meta || {};
   const mode = rounds.onState(st);
   ui.roundMode = mode;
-  document.body.classList.toggle("closing-elsewhere", mode === "fresh" || mode === "stale");
+  const ro = mode === "fresh" || mode === "stale";
+  document.body.classList.toggle("closing-elsewhere", ro);
+  // read-only for real: no click, key or focus reaches the page or Setup
+  ["#app", "#settings"].forEach((q) => { const e = $(q); if (e) e.inert = ro; });
   if (mode !== "fresh" && mode !== "stale") { el.classList.add("hidden"); el.innerHTML = ""; return; }
   if (mode === "fresh") { el.innerHTML = `<p>Leadership (another page) is closing the round now.</p>`; el.classList.remove("hidden"); return; }
   const started = dayOf(st.closingStartedAt);

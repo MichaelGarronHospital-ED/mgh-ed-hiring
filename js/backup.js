@@ -20,7 +20,7 @@
 //  every older version (upgrading in memory) and refuses newer ones.
 // ============================================================================
 
-import { canonicalJson } from "./history.js?v=R6";
+import { canonicalJson, hashOf } from "./history.js?v=R6";
 
 export const FORMAT = "mgh-ed-hiring-backup";
 export const VERSION = 1;
@@ -204,7 +204,19 @@ export const unchunk = (parts) => [...parts].sort((a, b) => a.i - b.i).map((p) =
 
 // Kept items (review 3 m2): documents left in place by a close because they
 // changed after the copy. They belong to no round until leadership decides.
-export const quarantineSet = (kept) => new Set((kept || []).map((k) => `${k.coll}/${k.id}`));
+// Each kept entry carries the hash of the document as it was kept: some ids
+// come back in the next round (availIv/<member>, availCand/<surname>,
+// applicant/<surname>), so a document counts as kept only while it is still
+// exactly that document; once the new round writes it, it is the new round's.
+export const docHash = (d) => hashOf(encodeValue(d));
+export const quarantineSet = (kept) => new Map((kept || []).map((k) => [`${k.coll}/${k.id}`, k.hash || null]));
+// doc: the raw document now, or undefined when it isn't known (then: kept)
+export function isQuarantined(q, coll, id, doc) {
+  const k = `${coll}/${id}`;
+  if (!q.has(k)) return false;
+  const h = q.get(k);
+  return !h || doc === undefined || doc === null || docHash(doc) === h;
+}
 
 // ---- restore ----------------------------------------------------------------
 export const MAX_RESTORE_DOCS = 10000;
@@ -272,12 +284,20 @@ export function planRestore(backup, live, mode, opts = {}) {
   const st = (L.interviews_meta || {}).state || {};
   const plan = { mode, ok: true, why: "", rows: [], writes: [], skipped: [], warnings: [], meta: {}, total: 0 };
   const fileRound = (backup.round || {}).id || null;
-  const fromHere = fileRound === (st.roundId || null) || (fileRound && fileRound === st.broughtBackFrom);
+  // a file from before rounds existed has no round id: it belongs to the working
+  // round only if that round was brought back from such a file
+  const fromHere = fileRound === (st.roundId || null) || (fileRound && fileRound === st.broughtBackFrom)
+    || (!fileRound && st.broughtBackFrom === "before-rounds");
   if (mode === "missing" && !fromHere) {
     plan.ok = false;
     plan.why = `This file is from '${(backup.round || {}).name || "another round"}', not the round you are working on. To look at it again, use Past rounds, Bring back.`;
   }
   if (mode === "replace" && !roundIsEmpty(live)) { plan.ok = false; plan.why = "Close the current round first, so nothing is lost."; }
+  // kept items are hidden from every view, so the round can look empty while
+  // they are still there: decide about them first (review)
+  if (mode === "replace" && (st.keptFromClose || []).length) {
+    plan.ok = false; plan.why = "First decide what to do with the items kept from the last close (Setup, This round).";
+  }
   for (const [coll, label] of RESTORE_ROWS) {
     const f = F[coll] || {}, l = L[coll] || {};
     const row = { coll, label, inFile: Object.keys(f).length, now: Object.keys(l).length, add: 0, same: 0, different: 0 };

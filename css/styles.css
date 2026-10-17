@@ -734,7 +734,8 @@ details.more > summary::-webkit-details-marker { display:none; }
 .roundline p { background:var(--ed-amber-tint); color:var(--ed-amber); }
 .roundline .linky { color:inherit; }
 /* another Leadership page is closing the round: this one is read-only */
-body.closing-elsewhere #app, body.closing-elsewhere #settings { pointer-events:none; opacity:.6; }
+/* read-only while another page closes the round: the page sets `inert` on both */
+body.closing-elsewhere #app, body.closing-elsewhere #settings { opacity:.6; }
 .filepick { display:inline-flex; align-items:center; cursor:pointer; }
 .rsmode { display:flex; align-items:center; gap:8px; margin:6px 0; }
 .rsmode input { width:auto; min-height:0; margin:0; }

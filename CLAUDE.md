@@ -72,7 +72,7 @@ Full design and reference data (committee, candidates, questions, rules) live in
   goes through `closeTx` (`js/rounds.js` → `store.closeTx`), which re-reads `state` and the
   attempt and commits only if this page (its id and this load's nonce) holds the lease and the
   attempt has the expected status. Before any timer of the flow acts, and on wake, the page
-  re-checks ownership. Never add a plain write to this flow; `sim/emulator.mjs` "sleeping laptop"
+  re-checks ownership. The flow's transactions run one at a time (one chain in `rounds.js`). Never add a plain write to this flow; `sim/emulator.mjs` "sleeping laptop"
   fails if one comes back.
 - **Backup `version` goes up on any stored shape change; restore must still accept every older
   file; `ROUND_COLLECTIONS` must match the rules (test).** A restore plan is always made from a
