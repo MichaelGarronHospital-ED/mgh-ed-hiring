@@ -31,6 +31,11 @@ the three role-account sign-ins (see the console steps in README).
   Nothing else: the rules and the pages already know every role by uid (R7c).
 - Between `--apply` and this page being live (about a minute) a fresh hiring sign-in fails.
 - Version `R7d`. If R8 has shipped by the window, the same one-line change is "R8b" on top of R8.
+- **Precondition:** R8 and every hiring branch after it must contain R7d (merge `main` into it
+  once R7c and R7d are there) before it merges. `hiring-r8` at 689b3f8 predates them: it signs in
+  with the old emails and decides roles by email, so merged after the switch it would lock
+  everyone out. NEW `tests/emails.test.mjs` fails on any branch that still has an old address in
+  `js/` or a page, or a sign-in email that doesn't end in `.invalid`.
 
 Tests: every rules test signs in with the new emails; the sims make the accounts with them; the
 email-change cases (`emailChangeKeepsSessions`, `sim/auth.mjs`, `sim/passwords.mjs`) now change
