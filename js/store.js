@@ -257,6 +257,16 @@ export class FirestoreStore extends BaseStore {
   constructor(fb, opts = {}) {
     super();
     this._fb = fb; // { db, ...firestore fns }
+    // A cached app.js from before R1 hands over fewer SDK functions than this
+    // store needs (no writeBatch, serverTimestamp, getDocs...), so a Leadership
+    // save would fail in the minutes before that page reloads. Take the missing
+    // ones from the same SDK module it loaded: already in memory, so at once.
+    const NEED = ["writeBatch", "serverTimestamp", "getDoc", "getDocs", "deleteDoc", "Timestamp", "query", "orderBy", "limit", "startAfter",
+      "deleteField", "runTransaction", "setDoc", "updateDoc"];
+    if (NEED.some((k) => !fb[k])) {
+      this._sdkFill = import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js")
+        .then((f) => { NEED.forEach((k) => { if (!fb[k]) fb[k] = f[k]; }); }, () => {});
+    }
     this._echo = !!opts.echo;
     const scopes = opts.scopes || ALL_SCOPES;
     if (this._echo) this._loadEcho();
@@ -399,6 +409,7 @@ export class FirestoreStore extends BaseStore {
   }
   // One write plus its history entry, together or not at all.
   async _withHistory(apply, history) {
+    if (this._sdkFill) await this._sdkFill;
     const { db, writeBatch } = this._fb;
     const b = writeBatch(db);
     apply(b);

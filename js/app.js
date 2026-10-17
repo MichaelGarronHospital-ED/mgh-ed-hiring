@@ -2629,6 +2629,8 @@ async function logOut(keys) {
     if (!ok) return;
   }
   keys.forEach((k) => ss.del(k));
+  // say once, after the reload, that scores are saved but won't show here again
+  try { const e = JSON.parse(ls.get("ed_iv_echo_v1") || "{}"); if (Object.keys(e.scores || {}).length) ss.set("ed_iv_bye", "1"); } catch { /* nothing to say */ }
   if (store) store.clearLocalCopies(); else { ls.del("ed_iv_echo_v1"); ls.del("ed_iv_cand_echo_v1"); }
   if (fbAuth) {
     try {
@@ -2754,6 +2756,14 @@ if (!storageWorks()) {
   if (el) el.innerHTML = `<div style="text-align:left" class="muted">Your browser is blocking site storage
     (often Settings → Safari → “Block All Cookies”, or Private Browsing). You can still sign in and
     everything you submit is saved. This device just won’t remember your own answers between visits.</div>`;
+}
+
+// H12: after Log out, the one line about scores (they are on the server, but
+// reviewers can't read scores back, so this device won't show them again)
+if (ss.get("ed_iv_bye")) {
+  ss.del("ed_iv_bye");
+  const el = $("#gerr");
+  if (el) el.innerHTML = `<div style="text-align:left" class="muted">You are logged out. Your scores are saved, but this device won't show them to you again after you sign in.</div>`;
 }
 
 const savedCode = ss.get("ed_iv_code");

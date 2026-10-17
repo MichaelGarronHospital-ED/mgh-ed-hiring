@@ -67,6 +67,10 @@ which the v1 rules refuse.
   (it used to stop for good). Calls are gathered for 250 ms, and the page looks again once a
   write settles, so a roster edit made during a write is not missed (`tests/allowed-sync.test.mjs`).
   README lists the known gaps while a page from before Oct 2026 is still open.
+  A page from before R1 still open with these modules (a mixed cache) gets the SDK functions it
+  does not pass from the SDK it already loaded, so Leadership saves don't fail. Both stylesheets
+  carry `?v=` like the scripts (`tests/versions.test.mjs`). After Log out, the sign-in page says
+  once that scores are saved but this device won't show them again.
 
 Tests: node `members`, `questions`, `history`, `backup`, `store.snapshot`, `store.questions`,
 `versions` (39). Sim: `sim/foundations.mjs` (7 scenarios, in `npm test`). New emulator
