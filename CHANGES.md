@@ -90,6 +90,9 @@ the three role-account sign-ins (see the console steps in README).
   - `scripts/diagnose-login.mjs` signs in with Firebase's REST call and the live site's
     Referer (the keys refuse anything else); a key that still refuses is "can't test from
     here", never "wrong password".
+  - Final review: finishing an unfinished change has no Back to the tick boxes, and starting a
+    change refuses (in the same transaction) when another page has an unfinished change of other
+    passwords, so its record is never overwritten (`sim/passwords.mjs`).
   - After 3 wrong passwords on a device, the sign-in page waits 30 seconds (a countdown on the
     button) before the next try: each wrong password is refused by three accounts, and Firebase
     pauses devices that keep failing. The Passwords card stays hidden unless Firebase is loaded.

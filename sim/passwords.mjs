@@ -220,6 +220,8 @@ const cases = {
       await shot(q, "pending-card");
       await q.evaluate(() => { window.IV.changePasswords(false); });   // any way in leads to finishing it
       await waitFlow(q, "Finish the password change");
+      const btns = await q.$$eval("#flowBtns button", (b) => b.map((x) => x.textContent.trim()));
+      problems.push(...ok(!btns.includes("Back"), `finishing still offers Back to the tick boxes: ${btns}`));
       await fill(q, ["leadership", "ed", "guest"]);
       await shot(q, "finish");
       await flowClick(q, "Finish the change"); await waitFlow(q, "Done", 30000);
@@ -238,6 +240,28 @@ const cases = {
       await signIn(r, NEW.leadership); await landAsAdmin(r);
       await closePage(r);
     }
+    return [...problems, ...log.filter((l) => /^pageerror/.test(l))];
+  },
+
+  // Another page starts a change of other passwords while this dialog is open:
+  // Change now refuses rather than overwrite that page's record.
+  async secondPageCantOverwrite() {
+    const problems = [], log = [];
+    await reset();
+    const p = await freshPage(1280, log);
+    await signIn(p, OLD.leadership); await landAsAdmin(p); await sleep(400);
+    await openCard(p);
+    await p.evaluate(() => { window.IV.changePasswords(false); });
+    await waitFlow(p, "Which password?"); await tick(p, ["ed"]);
+    await flowClick(p, "Next"); await waitFlow(p, "Type the passwords");
+    await fill(p, ["ed"]);
+    await flowClick(p, "Check"); await waitFlow(p, "Ready to change");
+    await emu.setDocument("interviews_meta/passwords", { pending: { roles: ["guest"], startedAt: { __ts: new Date().toISOString() }, done: ["hiring:applicant"], inProgress: null } });
+    await flowClick(p, "Change now"); await waitFlow(p, "Nothing was changed");
+    problems.push(...ok(await signInWorks("committee@ed-hiring.app", OLD.ed) && await signInWorks("ed@ed-motion-voting.app", OLD.ed), "an ED account changed anyway"));
+    const meta = await emu.getDocument("interviews_meta/passwords");
+    problems.push(...ok(meta.pending && meta.pending.roles.join() === "guest" && meta.pending.done.join() === "hiring:applicant", `the other record was overwritten: ${JSON.stringify(meta)}`));
+    await closePage(p);
     return [...problems, ...log.filter((l) => /^pageerror/.test(l))];
   },
 

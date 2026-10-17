@@ -2462,7 +2462,8 @@ async function changePasswords(resuming) {
           ${accountsFor(v.roles).map((a) => pwField("pwOv_" + a.key.replace(":", "_"), `Current password for ${a.label}`, "off")).join("")}
         </details>
         <p id="pwErr" class="small bad" role="alert"></p>`,
-        buttons: [{ label: "Back", run: () => { read(); step1(); } },
+        // finishing an unfinished change: its passwords are fixed, so no Back to the tick boxes
+        buttons: [pend ? { label: "Cancel", run: () => ctl.close(null) } : { label: "Back", run: () => { read(); step1(); } },
           { label: pend ? "Finish the change" : "Check", kind: "filled", run: async (_c, btn) => {
             read();
             const errs = validateNew(v.roles, v.cur, v.next, v.overrides);
@@ -2515,11 +2516,22 @@ async function changePasswords(resuming) {
       let startedAt = null;
       try {
         await store.updatePasswords((d) => {
-          const keep = d && d.pending && JSON.stringify(d.pending.roles) === JSON.stringify(v.roles) ? d.pending : null;
+          // another page may have started a change meanwhile: never overwrite its
+          // record with a change of other passwords (review)
+          if (d && d.pending && JSON.stringify(d.pending.roles) !== JSON.stringify(v.roles))
+            throw Object.assign(new Error("Finish the unfinished change first."), { code: "pending-other" });
+          const keep = d && d.pending ? d.pending : null;
           startedAt = keep ? keep.startedAt : store.now();
           return { ...(d || {}), pending: { roles: v.roles, startedAt, done: keep ? keep.done || [] : [], inProgress: keep ? keep.inProgress || null : null } };
         });
-      } catch (e) { return failed({ done: [], failedAt: accts[0].key, error: e }, "save"); }
+      } catch (e) {
+        if (e && e.code === "pending-other") {
+          ctl.step({ title: "Nothing was changed", html: `<p class="small">Another page started changing other passwords and hasn't finished. Finish the unfinished change first (Setup, Passwords for all ED tools, "Open it to finish").</p>`,
+            buttons: [{ label: "Close", kind: "filled", run: () => ctl.close(null) }] });
+          return;
+        }
+        return failed({ done: [], failedAt: accts[0].key, error: e }, "save");
+      }
       const record = async (p) => {
         for (const a of accts) state[a.key] = p.done.includes(a.key) ? "done" : p.inProgress === a.key ? "now" : "waiting";
         paint();
