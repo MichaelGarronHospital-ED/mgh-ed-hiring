@@ -712,5 +712,5 @@ td.adj { font-variant-numeric:tabular-nums; color:var(--ed-ink-2); }
   input, select, textarea,
   .overlay-box input, .overlay-box select,
   .tform input, .tform select,
-  .ofnote textarea, .ofdates input[type=date], .overall input[type=text] { font-size:16px; }
+  .ofnote textarea, .ofdates input[type=date], .overall input[type=text], .numin { font-size:16px; }
 }

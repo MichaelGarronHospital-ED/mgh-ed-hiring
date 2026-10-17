@@ -246,10 +246,10 @@ async function initStore(role, typed) {
   store.subscribe((s) => {
     S = s;
     if (ui.role === "candidate") {
-      // on the name step, never redraw: a redraw wipes a name being typed or
-      // filled in by the browser (review)
+      // on the name step, redraw only when booking changed: a redraw wipes a
+      // name being typed or filled in by the browser (review)
       const cv = $("#candview");
-      if (cv && !cv.classList.contains("hidden") && (ui.candLast || !$("#candForm"))) renderCandidate();
+      if (cv && !cv.classList.contains("hidden") && (ui.candLast || !$("#candForm") || ui._candBooking !== bookingNow())) renderCandidate();
     }
     else if ($("#app") && !$("#app").classList.contains("hidden")) {
       // The roster changed out from under this session and no longer has the
@@ -2241,6 +2241,7 @@ function proceedCandidate() {
 // applicant as an unknown name.
 const bookingNow = () => (S && S.publicInfo && S.publicInfo.booking) || (S && S.booking) || "open";
 function renderCandidate() {
+  ui._candBooking = bookingNow();
   const el = $("#candview");
   const slots = effectiveSlots(S.settings, SLOTS);
   if (bookingNow() === "closed") {

@@ -57,6 +57,10 @@ the three role-account sign-ins (see the console steps in README).
   only read from R5 on), so once availability is closed an applicant sees "Booking is closed.
   If you need to change your times, reply to our email." instead of every name being "not
   found". Checked in the emulator (`bookingFlag`).
+- **Review fixes (deployability pass):** the applicant's name form is redrawn only when
+  booking changes, so a name being typed or filled in by the browser is never wiped by an
+  unrelated update (`sim/stages.mjs`). The screening-rule number box is 16px on phones (no
+  iOS zoom).
 
 Tests: `tests/stages.test.mjs` (the `isOnList` truth table, freeze and reopen plans);
 `sim/stages.mjs` (7 scenarios); emulator `stageRefusals` (a note pending when scoring closes
