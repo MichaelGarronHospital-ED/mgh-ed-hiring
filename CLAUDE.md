@@ -28,7 +28,8 @@ Full design and reference data (committee, candidates, questions, rules) live in
 - **Run locally:** `python3 -m http.server 8000`, then open http://localhost:8000.
   This talks to the **live** Firebase project and real applicant data: look, don't edit.
   For a safe copy with Firebase switched off, use `sim/make-site.sh` (builds `sim/site/`).
-- **Rules tests:** `cd tests && npm install && npm test` (Firestore emulator; needs Java). 109 tests.
+- **Rules tests:** `cd tests && npm install && npm test` (Firestore emulator; needs Java). 190 tests
+  (109 from before rules v2, unchanged, plus `rules-v2.test.mjs`).
 - **UI simulations:** `cd sim && npm install && npm test`. Any Chrome works; set `$CHROME`
   to pick one. All pass (15/15 scenarios, e2e, score, auth, fuzz; 2026-10-16). Fixture
   interview dates come from `daysAhead()` in `sim/drive.mjs`: never hard-code a
@@ -247,6 +248,12 @@ Full design and reference data (committee, candidates, questions, rules) live in
   so a reviewer's state has nothing to leak even if a gate were missed. Both
   halves are pinned in `tests/store.own-screening.test.mjs`. Don't add a rating,
   average or flag count to a view that isn't admin-gated.
+- **Leadership is checked first in every rule, so stage gates cost ED and Guest writes
+  only.** Rules v2 reads `interviews_meta/state` with `get()` for the stage and round
+  gates; `isAdmin() || ...` first means leadership saves never pay for it. Every gate
+  reads a missing field as open, so older data and older pages behave as before.
+- **Every published rules version is tagged** (`rules-v1-2026-10-16`, `rules-v2-<date>`).
+  Roll back the page first, then the rules, never the rules alone under an R1+ page.
 - **Changing `firestore.rules` needs a console Publish to take effect.** Editing
   the file in the repo does nothing on its own, and the tool will silently keep
   the old behaviour. Run `scripts/sync-allowed.mjs --apply` first where the

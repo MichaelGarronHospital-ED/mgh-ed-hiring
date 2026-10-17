@@ -34,7 +34,17 @@ npm test
 
 `npm test` starts the emulator, runs the suite against it, and shuts it down.
 
-**Last run: Oct 16 2026: 109 tests, 109 pass.** On a bare Debian devcontainer the
+**Last run: Oct 16 2026 (rules v2): 190 tests, 190 pass.** The 109 from before v2 run
+unchanged, which is the proof the page that was live before v2 still works;
+[`rules-v2.test.mjs`](rules-v2.test.mjs) adds 81 for stages, the round close, the
+applicant reply and notices, change history, the close-round archive and its lease
+(including the design review's probes: how a close starts, expired and malformed stored
+claims, takeover at 4 versus 6 minutes by the server clock, and the "sleeping laptop"
+writes). It ends with a load-bearing check that loads a copy of the rules with
+`stageOpen()` forced to `true` into its own project and shows the refused writes then
+go through. The lease guards were also checked by hand on Oct 16 2026: removing the
+fresh-claim check, the expiry check, the owner check or the lease call each fails 3 to
+12 of the v2 tests. On a bare Debian devcontainer the
 toolchain is one line:
 
 ```bash

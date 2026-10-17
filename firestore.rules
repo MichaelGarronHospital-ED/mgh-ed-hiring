@@ -23,9 +23,9 @@ rules_version = '2';
 //  IMPORTANT — before publishing this file:
 //    1. Authentication → Sign-in method → enable Email/Password.
 //    2. Authentication → Users → add the three accounts above; set each password
-//       (committee = the staff code; admin = the independent admin code; applicant
-//       = the guest code). See README → "Real access control".
-//    3. Set AUTH.mode = "roles" in js/config.js and redeploy.
+//       (committee = the ED password; admin = the independent Leadership
+//       password; applicant = the Guest password). See README, "Real access control".
+//    3. The page signs in with these accounts (AUTH in js/config.js).
 //    4. Sign in as admin once (publishes the PII-free list of interview times to
 //       /interviews_public/slots for applicants; every edit in Setup re-publishes).
 //  If the emails in js/config.js differ, edit the three constants below to match.
@@ -50,6 +50,18 @@ rules_version = '2';
 //     Low impact, admin-auditable, and scripts/report-data.mjs --issues flags the
 //     duplicate-surname case; the alternative (per-candidate tokens) breaks the
 //     "one link + last name" flow.
+//   • The same shared Guest account means someone who has the Guest password and
+//     types another applicant's surname can fetch that applicant's confirmed
+//     interview time (interviews_applicant, no name inside) and confirm or
+//     withdraw for them. Same trust level as the line above; every reply is
+//     visible to leadership with its date, and a withdrawal never removes anyone
+//     automatically.
+//
+//  Rules v2 (Oct 2026): round and stage gates, the applicant reply, and three
+//  new collections (interviews_applicant, interviews_history, interviews_archive).
+//  Leadership is ALWAYS checked first in every rule, so the extra get() of
+//  interviews_meta/state is only paid on ED and Guest writes. Every gate reads
+//  "absent" as open, so data written before v2 behaves exactly as before.
 // ============================================================================
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -76,7 +88,19 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/interviews_meta/allowed).data.keys.hasAny([k]);
     }
 
+    // Round and stage state. One document, read with get() on ED and Guest writes
+    // only. A missing document, or one written before stages existed
+    // ({ interviewsComplete }), means everything is open.
+    function statePath() { return /databases/$(database)/documents/interviews_meta/state; }
+    function st() { return exists(statePath()) ? get(statePath()).data : {}; }
+    function roundOpen() { return st().get('roundStatus', 'open') != 'closing'; }
+    function stageOpen(s) {
+      return roundOpen() && st().get('stages', {}).get(s, {}).get('closed', false) != true;
+    }
+
     // Public, PII-free interview slots — applicants (and committee) may READ; only admin writes.
+    // v2: slots.booking ("open" | "closed" | "paused", absent = open) is how the
+    // applicant page learns the state of booking without any committee data.
     match /interviews_public/{doc} {
       allow read:  if isApplicant() || isCommittee();
       allow write: if isAdmin();
@@ -89,13 +113,24 @@ service cloud.firestore {
     // sends `{}`, which leaves the document as it was (or creates an empty one),
     // so it still passes. 200 times is far above a real round (stale ids from
     // removed times stay in the map, so it is not just the times on offer now).
+    // v2 adds the applicant's reply to a published interview time (H11):
+    // reply "" | "confirmed" | "withdrawn" and its server time.
     function availShapeOk() {
       let d = request.resource.data;
       let slots = d.get('slots', {});
-      return d.keys().hasOnly(['slots'])
+      return d.keys().hasOnly(['slots', 'reply', 'replyAt'])
         && slots is map
         && slots.size() <= 200
-        && slots.values().hasOnly(['ip', 'zoom', 'either']);
+        && slots.values().hasOnly(['ip', 'zoom', 'either'])
+        && d.get('reply', '') in ['', 'confirmed', 'withdrawn']
+        && (!('replyAt' in d) || d.replyAt is timestamp);
+    }
+    // After availability closes, an applicant may still confirm or withdraw,
+    // nothing else. The {} name probe changes no key, so it still passes.
+    function onlyReplyChanges() {
+      return resource == null
+        ? request.resource.data.get('slots', {}).size() == 0
+        : request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reply', 'replyAt']);
     }
 
     // Roster (applicant names): committee reads, only admin writes. Adding,
@@ -109,18 +144,25 @@ service cloud.firestore {
     // Applicant availability — applicants submit (create/update) but CANNOT read
     // (write-without-read); committee reads to build panels. Only admin deletes
     // (scripts/rename-candidate.mjs moves a document; purge removes one).
+    // v2: committee writes only while availability is open; applicants only while
+    // the round is open, and once availability closes only their reply.
     match /interviews_availCand/{doc} {
       allow read:           if isCommittee();
-      allow create, update: if availShapeOk()
-        && (isCommittee() || (isApplicant() && nameOnRoster(doc)));
+      allow create, update: if availShapeOk() && (
+           isAdmin()
+        || (isCommittee() && stageOpen('availability'))
+        || (isApplicant() && nameOnRoster(doc) && roundOpen()
+            && (stageOpen('availability') || onlyReplyChanges())));
       allow delete:         if isAdmin();
     }
 
     // Interviewer availability: committee reads and saves; only admin deletes.
     // Unticking a time is an update (deleteField on one key), not a delete.
+    // v2: committee writes only while the availability stage is open.
     match /interviews_availIv/{doc} {
-      allow read, create, update: if isCommittee();
-      allow delete:               if isAdmin();
+      allow read:           if isCommittee();
+      allow create, update: if isAdmin() || (isCommittee() && stageOpen('availability'));
+      allow delete:         if isAdmin();
     }
 
     // Screening flags/ratings.
@@ -143,7 +185,9 @@ service cloud.firestore {
     match /interviews_screening/{doc} {
       allow get:            if isCommittee();
       allow list:           if isAdmin();
-      allow create, update: if isCommittee();   // un-flagging saves flag:false; clearing a rating saves 0
+      // un-flagging saves flag:false; clearing a rating saves 0.
+      // v2: committee writes only while the screening stage is open.
+      allow create, update: if isAdmin() || (isCommittee() && stageOpen('screening'));
       allow delete:         if isAdmin();
     }
 
@@ -157,17 +201,64 @@ service cloud.firestore {
     // per-device mirror (store.js) and says so on screen.
     match /interviews_scores/{doc} {
       allow read:           if isAdmin();
-      allow create, update: if isCommittee();   // clearing a score saves overall:0
+      // clearing a score saves overall:0.
+      // v2: committee writes only while the scoring stage is open.
+      allow create, update: if isAdmin() || (isCommittee() && stageOpen('scoring'));
       allow delete:         if isAdmin();
     }
 
-    // Meta: config (committee/chair/oneDrive/overrides), state (interviewsComplete),
-    // and allowed (the roster surname keys that gate applicant availability writes
-    // above — never read by applicants, only get() by the rules engine).
-    // Committee may read; only admin writes.
+    // Meta: config (committee/chair/oneDrive/overrides/settings), state (stages,
+    // round, close lease), allowed (the roster surname keys that gate applicant
+    // availability writes above, never read by applicants, only get() by the
+    // rules engine), questions, schedule and passwords (dates only, never a
+    // value). Committee may read; only admin writes. The state document also
+    // carries the close lease below.
+    //
+    // H1: the close lease. While a close is in progress (closingTab set), EVERY
+    // write to state must say which page it comes from, by writing
+    // lease = { tab, load, at: serverTimestamp() } as a whole map. Because
+    // lease.at must equal request.time, a plain write that does not mention the
+    // lease (an old page, a forgotten code path) is refused, and a write cannot
+    // inherit someone else's claim from the stored document. Each such write
+    // also renews the lease, by the server's clock. The server refuses:
+    //   - any write from a page other than the holder, except a takeover;
+    //   - a takeover (closingTab changes to the writer) while the lease is under
+    //     5 minutes old;
+    // so a page that slept through a takeover cannot renew, stop, reopen or
+    // steal the close. Starting a close also needs a fresh claim, so a claim
+    // time is always the server's own, and a stored claim whose time is missing
+    // or not a timestamp (or that is not a map at all) counts as expired, so a
+    // takeover is always possible. This guards against stale and buggy pages,
+    // not against Leadership itself. Outside a close (closingTab null before and
+    // after) it always passes, so the ranking reveal and stage writes are
+    // unchanged. It uses only resource and request.time: no extra read.
+    // Every write must also leave roundStatus "closing" exactly when closingTab
+    // is set, so a close can never be left with no holder (or a holder with no
+    // close) for pages to misread.
+    function leaseOk() {
+      let before = resource == null ? {} : resource.data;
+      let after = request.resource.data;
+      let holder = before.get('closingTab', null);
+      let next = after.get('closingTab', null);
+      let claim0 = after.get('lease', null);
+      let claim = claim0 is map ? claim0 : {};
+      let fresh = claim.get('at', null) == request.time;
+      let prev0 = before.get('lease', null);
+      let prevAt = prev0 is map ? prev0.get('at', null) : null;
+      let expired = !(prevAt is timestamp) || request.time > prevAt + duration.value(5, 'm');
+      let consistent = (after.get('roundStatus', 'open') == 'closing') == (next != null);
+      return consistent && (
+           (holder == null && next == null)                        // no close, none starting
+        || (holder == null && next != null
+            && fresh && claim.get('tab', '') == next)              // starting a close
+        || (holder != null && fresh && claim.get('tab', '') == holder
+            && (next == holder || next == null))                   // holder: renew, edit, finish, stop
+        || (holder != null && next != null && next != holder
+            && fresh && claim.get('tab', '') == next && expired)); // takeover of a stale lease
+    }
     match /interviews_meta/{doc} {
       allow read:  if isCommittee();
-      allow write: if isAdmin();
+      allow write: if isAdmin() && (doc != 'state' || leaseOk());
     }
 
     // Offers: one document per candidate (id = candidate id) recording the
@@ -184,6 +275,112 @@ service cloud.firestore {
         && request.resource.data.get('status', '') in ['', 'offered', 'accepted', 'declined']
         && request.resource.data.get('note', '') is string
         && request.resource.data.get('note', '').size() <= 4000;
+    }
+
+    // H11: the confirmed interview time for one applicant. Guest may fetch ONE by
+    // id (its own surname key, which it already typed), never list. No names
+    // inside. Only leadership writes ("Send times to applicants").
+    match /interviews_applicant/{key} {
+      allow get:   if isAdmin() || isApplicant();
+      allow list:  if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // H12: leadership change history. Append-only, stamped by the server clock
+    // (a restore may bring back old entries marked restored:true). Removed only
+    // while a round is closing, when the close flow has moved it into the
+    // archive first.
+    function historyShapeOk() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['at', 'by', 'action', 'text', 'cand', 'member', 'undo', 'restored'])
+        && d.action is string && d.action.size() <= 60
+        && d.text is string && d.text.size() <= 600
+        && d.by is string && d.by.size() <= 80
+        && (d.at == request.time || (d.get('restored', false) == true && d.at is timestamp));
+    }
+    match /interviews_history/{id} {
+      allow read:   if isAdmin();
+      allow create: if isAdmin() && historyShapeOk();
+      allow update: if false;
+      allow delete: if isAdmin() && !roundOpen();
+    }
+
+    // H1: close attempts. Leadership only. One document per attempt, never per
+    // round, so closing a brought-back round again, or retrying, always writes a
+    // new document.
+    //   saving -> saved -> clearing -> closed
+    //   saving | saved -> abandoned   (stop before anything was cleared)
+    //   clearing -> abandoned         (stop after clearing began: the page has
+    //                                  already put every cleared document back)
+    // Every create and status change must come from the page holding the close:
+    // the write carries owner = { tab, load, at: serverTimestamp() } (written
+    // whole, so it cannot be inherited), owner.tab must equal state.closingTab,
+    // and state.closingAttemptId must be this attempt. get() sees state as it was
+    // before this write or batch, which is what the finish and stop batches need
+    // (they clear closingTab in the same batch); create uses getAfter() because
+    // "Try again" moves closingAttemptId in the same transaction.
+    // Attempts that are only copies (saving, saved, abandoned) can be deleted at
+    // any time. A clearing attempt can never be deleted. A closed attempt keeps
+    // the retention guard: closedAt is the server clock, deleteAfter is at least
+    // 30 days later, and neither can move earlier. Only a closed attempt may
+    // carry deleteAfter at all.
+    function archivePath(r) { return /databases/$(database)/documents/interviews_archive/$(r); }
+    function claimOk(sd) {
+      let o0 = request.resource.data.get('owner', null);
+      let o = o0 is map ? o0 : {};
+      return o.get('at', null) == request.time && o.get('tab', '') == sd.get('closingTab', null);
+    }
+    function ownedBefore(attempt) {
+      let st0 = get(statePath()).data;
+      return st0.get('closingAttemptId', null) == attempt && claimOk(st0);
+    }
+    function ownedAfter(attempt) {
+      let st1 = getAfter(statePath()).data;
+      return st1.get('closingAttemptId', null) == attempt && claimOk(st1);
+    }
+    function onlyCopy(a) { return a.status in ['saving', 'saved', 'abandoned']; }
+    function dueForDelete(a) {
+      return onlyCopy(a)
+        || (a.status == 'closed' && a.get('deleteAfter', null) != null && request.time >= a.deleteAfter);
+    }
+    function step(from, to) {
+      return resource.data.status == from && request.resource.data.status == to;
+    }
+    function noDeleteAfter() { return request.resource.data.get('deleteAfter', null) == null; }
+    function closingNow() {        // the change into closed
+      let d = request.resource.data;
+      return d.closedAt == request.time
+        && (d.get('deleteAfter', null) == null || d.deleteAfter >= request.time + duration.value(30, 'd'));
+    }
+    match /interviews_archive/{attempt} {
+      allow read:   if isAdmin();
+      allow create: if isAdmin() && request.resource.data.status == 'saving' && noDeleteAfter()
+        && ownedAfter(attempt);
+      allow update: if isAdmin() && (
+           (ownedBefore(attempt) && (
+                (resource.data.status == request.resource.data.status
+                   && resource.data.status in ['saving', 'saved'] && noDeleteAfter())
+             || ((step('saving', 'saved') || step('saving', 'abandoned') || step('saved', 'abandoned')
+                  || step('saved', 'clearing') || step('clearing', 'abandoned')) && noDeleteAfter())
+             || (step('clearing', 'closed') && closingNow())))
+        // after closing: rename, mark brought back, or change retention, never
+        // earlier than 30 days after closing; closedAt itself never changes (no
+        // lease needed)
+        || (resource.data.status == 'closed' && request.resource.data.status == 'closed'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'deleteAfter', 'restoredAt'])
+            && (request.resource.data.get('deleteAfter', null) == null
+                || request.resource.data.deleteAfter >= resource.data.closedAt + duration.value(30, 'd'))));
+      allow delete: if isAdmin() && dueForDelete(resource.data);
+      // Parts of the saved copy: each at most 900,000 UTF-8 bytes (the page
+      // never writes more), written only while their attempt is saving, never
+      // rewritten. A part whose attempt is gone can always be cleaned up.
+      match /parts/{part} {
+        allow read:   if isAdmin();
+        allow create: if isAdmin() && get(archivePath(attempt)).data.status == 'saving'
+          && get(statePath()).data.get('closingAttemptId', null) == attempt;
+        allow update: if false;
+        allow delete: if isAdmin() && (!exists(archivePath(attempt)) || dueForDelete(get(archivePath(attempt)).data));
+      }
     }
 
     // Anything else: deny.

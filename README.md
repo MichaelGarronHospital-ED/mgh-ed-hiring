@@ -204,12 +204,24 @@ What this enforces (server-side, not just UI):
 - Applicant availability can only hold `slots` (time id → in person / Zoom / either),
   at most 200 times.
 - A sign-in lasts for that browser tab only. **Log out** signs out of Firebase too.
+- **Rules v2 (Oct 2026).** When leadership closes a stage (screening, availability or
+  scoring), the ED password can no longer change that stage's answers, on the server,
+  not just on screen; applicants can still confirm or withdraw after availability
+  closes. While a round is being closed, ED and Guest writes are paused. The change
+  history, the applicants' confirmed times and the saved copies of closed rounds are
+  three new collections; only leadership can read them (an applicant can fetch only
+  their own confirmed time). Leadership is always checked first in every rule, so
+  these gates cost nothing on leadership saves and one extra read on ED and Guest
+  saves. Everything reads "not set" as open, so data from before v2 behaves as before.
 
 Honest limits (see the header of `firestore.rules`): reviewers share one committee
 account, so per-**member** write-isolation isn't rule-enforceable (needs per-member
 accounts or custom claims). So a reviewer cannot delete anything, but could still
 overwrite a colleague's screening or score. And an applicant could overwrite another's
-availability by typing their last name. Both are low-impact and documented.
+availability by typing their last name. The same shared Guest account means an applicant
+who types another applicant's surname could see that person's confirmed interview time,
+or confirm or withdraw for them; every reply shows to leadership with its date, and a
+withdrawal never removes anyone by itself. All of these are low-impact and documented.
 
 ### Publishing the rules from the command line
 
@@ -224,6 +236,14 @@ npx firebase-tools deploy --only firestore:rules
 
 `--only firestore:rules` publishes the rules and nothing else (no hosting, no data).
 The tests in `tests/` keep their own emulator-only `firebase.json` and are unaffected.
+
+**Every published rules version gets a git tag**, so a rollback is one command:
+`rules-v1-2026-10-16` (before stages and rounds) and `rules-v2-<date>` (tag it on the
+commit you published, the day you publish). To go back: `git show <tag>:firestore.rules
+> firestore.rules`, then deploy as above. **Roll back the page first, then the rules, and
+never the rules alone while a page from Oct 2026 release R1 or later is live**: those
+pages write a change-history entry with every leadership save, and the v1 rules refuse
+it, so every leadership save would fail.
 
 ## After the interviews: offers and the backup
 
