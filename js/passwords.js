@@ -25,15 +25,21 @@
 // ============================================================================
 
 import { AUTH, PARTNERS } from "./config.js?v=R7c";
+import { signInPinned, emailOrder, rememberKind } from "./signin.js?v=R7c";
 
 export const ROLES = Object.freeze(["leadership", "ed", "guest"]);
 export const ROLE_WORD = Object.freeze({ leadership: "Leadership", ed: "ED", guest: "Guest" });
 export const ACCOUNTS = Object.freeze([
-  { key: "voting:ed", project: "voting", role: "ed", email: PARTNERS.voting.edEmail, uid: PARTNERS.voting.uids.ed, label: "Motion Voting, ED account" },
-  { key: "voting:leadership", project: "voting", role: "leadership", email: PARTNERS.voting.leadershipEmail, uid: PARTNERS.voting.uids.leadership, label: "Motion Voting, Leadership account" },
-  { key: "hiring:committee", project: "hiring", role: "ed", email: AUTH.committeeEmail, uid: AUTH.uids.committee, label: "Physician Hiring, ED account" },
-  { key: "hiring:applicant", project: "hiring", role: "guest", email: AUTH.candidateEmail, uid: AUTH.uids.candidate, label: "Physician Hiring, Guest account" },
-  { key: "hiring:admin", project: "hiring", role: "leadership", email: AUTH.adminEmail, uid: AUTH.uids.admin, label: "Physician Hiring, Leadership account", main: true },
+  { key: "voting:ed", project: "voting", role: "ed", email: PARTNERS.voting.edEmail, emails: { old: PARTNERS.voting.edEmail, new: PARTNERS.voting.newEmails.ed },
+    uid: PARTNERS.voting.uids.ed, label: "Motion Voting, ED account" },
+  { key: "voting:leadership", project: "voting", role: "leadership", email: PARTNERS.voting.leadershipEmail, emails: { old: PARTNERS.voting.leadershipEmail, new: PARTNERS.voting.newEmails.leadership },
+    uid: PARTNERS.voting.uids.leadership, label: "Motion Voting, Leadership account" },
+  { key: "hiring:committee", project: "hiring", role: "ed", email: AUTH.committeeEmail, emails: { old: AUTH.committeeEmail, new: AUTH.newEmails.committee },
+    uid: AUTH.uids.committee, label: "Physician Hiring, ED account" },
+  { key: "hiring:applicant", project: "hiring", role: "guest", email: AUTH.candidateEmail, emails: { old: AUTH.candidateEmail, new: AUTH.newEmails.candidate },
+    uid: AUTH.uids.candidate, label: "Physician Hiring, Guest account" },
+  { key: "hiring:admin", project: "hiring", role: "leadership", email: AUTH.adminEmail, emails: { old: AUTH.adminEmail, new: AUTH.newEmails.admin },
+    uid: AUTH.uids.admin, label: "Physician Hiring, Leadership account", main: true },
 ]);
 // in the order they are changed
 export const accountsFor = (roles) => ACCOUNTS.filter((a) => roles.includes(a.role));
@@ -192,7 +198,9 @@ export function halfDoneText(roles, done) {
 //   sdk: { initializeApp, deleteApp, initializeAuth, inMemoryPersistence,
 //          signInWithEmailAndPassword, updatePassword, signOut,
 //          reauthenticateWithCredential, EmailAuthProvider }
-export function makeFirebaseAdapter(sdk, { mainAuth, configs, connect = null }) {
+// order(project) / remember(project, kind): which of an account's two emails to
+// try first while they move, and noting the one that worked (js/signin.js).
+export function makeFirebaseAdapter(sdk, { mainAuth, configs, connect = null, order = emailOrder, remember = rememberKind }) {
   let n = 0;
   return {
     async open(a, password) {
@@ -207,9 +215,12 @@ export function makeFirebaseAdapter(sdk, { mainAuth, configs, connect = null }) 
       const auth = sdk.initializeAuth(app, { persistence: sdk.inMemoryPersistence });
       if (connect) connect(auth, a.project);
       try {
-        const cred = await sdk.signInWithEmailAndPassword(auth, a.email, password);
-        // only the pinned account: another uid behind the email is a refusal
-        if (a.uid && cred.user.uid !== a.uid) { const e = new Error("not the role account"); e.code = "auth/invalid-credential"; throw e; }
+        // the email that last worked here first, then the other; only the
+        // pinned account (by uid) counts
+        const { cred, kind } = await signInPinned((email, pw) => sdk.signInWithEmailAndPassword(auth, email, pw),
+          { emails: a.emails || { old: a.email }, uid: a.uid, project: a.project }, password,
+          { order: order(a.project), onWrongUid: async () => { try { await sdk.signOut(auth); } catch { /* none */ } } });
+        remember(a.project, kind);
         return { app, auth, user: cred.user };
       } catch (e) { try { await sdk.signOut(auth); } catch { /* none */ } try { await sdk.deleteApp(app); } catch { /* gone */ } throw e; }
     },

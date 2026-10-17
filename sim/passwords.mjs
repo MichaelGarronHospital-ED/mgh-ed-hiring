@@ -308,6 +308,29 @@ const cases = {
     return [...problems, ...log.filter((l) => /^pageerror/.test(l))];
   },
 
+  // R7c (review): after migrate-emails.py --apply the five accounts have their
+  // .invalid emails while this page (R7c) still has the old ones in its config.
+  // The page signs in, and Check and Change now reach every account, hiring AND
+  // voting, through the fallback to the other email.
+  async afterApplyPageAndFlowWork() {
+    const problems = [], log = [];
+    await reset();
+    const NEWE = { "voting:ed": "ed@mgh-ed-voting.invalid", "voting:leadership": "leadership@mgh-ed-voting.invalid",
+      "hiring:committee": "committee@mgh-ed-hiring.invalid", "hiring:applicant": "applicant@mgh-ed-hiring.invalid", "hiring:admin": "admin@mgh-ed-hiring.invalid" };
+    const UIDK = { "voting:ed": "votingEd", "voting:leadership": "votingLeadership", "hiring:committee": "committee", "hiring:applicant": "applicant", "hiring:admin": "admin" };
+    for (const [key] of ACCTS) await emu.setEmail(emu.UIDS[UIDK[key]], NEWE[key]);
+    const p = await freshPage(390, log);
+    await signIn(p, OLD.leadership); await onPage(p);
+    await toNewValues(p, ["ed"]);
+    const ready = await p.$eval("#flowBody", (e) => e.textContent);
+    problems.push(...ok((ready.match(/: ready/g) || []).length === 4, `Check after --apply: ${ready.slice(0, 300)}`));
+    await fillNew(p, ["ed"]);
+    await flowClick(p, "Change now"); await waitFlow(p, "Done", 30000);
+    problems.push(...ok(await signInWorks(NEWE["hiring:committee"], NEW.ed) && await signInWorks(NEWE["voting:ed"], NEW.ed), "the ED accounts under their new emails didn't take the new password"));
+    await closePage(p);
+    return [...problems, ...log.filter((l) => /^pageerror/.test(l))];
+  },
+
   // Another page starts a change of other passwords while this dialog is open:
   // Change now refuses rather than overwrite that page's record.
   async secondPageCantOverwrite() {

@@ -52,6 +52,9 @@ export const PARTNERS = {
     },
     leadershipEmail: "leadership@ed-motion-voting.app",
     edEmail: "ed@ed-motion-voting.app",
+    // the .invalid emails these accounts move to (Phase A); the pages try both
+    // until R7d (js/signin.js)
+    newEmails: { leadership: "leadership@mgh-ed-voting.invalid", ed: "ed@mgh-ed-voting.invalid" },
     // the same accounts by uid (Motion Voting's rules know them by these)
     uids: { leadership: "3eigCLaK0RQ5PmVhxfDgI0qoYzQ2", ed: "CXyo7yciWpc78J1TQYRzrPpu77C3" },
   },
@@ -64,7 +67,8 @@ export const PARTNERS = {
 // A ROLE IS KNOWN BY ITS ACCOUNT'S UID, NEVER BY ITS EMAIL (R7c): the rules and
 // every page check `uid` (the same values as firestore.rules; tests/uids.test.mjs
 // keeps them equal). The emails are used only to sign in, so they can move to
-// .invalid addresses (R7d) without the rules or a signed-in page noticing.
+// .invalid addresses without the rules or a signed-in page noticing; until R7d
+// a sign-in tries both (js/signin.js).
 // Never delete a role account: a new one has a new uid, refused until the rules
 // and these uids are updated. Uids and emails are public identifiers; the
 // PASSWORDS are the shared secrets and live only in Firebase, never in a file.
@@ -73,6 +77,9 @@ export const AUTH = {
   adminEmail: "admin@ed-hiring.app",
   committeeEmail: "committee@ed-hiring.app",
   candidateEmail: "applicant@ed-hiring.app",
+  // the .invalid emails these accounts move to (Phase A). Until R7d every
+  // sign-in tries the kind that last worked here, then the other (js/signin.js)
+  newEmails: { admin: "admin@mgh-ed-hiring.invalid", committee: "committee@mgh-ed-hiring.invalid", candidate: "applicant@mgh-ed-hiring.invalid" },
   uids: { admin: "ULgtfRrkAVPS2aT69Tc4CjMqbsx1", committee: "36FXvbR8ExgU7p4cmwuCNfkgFgD2", candidate: "jvmQYhgYlRMf3f2J3uw8XXos8yD3" },
 };
 

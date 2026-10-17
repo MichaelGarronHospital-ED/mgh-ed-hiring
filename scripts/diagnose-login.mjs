@@ -66,17 +66,22 @@ console.log(`Project: ${firebaseConfig.projectId}`);
 console.log(`Password length: ${PW.length} characters` +
   (PW.length < 6 ? " (under 6: Firebase refuses to set a password this short, so no account can have it)" : ""));
 
+// each account under its old email and its new .invalid one (Phase A: they move)
 const accounts = [
-  ["ED", "hiring", AUTH.committeeEmail, AUTH.uids.committee], ["Guest", "hiring", AUTH.candidateEmail, AUTH.uids.candidate],
-  ["Leadership", "hiring", AUTH.adminEmail, AUTH.uids.admin],
-  ...(VOTING ? [["ED", "voting", PARTNERS.voting.edEmail, PARTNERS.voting.uids.ed], ["Leadership", "voting", PARTNERS.voting.leadershipEmail, PARTNERS.voting.uids.leadership]] : []),
+  ["ED", "hiring", AUTH.committeeEmail, AUTH.uids.committee, AUTH.newEmails.committee],
+  ["Guest", "hiring", AUTH.candidateEmail, AUTH.uids.candidate, AUTH.newEmails.candidate],
+  ["Leadership", "hiring", AUTH.adminEmail, AUTH.uids.admin, AUTH.newEmails.admin],
+  ...(VOTING ? [["ED", "voting", PARTNERS.voting.edEmail, PARTNERS.voting.uids.ed, PARTNERS.voting.newEmails.ed],
+    ["Leadership", "voting", PARTNERS.voting.leadershipEmail, PARTNERS.voting.uids.leadership, PARTNERS.voting.newEmails.leadership]] : []),
 ];
 const configs = { hiring: firebaseConfig, voting: PARTNERS.voting.firebaseConfig };
 const results = [];
 const SAY = { ok: "accepted", refused: "refused (wrong password)", throttled: "Firebase is pausing tries from this computer",
   disabled: "the account is switched off", "other-account": "accepted, but by ANOTHER account than the role account (different uid): not this role", blocked: "can't test from here (the key refused this computer)", network: "couldn't reach Firebase" };
-for (const [role, project, email, uid] of accounts) {
-  const r = await trySignIn(configs[project].apiKey, email, PW, uid);
+for (const [role, project, oldEmail, uid, newEmail] of accounts) {
+  let email = oldEmail;
+  let r = await trySignIn(configs[project].apiKey, email, PW, uid);
+  if (r === "refused" && newEmail) { email = newEmail; r = await trySignIn(configs[project].apiKey, email, PW, uid); }
   results.push({ role, project, email, r });
   console.log(`  ${email}: ${SAY[r] || `no answer (${r})`}`);
   if (r === "throttled") {

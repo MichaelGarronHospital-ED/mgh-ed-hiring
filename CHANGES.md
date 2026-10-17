@@ -38,19 +38,35 @@ role must be known by its account's uid, which never changes, and not by its ema
 - **Pages by uid** (`js/config.js` `AUTH.uids`, `PARTNERS.voting.uids`): the hiring page's resume
   (`roleOfUser`), the passwords page's resume and sign-in, and the passwords flow's own account
   all compare uids; a sign-in that lands on another uid than the role account's counts as a
-  refusal. The flow re-authenticates the page's account with the email it has NOW. The sign-in
-  emails stay the OLD ones in R7c (a page can only sign in with the email the account has right
-  now); R7d switches them in the window.
+  refusal. The flow re-authenticates the page's account with the email it has NOW.
+- **Sign-in across the switch (review):** every sign-in (the gate, `#apply`, the passwords page,
+  and the passwords flow's helper sign-ins for the hiring AND Motion Voting accounts) tries the
+  email kind that last worked on this browser (only "old" or "new" is kept, `ed_iv_emailkind` and
+  `ed_iv_emailkind_voting`; never a password), else the old email; on a wrong-password or
+  no-such-account answer it tries the other email once; only the pinned uid is accepted
+  (`js/signin.js`, `config.js` `newEmails`). So the right password works before `--apply`, after
+  it (on this page, an open one or a cached one) and after `--undo`, with no page change in the
+  window. A wrong password still counts as ONE try toward the 30-second wait (it costs up to six
+  refused sign-ins on the gate: three roles, two emails).
+- The signed-out message is now "You were signed out. Please sign in again." (both pages).
 - Scripts: `diagnose-login.mjs` and `report-data.mjs` check the returned uid. README (a uid table,
   "never delete", the lost-password steps no longer delete and re-add an account), DESIGN, CLAUDE.
 - Version `R7c`.
 
 **Precondition for every later hiring branch:** R8 and every hiring branch after it must
-contain R7c AND R7d (merge `main` into it once both are there) before it merges. A branch made
+contain R7c AND R7d (merge `main` into it once both are there) before it merges. R7d (a few
+weeks after the window, not in it) only drops the old emails and the fallback. A branch made
 before them (`hiring-r8` at 689b3f8 is one) still signs in with the old emails and decides roles
 by email: merged after the email switch, it would lock everyone out.
 
-Tests: NEW `tests/rules-uids.test.mjs` (for each role: right uid with the old email allowed, with
+Tests: NEW `tests/signin.test.mjs` (before `--apply`, after it, after `--undo`, a wrong password,
+another uid behind an email, a network error stops at once); `tests/passwords.test.mjs` (the
+flow's helpers fall back for hiring and voting accounts); `sim/auth.mjs` (after `--apply` an R7c
+page signs in and the next sign-in needs no refusal; after `--undo` too; three wrong passwords
+still mean one wait); emulator `signInAcrossTheSwitch` (each role after `--apply` with an R7c
+page, the same browser after `--undo`, a squatter on a freed old email refused);
+`sim/passwords.mjs` `afterApplyPageAndFlowWork` (the passwords page and a whole ED change after
+`--apply`). NEW `tests/rules-uids.test.mjs` (for each role: right uid with the old email allowed, with
 the new `.invalid` email allowed, right email with another uid refused, anonymous and custom-token
 sign-ins refused; no role's uid acts as another); NEW `tests/uids.test.mjs` (config uids equal
 the rules', no email role check in `js/`); every rules test now uses the pinned uids with a

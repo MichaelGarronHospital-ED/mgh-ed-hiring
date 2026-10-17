@@ -82,8 +82,7 @@ export const cases = {
   //     in its config while the session is the account under its NEW email (signed
   //     in again in the same tab after the change). Reload: still in, same role.
   //     A page that decided the role by email would put each one at the sign-in box.
-  // (3) A fresh sign-in with the old emails is refused and says Incorrect password
-  //     (the minute between the change and R7d going live).
+  // (A fresh sign-in after the change: signInAcrossTheSwitch, below.)
   async emailChangeKeepsSessions() {
     const problems = [], log = [];
     const roles = [
@@ -124,12 +123,45 @@ export const cases = {
       problems.push(...ok(still, `${role}: an old page signed in as the account under its new email doesn't recognise the role after a reload`));
     }
     for (const p of pages) await closePage(p);
-    // (3) the old emails no longer sign in
-    const fresh = await freshPage({ log });
-    await signIn(fresh, "adminpw"); await sleep(1500);
-    const msg = await fresh.$eval("#gerr", (e) => e.textContent);
-    problems.push(...ok(msg.includes("Incorrect password."), `a fresh sign-in with an email the accounts no longer have: ${msg}`));
-    await closePage(fresh);
+    return [...problems, ...log.filter((l) => !/console\.error/.test(l) || !/400/.test(l))];
+  },
+
+  // R7c (review): the right password is never refused across the switch. A
+  // fresh sign-in on this R7c page (old emails in its config) after --apply
+  // falls back to the new email and notes "new" for this browser; after --undo
+  // the same browser falls back to the old one; an account somebody made with
+  // a freed old email (another uid) is refused, and the real password still works.
+  async signInAcrossTheSwitch() {
+    const problems = [], log = [];
+    const roles = [["admin", "adminpw", "#app:not(.hidden)"], ["committee", "staffpw", "#memberpick:not(.hidden)"], ["applicant", "guestpw", "#candview:not(.hidden)"]];
+    const kind = (p) => p.evaluate(() => localStorage.getItem("ed_iv_emailkind"));
+    for (const [role, to] of Object.entries(TO)) await emu.setEmail(emu.UIDS[role], to);   // --apply
+    let admin = null;
+    for (const [role, pw, landed] of roles) {
+      const p = await freshPage({ log });
+      await signIn(p, pw);
+      let ok1 = true; try { await p.waitForSelector(landed, { timeout: 15000 }); } catch { ok1 = false; }
+      problems.push(...ok(ok1 && (await kind(p)) === "new", `${role}: an R7c page can't sign in after --apply (kind ${await kind(p)})`));
+      if (role === "admin") admin = p; else await closePage(p);
+    }
+    for (const [role, from] of Object.entries(FROM)) await emu.setEmail(emu.UIDS[role], from);   // --undo
+    await Promise.all([admin.waitForNavigation({ waitUntil: "domcontentloaded" }), admin.click("#logout")]);
+    await admin.waitForFunction("window.__edReady === true"); await sleep(300);
+    await signIn(admin, "adminpw");
+    let ok2 = true; try { await admin.waitForSelector("#app:not(.hidden)", { timeout: 15000 }); } catch { ok2 = false; }
+    problems.push(...ok(ok2 && (await kind(admin)) === "old", `after --undo the same browser can't sign in (kind ${await kind(admin)})`));
+    await closePage(admin);
+    // a squatter on the freed old email after --apply: another uid, refused
+    for (const [role, to] of Object.entries(TO)) await emu.setEmail(emu.UIDS[role], to);
+    await emu.addUser(FROM.admin, "squatter pass 1", emu.PROJECT, "squatteruid000000000000001");
+    const q = await freshPage({ log });
+    await signIn(q, "squatter pass 1"); await sleep(2000);
+    const msg = await q.$eval("#gerr", (e) => e.textContent);
+    problems.push(...ok(msg.includes("Incorrect password.") && (await q.$eval("#gate", (e) => !e.classList.contains("hidden"))), `the squatter got in: ${msg}`));
+    await signIn(q, "adminpw");
+    let ok3 = true; try { await q.waitForSelector("#app:not(.hidden)", { timeout: 15000 }); } catch { ok3 = false; }
+    problems.push(...ok(ok3, "the real Leadership password doesn't sign in beside a squatter"));
+    await closePage(q);
     return [...problems, ...log.filter((l) => !/console\.error/.test(l) || !/400/.test(l))];
   },
 

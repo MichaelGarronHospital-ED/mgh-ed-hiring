@@ -240,6 +240,8 @@ Full design and reference data (committee, candidates, questions, rules) live in
   it first). A branch made before them (`hiring-r8` at 689b3f8 was one) signs in with the old
   `ed-hiring.app` emails and decides roles by email; merged after the email switch, it locks
   everyone out. R7d adds `tests/emails.test.mjs`, which fails on any old address in `js/` or a page.
+  Until R7d, every sign-in tries both emails of an account (the kind that last worked first,
+  `js/signin.js`), accepting only the pinned uid; R7d (weeks after the email switch) drops that.
 - **A role is known by its account's uid, never by its email (R7c, rules v3).** `firestore.rules`
   checks `request.auth.uid` and the `password` sign-in provider (`signedIn(uid)`); every page and
   script decides "who is this" by `uid` against `AUTH.uids` (and `PARTNERS.voting.uids`), and uses

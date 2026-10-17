@@ -25,6 +25,7 @@ import { entry as hEntry, newHistoryId, panelUndo, shortlistUndo, screeningUndo,
          hashOf, toDate } from "./history.js?v=R7c";
 import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R7c";
 import { createRounds, pageId } from "./rounds.js?v=R7c";
+import { emailOrder, rememberKind, signInPinned } from "./signin.js?v=R7c";
 import { icsEvent, icsCalendar } from "./ics.js?v=R7c";
 import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R7c";
 import { STAGES, STAGE_WORD, stageOpen, stageClosedAt, roundOpen, bookingFor, thresholdOf, isOnList, closePlan, reopenPlan,
@@ -114,9 +115,11 @@ const planState = () => ({ ...S, availRaw: S.availRaw || Object.fromEntries(Obje
 // when its email changes, so a signed-in page stays signed in through the move
 // of the emails to .invalid addresses, in either order.
 const ROLE_EMAIL = { admin: AUTH.adminEmail, committee: AUTH.committeeEmail, candidate: AUTH.candidateEmail };
+// both emails of each role account while they move (js/signin.js)
+const ROLE_EMAILS = Object.fromEntries(Object.keys(ROLE_EMAIL).map((r) => [r, { old: ROLE_EMAIL[r], new: AUTH.newEmails[r] }]));
 const roleOfUser = (u) => (u && Object.keys(AUTH.uids).find((r) => AUTH.uids[r] === u.uid)) || null;
 const isRefusal = (e) => /wrong-password|invalid-credential|user-not-found|invalid-login-credentials/.test(String((e && e.code) || ""));
-const SIGNED_OUT_MSG = "You were signed out, probably because a password changed. Enter the current password.";
+const SIGNED_OUT_MSG = "You were signed out. Please sign in again.";
 // Guest first on an applicant link (every applicant-facing link is
 // index.html#apply); else the role that last worked on this browser (not
 // secret); else ED, then Guest, then Leadership. So nearly every sign-in costs
@@ -139,28 +142,31 @@ async function unlock(typed) {
   try { fb = await firebase(); } catch (e) { gateFail(signInError(e)); return; }
   try { await tabOnly(fb); } catch (e) { gateFail(signInError(e)); return; }
   let disabled = null;
-  for (const role of roleOrder()) {
-    try {
-      const cred = await fb.authFns.signInWithEmailAndPassword(fb.auth, ROLE_EMAIL[role], typed);
-      // only the pinned account counts: an account somebody made with a freed
-      // old email has another uid, and is treated as a refusal
-      if (roleOfUser(cred.user) !== role) {
-        try { await fb.authFns.signOut(fb.auth); } catch { /* local anyway */ }
-        const e = new Error("not the role account"); e.code = "auth/invalid-credential"; throw e;
+  // the email kind that last worked on this browser first (all three roles),
+  // then the other kind (js/signin.js): the accounts' emails move in one go
+  for (const kind of emailOrder("hiring")) {
+    for (const role of roleOrder()) {
+      try {
+        await signInPinned((email, pw) => fb.authFns.signInWithEmailAndPassword(fb.auth, email, pw),
+          { emails: ROLE_EMAILS[role], uid: AUTH.uids[role], project: "hiring" }, typed,
+          // only the pinned account counts: an account somebody made with a
+          // freed email has another uid, and is treated as a refusal
+          { order: [kind], onWrongUid: async () => { try { await fb.authFns.signOut(fb.auth); } catch { /* local anyway */ } } });
       }
-    }
-    catch (e) {
-      if (isRefusal(e)) continue;
-      // a disabled account says so whatever was typed: try the others first
-      if (String(e && e.code).includes("user-disabled")) { disabled = disabled || { e, role }; continue; }
-      gateFail(signInError(e, { email: ROLE_EMAIL[role] }));
+      catch (e) {
+        if (isRefusal(e)) continue;
+        // a disabled account says so whatever was typed: try the others first
+        if (String(e && e.code).includes("user-disabled")) { disabled = disabled || { e, role }; continue; }
+        gateFail(signInError(e, { email: ROLE_EMAIL[role] }));
+        return;
+      }
+      rememberKind("hiring", kind);
+      ls.set("ed_iv_lastrole", role);
+      ls.del("ed_iv_gate");
+      ss.set("ed_iv_signedin", "1");
+      await enter(role);
       return;
     }
-    ls.set("ed_iv_lastrole", role);
-    ls.del("ed_iv_gate");
-    ss.set("ed_iv_signedin", "1");
-    await enter(role);
-    return;
   }
   // every account refused: the password is wrong. A disabled account answers
   // the same whatever was typed, so it is named only when it is Leadership's
@@ -171,7 +177,8 @@ async function unlock(typed) {
     + (paused ? " To protect the accounts, wait 30 seconds before trying again." : ""));
 }
 
-// Each wrong password costs a refused sign-in on all three accounts, and
+// Each wrong password costs a refused sign-in on all three accounts (both
+// emails of each while they move), but counts as ONE wrong try here, and
 // Firebase pauses a device that keeps failing. After 3 wrong passwords on this
 // device, the page itself waits 30 seconds first (review). Not secret: only a
 // count and a time, in this browser.
