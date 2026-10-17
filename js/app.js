@@ -1315,7 +1315,7 @@ function renderScore() {
   root.dataset.sig = sig;
   const picker = `<div class="prow scorebar"><div class="row center">
         <select id="scorePick" class="grow" onchange="IV.pickScore(this.value)" aria-label="Candidate to score">
-          <option value="" disabled ${cid ? "" : "selected"}>Choose who you are scoring</option>${list.map((c) =>
+          <option value="" disabled ${cid ? "" : "selected"}>Choose an applicant</option>${list.map((c) =>
           `<option value="${c.id}" ${c.id === cid ? "selected" : ""}>${escapeHtml(c.name)}${scored(c) ? " ✓" : ""}</option>`).join("")}</select>
         <span class="scorenav">${jump(-1)}${jump(1)}</span></div></div>`;
   if (!cid) {

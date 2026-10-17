@@ -61,6 +61,9 @@ the three role-account sign-ins (see the console steps in README).
 - **Review fix:** when an applicant's time pick is refused, the page reads the public booking
   flag once (as the reply buttons already did) and shows "Booking is closed" or "paused" if that
   is why, rather than "We can no longer find your name".
+- **Review fixes (deployability pass):** the day-chair and room-2 pickers are 16px on phones (no
+  iOS zoom); the Score tab's empty choice reads "Choose an applicant" (the longer text was cut off
+  on a phone).
 
 Tests: `tests/panels.rooms.test.mjs` (identity over 400 rounds, two rooms disjoint and legal,
 no-chair days, brute-force maximum), `tests/ics.test.mjs`, `tests/notify.test.mjs`;

@@ -744,5 +744,5 @@ details.more > summary::-webkit-details-marker { display:none; }
   input, select, textarea,
   .overlay-box input, .overlay-box select,
   .tform input, .tform select,
-  .ofnote textarea, .ofdates input[type=date], .overall input[type=text], .numin { font-size:16px; }
+  .ofnote textarea, .ofdates input[type=date], .overall input[type=text], .numin, .daychair select { font-size:16px; }
 }
