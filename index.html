@@ -6,8 +6,8 @@
 <meta name="color-scheme" content="light dark" />
 <title>Physician Hiring</title>
 <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
-<link rel="stylesheet" href="css/ed-ui.css?v=R1" />
-<link rel="stylesheet" href="css/styles.css?v=R1" />
+<link rel="stylesheet" href="css/ed-ui.css?v=R2" />
+<link rel="stylesheet" href="css/styles.css?v=R2" />
 </head>
 <body>
 <!-- login gate: committee code (decrypts the questions) OR a candidate password -->
@@ -33,6 +33,7 @@
     <p class="muted">Pick your name so your input is saved to you.</p>
     <div id="roleLine" class="note"></div>
     <select id="memberSel" aria-label="Your name"></select>
+    <p class="muted small pickhint">Not on the list? Ask leadership to add you.</p>
     <button id="memberBtn" class="primary">Continue</button>
     <button id="adminOnlyBtn" class="linky hidden" style="margin-top:16px">Continue as admin, without a name</button>
   </div>
@@ -140,6 +141,6 @@
   });
 })();
 </script>
-<script type="module" src="js/app.js?v=R1"></script>
+<script type="module" src="js/app.js?v=R2"></script>
 </body>
 </html>

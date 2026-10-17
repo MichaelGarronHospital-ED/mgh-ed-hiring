@@ -31,6 +31,37 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## R2: committee editor and questions editor (Oct 16 2026)
+
+- **Setup, Committee and screeners (H6)** replaces the textarea: one row per person (name,
+  Interviews and screens or Screens only, F or M for interviewers, Active or Left the
+  committee, optional work email). Saving merges by id onto the latest saved list in a
+  transaction (someone added from another device meanwhile is kept) and writes a
+  `committee.save` history line with counts only. A row can be removed outright only when the
+  person saved nothing. Warnings: two active people with the same name, an interviewer without
+  F or M; refused: the chair leaving or becoming screens-only ("Pick another chair first.").
+  "Add people": "Name, F" or "Name, M" adds an interviewer with a new opaque id, a bare name a
+  screener.
+- **Left the committee**: input stays and counts (shown "(left)"), off the name list, panels,
+  the availability grid and waiting-on lines. **Screens only**: the Screen tab alone. The name
+  list says "Not on the list? Ask leadership to add you."
+- **Setup, Interview questions (H2)**: rows with Move up, Move down, Remove, "Add a question",
+  the rating scale and guidance, one "Save questions" transaction with a history line. Locked
+  once scoring starts: only the wording can change, with a confirm. Archived questions (from a
+  restore) are kept on save.
+- Drafts live in `ui.commDraft` / `ui.qDraft`, so a live re-render never wipes typing, and the
+  self-reload waits while either is open.
+
+- **Review fix:** an open Score tab redraws when the question wording, the scale or the
+  guidance changes (they are part of its signature now), flushing anything still pausing
+  first, instead of keeping the old text up (`sim/editors.mjs` checks it from a second tab).
+
+Tests: `sim/editors.mjs` (5 scenarios, in `npm test`): rename keeps input, a left member's
+concern still counts, screens-only never on a panel, chair and duplicate checks, questions
+edit, reorder and lock. Checked: see the release commit message.
+
+---
+
 ## R1: foundations (members by id, questions in the database, history, backup file) (Oct 16 2026)
 
 Needs rules v2 (R0) published first: every leadership save now writes a history entry,

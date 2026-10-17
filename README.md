@@ -259,6 +259,16 @@ it, so every leadership save would fail.
   first, 50 at a time. It never stores an applicant's name (names are filled in when it is
   shown). Hand-made panel changes can be undone there (and for 10 seconds from the message
   after "Reset hand-made panels"); undo is refused if the panel changed since.
+- **Setup, Committee and screeners** has one row per person: name, "Interviews and screens"
+  or "Screens only", F or M (interviewers only; self-identified, used only to balance panels),
+  "Active" or "Left the committee", and an optional work email. Renaming someone keeps all
+  their input. Someone who left keeps their input, and it still counts, but they leave every
+  list of people. A row can be removed outright only if that person saved nothing. "Add
+  people" takes one per line: "Name, F" or "Name, M" for interviewers, just the name for
+  screeners.
+- **Setup, Interview questions** edits the questions, the rating scale and the guidance.
+  Once anyone has scored, questions can't be added, removed or reordered (only the wording
+  fixed), because notes are filed under each question.
 - **Interview questions now live in the database.** The first Leadership sign-in on the Oct
   2026 release copies them out of the old locked `js/data.js` automatically; Change history
   then shows "Copied the interview questions". Notes stay attached to their question.

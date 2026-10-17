@@ -58,6 +58,13 @@ Full design and reference data (committee, candidates, questions, rules) live in
   Screening and score ids (`<member>~<candId>`), interviewer availability, the chair, hand-made
   panel members and the per-device echo all hold member ids (`js/members.js`). The name is for
   display only (`EFF().nameOf`), so a rename moves nothing.
+- **A person is removed from the committee outright only when they have saved nothing.**
+  Otherwise mark them "Left the committee" (`active:false`): their input stays and still counts
+  (concerns, ratings, scores, exports say "(left)"), and they leave the name list, panels, the
+  availability grid and every "waiting on" line. "Screens only" (`role:"screener"`) people get
+  the Screen tab alone. The chair must stay an active interviewer.
+- **Questions lock once scoring starts** (any score with a number or a note): only the wording
+  may change. Never add, remove or reorder mid-round; notes are filed under the ids.
 - **Score notes are keyed by question id. Legacy ids are `"0"`..`"9"`; never renumber.** The
   questions live in `interviews_meta/questions`; the first Leadership sign-in copies them out
   of the old encrypted `js/data.js` with exactly those ids (`js/questions.js`).

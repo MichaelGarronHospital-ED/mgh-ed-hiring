@@ -287,10 +287,10 @@ a.doc:hover { text-decoration:underline; }
 .overall { display:flex; align-items:center; gap:8px; flex:none; }
 .overall input[type=text] { width:5.5rem; margin-top:0; text-align:center; font-weight:600; }
 
-textarea, input[type=text], select { font:inherit; width:100%; color:var(--ed-ink); min-height:var(--ed-tap);
+textarea, input[type=text], input[type=email], select { font:inherit; width:100%; color:var(--ed-ink); min-height:var(--ed-tap);
   border:1px solid transparent; border-radius:var(--ed-r-md); padding:9px 14px; margin-top:8px;
   background:var(--ed-surface-2); transition:border-color .15s, box-shadow .15s; }
-textarea:focus, input[type=text]:focus, select:focus { border-color:var(--ed-accent); box-shadow:var(--ed-ring); outline:none; }
+textarea:focus, input[type=text]:focus, input[type=email]:focus, select:focus { border-color:var(--ed-accent); box-shadow:var(--ed-ring); outline:none; }
 textarea { resize:vertical; }
 ::placeholder { color:var(--ed-ink-2); opacity:1; }
 .card select, .row select { margin-top:0; width:auto; }
@@ -655,6 +655,29 @@ td.adj { font-variant-numeric:tabular-nums; color:var(--ed-ink-2); }
 .hlist .hrow { display:flex; align-items:flex-start; gap:10px; padding:9px 0; border-top:1px solid var(--ed-line-soft); }
 .hlist .hrow:first-child { border-top:none; }
 .hlist .hrow .linky { flex:none; }
+
+/* ---- Setup: committee and screeners (H6) ------------------------------------ */
+.pickhint { margin:8px 0 0; text-align:left; }
+.mlist .mrow { padding:12px 0; border-top:1px solid var(--ed-line-soft); display:grid; gap:8px; }
+.mlist .mrow:first-child { border-top:none; padding-top:4px; }
+.mlist .mrow.left > input[type=text] { color:var(--ed-ink-2); }
+.mopts { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.mopts .seg button { min-height:36px; }
+.mopts .mg { display:inline-flex; align-items:center; gap:6px; }
+.mrow input[type=text], .mrow input[type=email] { width:100%; margin:0; }
+.mrow .linky.danger { justify-self:start; }
+
+/* ---- Setup: interview questions (H2) ---------------------------------------- */
+.qedlist .qedrow { padding:10px 0; border-top:1px solid var(--ed-line-soft); }
+.qedlist .qedrow:first-child { border-top:none; padding-top:2px; }
+.qedrow textarea { width:100%; margin:0; }
+.qedbtns { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+.qedbtns .btn.small { min-height:40px; }
+.qedbtns .btn.danger { background:none; color:var(--ed-red); }
+.qscales { display:grid; gap:6px; }
+.qscale { display:flex; align-items:center; gap:10px; }
+.qscale span { width:1.2em; color:var(--ed-ink-2); font-variant-numeric:tabular-nums; }
+.qscale input { flex:1; margin:0; }
 
 /* ---- mobile field sizing: MUST STAY LAST ---------------------------------
    iOS Safari zooms the whole page whenever a focused field's text is smaller

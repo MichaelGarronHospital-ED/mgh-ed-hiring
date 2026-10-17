@@ -26,9 +26,9 @@
 //  with the server time. There is no "saved but not logged".
 // ============================================================================
 
-import { effectiveSlots, toStored } from "./slots.js?v=R1";
-import { lastKey, ls } from "./util.js?v=R1";
-import { ROUND_COLLECTIONS } from "./backup.js?v=R1";
+import { effectiveSlots, toStored } from "./slots.js?v=R2";
+import { lastKey, ls } from "./util.js?v=R2";
+import { ROUND_COLLECTIONS } from "./backup.js?v=R2";
 
 export const key = (member, candId) => `${member}~${candId}`;
 
