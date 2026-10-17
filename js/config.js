@@ -56,8 +56,9 @@ export const PARTNERS = {
 };
 
 // ---- 2b. Auth / security model -------------------------------------------
-// mode "roles" (the only mode since R7; the old "anon" mode found the role by
-//                decrypting js/data.js, which R7 stopped using) → Firebase Auth email/password "role accounts". Rules branch on
+// Firebase Auth email/password "role accounts" (the only model since R7). `mode`
+// is no longer read; it stays for one release because cached older pages read
+// it (removed in R8). Rules branch on
 //                request.auth.token.email so applicants CANNOT read committee
 //                data and reviewers CANNOT read scores/ranking. Activate this
 //                only AFTER creating the three accounts + publishing the hardened

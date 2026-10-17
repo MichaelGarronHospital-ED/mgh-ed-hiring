@@ -1,10 +1,11 @@
 // ============================================================================
-//  Committee app controller. One link, three audiences:
-//    • committee reviewer  — code           → Screen · Availability · Score
-//    • admin               — code + "!"      → + Panels · Ranking · Setup
-//    • applicant           — applicant code  → own scheduling only (candidate view)
-//  Wired to the store (local or Firestore). Security model is enforced by
-//  Firestore rules when AUTH.mode === "roles" (see config.js + firestore.rules).
+//  Committee app controller. One link, three audiences, told apart by which
+//  role account accepts the password (R7):
+//    - committee reviewer: the ED password -> Screen, Availability, Score
+//    - admin: the Leadership password -> also Panels, Ranking, Setup
+//    - applicant: the Guest password -> own scheduling only (candidate view)
+//  Wired to the store (local or Firestore). What each account may do is
+//  enforced by the Firestore rules (see config.js and firestore.rules).
 // ============================================================================
 import { firebaseConfig, ORG_NAME, CHAIR, COMMITTEE, SLOTS, ONEDRIVE,
          LOCAL_CODES, PARTNERS, AUTH, SCREENING_DEADLINE } from "./config.js?v=R7";
@@ -150,7 +151,11 @@ async function unlock(typed) {
     await enter(role);
     return;
   }
-  gateFail(disabled ? signInError(disabled.e, { email: ROLE_EMAIL[disabled.role] }) : "Incorrect password.");
+  // every account refused: the password is wrong. A disabled account answers
+  // the same whatever was typed, so it is named only when it is Leadership's
+  // (the one account nobody else could have meant)
+  gateFail(disabled && disabled.role === "admin"
+    ? `Incorrect password. (Also: ${signInError(disabled.e, { email: ROLE_EMAIL.admin })})` : "Incorrect password.");
 }
 
 // Signed in (or resumed) as this role: open the store and the right view.
@@ -2353,11 +2358,13 @@ function passwordsBody() {
     return `<div class="hrow"><div class="grow small"><b>${ROLE_WORD[r]}</b>: ${d ? `last changed ${escapeHtml(d)}` : "Not changed in this app yet"}</div></div>`;
   }).join("");
   const pend = pm.pending;
+  // while a change is unfinished, the only way in is to finish it (a new
+  // change would lose the record of where the old one stopped)
   return `${pend ? `<p class="small bad">A password change didn't finish${longDay(pend.startedAt) ? ` (started ${escapeHtml(longDay(pend.startedAt))})` : ""}.
       <button class="linky" onclick="IV.changePasswords(true)">Open it to finish</button></p>` : ""}
     <div class="hlist">${rows}</div>
     <p class="small muted">These open Physician Hiring, Motion Voting and the Patient Hub statistics page.</p>
-    <div class="row backup-actions"><button class="btn tinted small" onclick="IV.changePasswords(false)">Change a password</button></div>`;
+    ${pend ? "" : `<div class="row backup-actions"><button class="btn tinted small" onclick="IV.changePasswords(false)">Change a password</button></div>`}`;
 }
 function pwAdapter() {
   const fb = _fb;
@@ -2371,7 +2378,9 @@ const pwField = (id, label, auto) => `<label class="ed-label" for="${id}">${esca
   <button type="button" class="btn ghost small" onclick="IV.pwShow('${id}',this)" aria-label="Show ${escapeHtml(label)}">Show</button></div>`;
 
 async function changePasswords(resuming) {
-  const pend = resuming && S.passwordsMeta && S.passwordsMeta.pending;
+  if (!S || !S.questions || !isConfigured() || ui.role !== "admin") return;
+  // an unfinished change is always finished first, whatever button was used
+  const pend = S.passwordsMeta && S.passwordsMeta.pending;
   // everything typed lives here, and only for as long as the dialog is open
   const v = { roles: pend ? ROLES.filter((r) => (pend.roles || []).includes(r)) : [], cur: {}, next: {}, overrides: {} };
   const wipe = () => { v.cur = {}; v.next = {}; v.overrides = {}; };
@@ -2418,7 +2427,7 @@ async function changePasswords(resuming) {
         buttons: [{ label: "Back", run: () => { read(); step1(); } },
           { label: pend ? "Finish the change" : "Check", kind: "filled", run: async (_c, btn) => {
             read();
-            const errs = validateNew(v.roles, v.cur, v.next);
+            const errs = validateNew(v.roles, v.cur, v.next, v.overrides);
             if (errs.length) { msg(errs.map(escapeHtml).join("<br>")); return; }
             btn.disabled = true;
             if (pend) { await change(pend); return; }
@@ -2438,6 +2447,7 @@ async function changePasswords(resuming) {
         const bad = r.results[r.results.length - 1];
         const a = ACCOUNTS.find((x) => x.key === bad.key);
         const text = bad.why === "throttled" ? "Firebase has paused sign-ins from this device for about 15 minutes. Nothing was changed. Wait, then try once."
+          : bad.why === "disabled" ? `${a.label} is switched off in Firebase, so nothing was changed. The department account can switch it back on in the Firebase console (Authentication, Users).`
           : bad.why === "refused" ? `${TOOL_OF[a.project]}'s ${ROLE_WORD[a.role]} account didn't accept the current ${ROLE_WORD[a.role]} password, so nothing was changed. The tools may already have different ${ROLE_WORD[a.role]} passwords; open "The tools already have different passwords". If nobody knows the current password for this account, it can only be reset in the Firebase console by the department account.`
           : "Couldn't reach the sign-in service, so nothing was changed. Check the connection and try again.";
         ctl.step({ title: "Nothing was changed", html: `<ul class="pwlist">${list}</ul><p class="small">${escapeHtml(text)}</p>`,
@@ -2457,6 +2467,13 @@ async function changePasswords(resuming) {
         state[a.key] === "done" ? `<span class="ok">changed</span>` : state[a.key] === "now" ? "changing..." : `<span class="muted">waiting</span>`}</li>`).join("")}</ul>
         <p class="small">Keep this page open.</p>` });
       paint();
+      // closing or reloading the page now would leave the tools half changed
+      const leaving = (e) => { e.preventDefault(); e.returnValue = ""; };
+      window.addEventListener("beforeunload", leaving);
+      try { await changeSteps(progress, accts, state, paint); }
+      finally { window.removeEventListener("beforeunload", leaving); }
+    };
+    const changeSteps = async (progress, accts, state, paint) => {
       let startedAt = null;
       try {
         await store.updatePasswords((d) => {
@@ -2475,7 +2492,19 @@ async function changePasswords(resuming) {
       // verify with the new values, in fresh memory-only helpers
       ctl.step({ title: "Checking the new passwords", html: `<p class="small">Signing in to each account with its new password.</p>` });
       const bad = await verify(ad, v.roles, v.next);
-      if (bad.length) return failed({ done: r.done.filter((k) => !bad.includes(k)), failedAt: bad[0], error: Object.assign(new Error("verify"), { code: "mismatch" }) });
+      if (bad.length) {
+        // not confirmed is not the same as wrong: Try again checks those
+        // accounts with the new value first, and a lost connection or a pause
+        // is reported as that
+        const keys = bad.map((b) => b.key);
+        const why = bad.find((b) => b.why !== "refused") || bad[0];
+        const doneNow = r.done.filter((k) => !keys.includes(k));
+        // kept in the record too, so a visit after the page closed checks them first
+        try { await store.updatePasswords((d) => ({ ...(d || {}), pending: { ...((d && d.pending) || { roles: v.roles }), done: doneNow, inProgress: null, unsure: keys } })); }
+        catch { /* the dialog still has it */ }
+        return failed({ done: doneNow, failedAt: keys[0], unsure: keys,
+          error: Object.assign(new Error("verify"), { code: why.why === "refused" ? "mismatch" : why.code || why.why }) });
+      }
       try {
         const now = store.now();
         await store.updatePasswords((d) => ({ ...(d || {}), ...Object.fromEntries(v.roles.map((x) => [x, { changedAt: now }])), pending: null }),
@@ -2487,8 +2516,11 @@ async function changePasswords(resuming) {
     const failed = (r, where) => {
       const lines = halfDoneText(v.roles, r.done);
       const code = String((r.error && r.error.code) || "");
+      const acct = ACCOUNTS.find((a) => a.key === r.failedAt);
       const why = where === "save" ? "Couldn't save the progress note, so nothing was changed. Check the connection and try again."
         : /too-many-requests/.test(code) ? "Firebase has paused sign-ins from this device for about 15 minutes. Wait, then press Try again once."
+        : /user-disabled/.test(code) ? `${acct ? acct.label : "An account"} is switched off in Firebase. The department account can switch it back on in the Firebase console (Authentication, Users), then press Try again.`
+        : code === "mismatch" ? `${acct ? acct.label : "An account"} didn't take the new password. Press Try again.`
         : code === "refused" ? "An account didn't accept its current password. If nobody knows the current password for this account, it can only be reset in the Firebase console by the department account."
         : /network/.test(code) ? "The connection dropped." : "";
       const body = lines.length
@@ -2496,7 +2528,7 @@ async function changePasswords(resuming) {
         : r.done.length ? "Try again to finish." : "Nothing was changed yet.";
       ctl.step({ title: "Not finished", html: `<p class="small">${escapeHtml(body)}</p>${why ? `<p class="small">${escapeHtml(why)}</p>` : ""}`,
         buttons: [{ label: "Close", run: () => ctl.close(null) },
-          { label: "Try again", kind: "filled", run: () => change({ done: r.done, inProgress: r.failedAt }) }] });
+          { label: "Try again", kind: "filled", run: () => change({ done: r.done, inProgress: r.failedAt, unsure: r.unsure || [] }) }] });
     };
 
     const done = () => {

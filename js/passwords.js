@@ -39,9 +39,10 @@ export const ACCOUNTS = Object.freeze([
 export const accountsFor = (roles) => ACCOUNTS.filter((a) => roles.includes(a.role));
 
 // ---- validation (before anything is sent) -------------------------------------
-// current: { leadership, ed, guest } (the values in use now)
-// next:    { <role>: { value, repeat } } for each ticked role
-export function validateNew(roles, current, next) {
+// current:   { leadership, ed, guest } (the values in use now)
+// next:      { <role>: { value, repeat } } for each ticked role
+// overrides: { <account key>: value } where a tool already has another value
+export function validateNew(roles, current, next, overrides = {}) {
   const errors = [];
   if (!roles.length) errors.push("Tick at least one password to change.");
   for (const r of ROLES) if (!String(current[r] || "")) errors.push(`Type the current ${ROLE_WORD[r]} password.`);
@@ -53,6 +54,12 @@ export function validateNew(roles, current, next) {
     if (v !== v.trim()) errors.push(`The new ${w} password can't start or end with a space.`);
     if (v.toLowerCase().includes("password")) errors.push(`The new ${w} password can't contain the word "password".`);
     if (v && v === current[r]) errors.push(`The new ${w} password is the same as the current one.`);
+    // never a value any account accepts today: if the change stopped part way,
+    // that account would let its holders in as the wrong role (review M1)
+    else if (v && ROLES.some((o) => o !== r && v === String(current[o] || "")))
+      errors.push(`The new ${w} password is one of the passwords in use now. Pick one that isn't used anywhere.`);
+    if (v && Object.values(overrides).some((x) => x && v === x))
+      errors.push(`The new ${w} password is one of the passwords in use now. Pick one that isn't used anywhere.`);
   }
   // the three in use afterwards must all differ (the sign-in page tells the
   // roles apart only by which account accepts the password)
@@ -69,16 +76,23 @@ export const currentFor = (acct, current, overrides = {}) => (overrides[acct.key
 const isRefusal = (e) => !!e && /wrong-password|invalid-credential|user-not-found|invalid-login-credentials|INVALID_LOGIN_CREDENTIALS|INVALID_PASSWORD|EMAIL_NOT_FOUND/i.test(String(e.code || e.message || ""));
 const isThrottle = (e) => !!e && /too-many-requests|TOO_MANY_ATTEMPTS/i.test(String(e.code || e.message || ""));
 const isRecent = (e) => !!e && /requires-recent-login/i.test(String(e.code || ""));
+const isDisabled = (e) => !!e && /user-disabled|USER_DISABLED/i.test(String(e.code || e.message || ""));
+const whyOf = (e) => (isThrottle(e) ? "throttled" : isRefusal(e) ? "refused" : isDisabled(e) ? "disabled" : "error");
+// what Check proves: every account of a ticked password, then the Physician
+// Hiring account of each unticked one, so "all different" rests on values an
+// account actually accepted (review M1)
+export const checkAccountsFor = (roles) => [...accountsFor(roles),
+  ...ACCOUNTS.filter((a) => a.project === "hiring" && !roles.includes(a.role))];
 
 // Step 3, "Check": prove every account with its current value; change nothing,
 // keep nothing. Stops at the first refusal. -> { ok, results: [{ key, ok, why }] }
 export async function preflight(auth, roles, current, overrides = {}) {
   const results = [];
-  for (const a of accountsFor(roles)) {
+  for (const a of checkAccountsFor(roles)) {
     let s = null;
     try { s = await auth.open(a, currentFor(a, current, overrides)); results.push({ key: a.key, label: a.label, ok: true }); }
     catch (e) {
-      results.push({ key: a.key, label: a.label, ok: false, why: isThrottle(e) ? "throttled" : isRefusal(e) ? "refused" : "error", code: e && e.code });
+      results.push({ key: a.key, label: a.label, ok: false, why: whyOf(e), code: e && e.code });
       return { ok: false, results };
     } finally { if (s) await auth.close(s); }
   }
@@ -107,15 +121,17 @@ export async function converge(auth, a, oldValue, newValue, state = "todo") {
   return "changed";
 }
 
-// Step 4, "Change now". progress: { done: [keys], inProgress: key|null } as
-// recorded (from interviews_meta/passwords.pending, or empty). record(p) saves
+// Step 4, "Change now". progress: { done: [keys], inProgress: key|null,
+// unsure: [keys] } as recorded (from interviews_meta/passwords.pending, or
+// empty); "unsure" accounts (the check after a change didn't confirm them) are
+// tried with the new value first, like the one in progress. record(p) saves
 // progress (dates and account keys only, never a value) before and after each
 // account. -> { changed: [keys], failedAt: key|null, error }
 export async function applyChange(auth, roles, current, next, { overrides = {}, progress = {}, record = async () => {} } = {}) {
-  const done = new Set(progress.done || []);
+  const done = new Set(progress.done || []), unsure = new Set(progress.unsure || []);
   const changed = [];
   for (const a of accountsFor(roles)) {
-    const state = done.has(a.key) ? "done" : progress.inProgress === a.key ? "inProgress" : "todo";
+    const state = done.has(a.key) ? "done" : progress.inProgress === a.key || unsure.has(a.key) ? "inProgress" : "todo";
     try {
       await record({ done: [...done], inProgress: a.key });
       await converge(auth, a, currentFor(a, current, overrides), next[a.role].value, state);
@@ -129,11 +145,13 @@ export async function applyChange(auth, roles, current, next, { overrides = {}, 
 }
 
 // Step 3 of the change: sign in to every changed account with the new value.
+// -> [{ key, why }] for each account that didn't confirm it ("refused",
+// "throttled", "disabled" or "error": a network problem is not a mismatch)
 export async function verify(auth, roles, next) {
   const bad = [];
   for (const a of accountsFor(roles)) {
     let s = null;
-    try { s = await auth.open(a, next[a.role].value); } catch { bad.push(a.key); } finally { if (s) await auth.close(s); }
+    try { s = await auth.open(a, next[a.role].value); } catch (e) { bad.push({ key: a.key, why: whyOf(e), code: e && e.code }); } finally { if (s) await auth.close(s); }
   }
   return bad;
 }

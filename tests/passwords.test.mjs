@@ -139,3 +139,42 @@ test("no password value ever reaches the console, storage, or what is recorded",
     for (const v of [...Object.values(CUR), ...Object.values(NEXT).map((x) => x.value)]) assert.ok(!everything.includes(v), "a password leaked");
   } finally { Object.assign(console, orig); delete globalThis.localStorage; delete globalThis.sessionStorage; }
 });
+
+// review M1: a new value already in use somewhere would let that role's holders
+// in as the wrong role if the change stopped part way
+test("a new value may not be any password in use now, nor a value one tool already has", () => {
+  const errs = validateNew(["ed"], CUR, { ed: { value: CUR.guest, repeat: CUR.guest } });
+  assert.ok(errs.some((e) => e.includes("one of the passwords in use now")), errs.join("|"));
+  const errs2 = validateNew(["ed"], CUR, { ed: { value: CUR.leadership, repeat: CUR.leadership } });
+  assert.ok(errs2.some((e) => e.includes("one of the passwords in use now")));
+  const errs3 = validateNew(["ed"], CUR, { ed: NEXT.ed }, { "voting:leadership": NEXT.ed.value });
+  assert.ok(errs3.some((e) => e.includes("one of the passwords in use now")));
+  assert.deepEqual(validateNew(["ed"], CUR, { ed: NEXT.ed }, { "voting:ed": "some-old-voting-ed" }), []);
+});
+
+test("Check also proves the Physician Hiring account of each unticked password", async () => {
+  const passwords = all();
+  const auth = fakeAuth({ passwords, clock: { now: 0 } });
+  const r = await preflight(auth, ["ed"], CUR);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.results.map((x) => x.key), ["voting:ed", "hiring:committee", "hiring:applicant", "hiring:admin"]);
+  // the typed current Guest value is wrong: Check says so, so "all different" never rests on it
+  const bad = await preflight(fakeAuth({ passwords, clock: { now: 0 } }), ["ed"], { ...CUR, guest: "not-the-guest-value" });
+  assert.equal(bad.ok, false);
+  assert.equal(bad.results[bad.results.length - 1].key, "hiring:applicant");
+  assert.ok(!auth.log.some((l) => l.startsWith("update")));
+});
+
+test("a check after the change that couldn't connect is not a mismatch; Try again finishes from the new value", async () => {
+  const passwords = all();
+  const auth = fakeAuth({ passwords, clock: { now: 0 } });
+  const r = await applyChange(auth, ["ed"], CUR, { ed: NEXT.ed });
+  assert.equal(r.failedAt, null);
+  const flaky = { ...auth, async open(a, pw) { if (a.key === "hiring:committee") { const e = new Error("net"); e.code = "auth/network-request-failed"; throw e; } return auth.open(a, pw); } };
+  const bad = await verify(flaky, ["ed"], { ed: NEXT.ed });
+  assert.deepEqual(bad.map((b) => [b.key, b.why]), [["hiring:committee", "error"]]);
+  // Try again with the unconfirmed account marked unsure: checked with the new value, nothing changed twice
+  const again = await applyChange(auth, ["ed"], CUR, { ed: NEXT.ed }, { progress: { done: ["voting:ed"], unsure: ["hiring:committee"] } });
+  assert.equal(again.failedAt, null, again.error && again.error.message);
+  assert.equal(passwords["hiring:committee"], NEXT.ed.value);
+});

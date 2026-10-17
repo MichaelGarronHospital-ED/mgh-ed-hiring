@@ -49,7 +49,6 @@ const STUB = {
       fire(); return { user: auth.currentUser };
     }
     export function onAuthStateChanged(auth, f) { subs.add(f); setTimeout(() => f(auth.currentUser), 0); return () => subs.delete(f); }
-    export async function signInAnonymously(auth) { log("signIn:anon"); auth.currentUser = {}; }
     export async function signOut(auth) { log("signOut"); auth.currentUser = null; try { sessionStorage.removeItem("__stubuser"); } catch {} fire(); }`,
   "firebase-firestore.js": `
     const snap = { docs: [], data: () => undefined, exists: () => false };

@@ -26,7 +26,7 @@ const OUT = process.argv[2] || "";
 if (OUT) fs.mkdirSync(OUT, { recursive: true });
 
 // test values only (the emulator's; nothing real)
-const OLD = { leadership: "adminpw", ed: "staffpw", guest: "guestpw" };
+const OLD = { leadership: "lead-old-test-1", ed: "ed-old-test-22", guest: "guest-old-test-3" };   // long enough for the leak check to mean something
 const NEW = { leadership: "harbour lantern violet", ed: "river stone lamp forty", guest: "maple window seven" };
 const ACCTS = [
   ["voting:ed", "ed@ed-motion-voting.app", "ed"], ["voting:leadership", "leadership@ed-motion-voting.app", "leadership"],
@@ -137,7 +137,9 @@ const cases = {
       await shot(p, "step2");
       await flowClick(p, "Check"); await waitFlow(p, "Ready to change");
       const ready = await p.$eval("#flowBody", (e) => e.textContent);
-      problems.push(...ok((ready.match(/ready/g) || []).length === 2 && ready.includes("Motion Voting, ED account") && ready.includes("Physician Hiring, ED account"), `ready: ${ready}`));
+      // both ED accounts, then Physician Hiring's Guest and Leadership accounts (unticked, proven too)
+      problems.push(...ok((ready.match(/: ready/g) || []).length === 4 && ready.includes("Motion Voting, ED account") && ready.includes("Physician Hiring, ED account")
+        && ready.includes("Physician Hiring, Guest account") && !ready.includes("Motion Voting, Leadership account"), `ready: ${ready}`));
       problems.push(...ok(await signInWorks("committee@ed-hiring.app", OLD.ed), "Check changed something"));
       await shot(p, "ready");
       await flowClick(p, "Change now"); await waitFlow(p, "Done", 30000);
@@ -156,7 +158,7 @@ const cases = {
       await flowClick(p, "Close"); await sleep(400);
       const after = await cardText(p);
       problems.push(...ok(/ED: last changed \w{3} \d+, \d{4}/.test(after), `card after: ${after.slice(0, 200)}`));
-      problems.push(...await noLeaks(p, log, [...Object.values(OLD).filter((v) => v.length > 7), ...Object.values(NEW)]));
+      problems.push(...await noLeaks(p, log, [...Object.values(OLD), ...Object.values(NEW)]));
       // the page's own session is untouched: it can still save
       const saved = await p.evaluate(() => window.__edStore.setMeta({ roundName: "Hiring round 2027" }).then(() => "ok", (e) => e.code));
       problems.push(...ok(saved === "ok", `Leadership page can't save after the change: ${saved}`));
@@ -213,8 +215,10 @@ const cases = {
       await openCard(q);
       const card = await cardText(q);
       problems.push(...ok(/A password change didn't finish \(started \w{3} \d+, \d{4}\)/.test(card) && card.includes("Open it to finish"), `card: ${card.slice(0, 200)}`));
+      // review M2: nothing else can start while it is unfinished
+      problems.push(...ok(!card.includes("Change a password"), "a new change can still be started over the unfinished one"));
       await shot(q, "pending-card");
-      await q.evaluate(() => { window.IV.changePasswords(true); });
+      await q.evaluate(() => { window.IV.changePasswords(false); });   // any way in leads to finishing it
       await waitFlow(q, "Finish the password change");
       await fill(q, ["leadership", "ed", "guest"]);
       await shot(q, "finish");
@@ -224,7 +228,7 @@ const cases = {
       problems.push(...ok(meta && meta.pending === null && meta.leadership && meta.ed && meta.guest, `passwords doc: ${JSON.stringify(meta)}`));
       const h = Object.values(await emu.listCollection("interviews_history")).filter((e) => e.action === "passwords.change");
       problems.push(...ok(h.length === 1 && h[0].text === "Changed the Leadership, ED and Guest passwords", `history: ${JSON.stringify(h)}`));
-      problems.push(...await noLeaks(q, log, [...Object.values(OLD).filter((v) => v.length > 7), ...Object.values(NEW)]));
+      problems.push(...await noLeaks(q, log, [...Object.values(OLD), ...Object.values(NEW)]));
       // the old Leadership password no longer opens the page; the new one does
       await flowClick(q, "Close");
       await closePage(q);

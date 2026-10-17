@@ -10,8 +10,11 @@
 //  "Passwords for all ED tools" keeps on the same values.
 //
 //  READ ONLY. It reads no documents and writes nothing; it only attempts
-//  sign-ins (each in its own memory-only Firebase app). It never prints the
-//  password.
+//  sign-ins, with Firebase's REST sign-in call (nothing is kept). The web API
+//  keys only answer requests from the live site, so each call says it comes
+//  from there (the same Referer the browser sends); if a key still refuses,
+//  the script says it can't test from here rather than "wrong password".
+//  It never prints the password.
 //
 //  Usage:
 //    ED_PASSWORD='...' node diagnose-login.mjs            # the three hiring accounts
@@ -25,9 +28,27 @@
 //  that, stop, wait about 15 minutes, and run this ONCE.
 // ============================================================================
 
-import { initializeApp, deleteApp } from "firebase/app";
-import { initializeAuth, inMemoryPersistence, signInWithEmailAndPassword } from "firebase/auth";
 import { firebaseConfig, AUTH, PARTNERS } from "../js/config.js";
+
+const REFERER = "https://michaelgarronhospital-ed.github.io/";
+// -> "ok" | "refused" | "throttled" | "disabled" | "blocked" (the key won't
+//    answer from here) | "network" | the error code
+async function trySignIn(apiKey, email, password) {
+  let res, body = {};
+  try {
+    res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${encodeURIComponent(apiKey)}`, {
+      method: "POST", headers: { "content-type": "application/json", Referer: REFERER },
+      body: JSON.stringify({ email, password, returnSecureToken: false }), signal: AbortSignal.timeout(10000) });
+    body = await res.json().catch(() => ({}));
+  } catch { return "network"; }
+  if (res.ok) return "ok";
+  const msg = String((body.error && body.error.message) || "");
+  if (/^(INVALID_LOGIN_CREDENTIALS|INVALID_PASSWORD|EMAIL_NOT_FOUND)/.test(msg)) return "refused";
+  if (/^TOO_MANY_ATTEMPTS_TRY_LATER/.test(msg)) return "throttled";
+  if (/^USER_DISABLED/.test(msg)) return "disabled";
+  if (res.status === 403 || /REFERRER|API_KEY|PERMISSION_DENIED/.test(msg)) return "blocked";
+  return msg || `HTTP ${res.status}`;
+}
 
 const VOTING = process.argv.slice(2).includes("--voting");
 const PW = process.env.ED_PASSWORD || process.env.ED_IV_CODE;
@@ -49,17 +70,13 @@ const accounts = [
 ];
 const configs = { hiring: firebaseConfig, voting: PARTNERS.voting.firebaseConfig };
 const results = [];
-let n = 0;
+const SAY = { ok: "accepted", refused: "refused (wrong password)", throttled: "Firebase is pausing tries from this computer",
+  disabled: "the account is switched off", blocked: "can't test from here (the key refused this computer)", network: "couldn't reach Firebase" };
 for (const [role, project, email] of accounts) {
-  const app = initializeApp(configs[project], `diag-${n++}`);
-  const auth = initializeAuth(app, { persistence: inMemoryPersistence });
-  let r;
-  try { await signInWithEmailAndPassword(auth, email, PW); r = "ok"; }
-  catch (e) { r = (e && e.code) || String(e); }
-  try { await deleteApp(app); } catch { /* gone */ }
+  const r = await trySignIn(configs[project].apiKey, email, PW);
   results.push({ role, project, email, r });
-  console.log(`  ${email}: ${r === "ok" ? "accepted" : `refused (${r})`}`);
-  if (String(r).includes("too-many-requests")) {
+  console.log(`  ${email}: ${SAY[r] || `no answer (${r})`}`);
+  if (r === "throttled") {
     console.log("\n  STOP. Firebase has throttled this DEVICE, not the account, and every further");
     console.log("  attempt extends the block. Wait about 15 minutes, then run this once.");
     break;
@@ -69,11 +86,14 @@ for (const [role, project, email] of accounts) {
 console.log(`\n${"-".repeat(64)}\nWhat it means`);
 const hiring = results.filter((x) => x.project === "hiring" && x.r === "ok");
 const codes = results.map((x) => String(x.r));
-if (codes.some((c) => c.includes("operation-not-allowed"))) {
+if (codes.some((c) => /OPERATION_NOT_ALLOWED|PASSWORD_LOGIN_DISABLED/.test(c))) {
   console.log("  Email/Password sign-in is OFF for this project. Nobody can sign in at all.");
   console.log("  Firebase console, Authentication, Sign-in method: enable Email/Password.");
-} else if (codes.some((c) => c.includes("network"))) {
+} else if (codes.some((c) => c === "network")) {
   console.log("  Couldn't reach Firebase from here. Check the network and run it again.");
+} else if (codes.every((c) => c === "blocked")) {
+  console.log("  The keys wouldn't answer this computer, so nothing was tested. That says nothing about the");
+  console.log("  password. Try it on the sign-in page itself instead.");
 } else if (hiring.length) {
   const role = hiring[0].role;
   console.log(`  This is the ${role.toUpperCase()} password for Physician Hiring; the page signs in with it.`);
@@ -82,9 +102,12 @@ if (codes.some((c) => c.includes("operation-not-allowed"))) {
   console.log("  www.gstatic.com, or they are throttled from earlier tries (wait 15 minutes).");
   if (VOTING) {
     const v = results.filter((x) => x.project === "voting" && x.role === role);
-    if (v.length && v[0].r !== "ok") console.log(`  Motion Voting's ${role} account does NOT take it: the tools have drifted apart.\n  Fix it in Physician Hiring, Setup, Passwords ("The tools already have different passwords").`);
+    if (v.length && v[0].r === "refused") console.log(`  Motion Voting's ${role} account does NOT take it: the tools have drifted apart.\n  Fix it in Physician Hiring, Setup, Passwords ("The tools already have different passwords").`);
   }
-} else if (codes.some((c) => c.includes("user-disabled"))) {
+} else if (codes.some((c) => c === "blocked")) {
+  console.log("  Some accounts couldn't be tested from here (the key refused this computer), and none of the");
+  console.log("  others accepted it. Try it on the sign-in page itself.");
+} else if (codes.some((c) => c === "disabled")) {
   console.log("  An account is disabled. Firebase console, Authentication, Users: enable it.");
 } else {
   console.log("  No hiring account accepts this password. It is out of date or mistyped.");

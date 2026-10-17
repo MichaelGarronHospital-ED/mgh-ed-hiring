@@ -73,7 +73,27 @@ the three role-account sign-ins (see the console steps in README).
   hiring's (the Auth emulator maps every API key to its default project); they are still reached
   through separate memory-only helper apps.
 
-Tests: NEW `tests/passwords.test.mjs` (8: validation table; Check stops at the first refusal and
+- **Review fixes:**
+  - A new password may not be any password in use now (any role's, or a value one tool
+    already has): if a change stopped part way, that account would let people in as the wrong
+    role. Check also signs in to the Physician Hiring account of each unticked password, so
+    "all different" rests on values an account accepted.
+  - While a change is unfinished, "Change a password" is gone and every way in finishes it
+    (a new change used to overwrite the record of where the old one stopped).
+  - A check after the change that couldn't connect, or was paused, is reported as that, not as
+    a mismatch, and Try again checks those accounts with the new value first (kept in the
+    record too). A switched-off account is named in Check and Change.
+  - The browser asks before leaving the page while "Changing" runs; the dialog itself checks
+    that the questions are saved and that this is the live site.
+  - At the sign-in page, every account refusing is "Incorrect password." (a switched-off
+    account is named only when it is Leadership's).
+  - `scripts/diagnose-login.mjs` signs in with Firebase's REST call and the live site's
+    Referer (the keys refuse anything else); a key that still refuses is "can't test from
+    here", never "wrong password".
+  - `AUTH.mode` is no longer read (removed in R8, since cached older pages still read it); the
+    sim's anonymous sign-in stub and old comments about it are gone.
+
+Tests: NEW `tests/passwords.test.mjs` (11 with the review fixes: validation table; Check stops at the first refusal and
 changes nothing; a 6-minute pause between Check and Change now still changes all five against a
 fake auth that enforces the 5-minute rule; fixed order with each account signed in right before
 its change; converge from every half state with the in-progress account changed or not; one retry

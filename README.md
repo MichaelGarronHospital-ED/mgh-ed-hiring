@@ -61,9 +61,11 @@ derived from a password, so changing one needs no code change.
 
 **To change one: Physician Hiring, Setup, "Passwords for all ED tools".** Tick the
 passwords to change, type the three current ones and the new ones (at least 10
-characters; three or four words are easy to say and hard to guess), press **Check**
-(this signs in to every account with its current password and changes nothing), then
-**Change now**. It changes Motion Voting first and Physician Hiring's Leadership
+characters; three or four words are easy to say and hard to guess; never a password in
+use now anywhere; and not containing the word "password" in any form, which is stricter
+than it needs to be on purpose), press **Check** (this signs in to every account of the
+ticked passwords, and to the Physician Hiring account of each other one, with its current
+password, and changes nothing), then **Change now**. It changes Motion Voting first and Physician Hiring's Leadership
 account last, signing each account in seconds before its own change, then checks every
 new password and shows "Done". Then tell people in person or by phone; never email a
 password. Notes:
@@ -72,8 +74,9 @@ password. Notes:
   Applicants with the old Guest password can't sign in until they get the new one.
 - If it stops part way (lost connection, closed tab), it says exactly which tool has the
   new password and which the old; "Try again" finishes it, and if the tab was closed,
-  Setup shows "A password change didn't finish" with "Open it to finish". Running it
-  again is always safe.
+  Setup shows "A password change didn't finish" with "Open it to finish" (and nothing
+  else can be started until it is finished). Running it again is always safe. While it
+  runs, the browser asks before leaving the page.
 - If the tools already disagree (one account has another password), Check says which
   account refused; "The tools already have different passwords" takes that account's own
   current value.
@@ -163,8 +166,7 @@ The same `index.html` serves everyone; what you can do depends on the password y
   scores, or other applicants. (`book.html` now just forwards here.)
 
 ## Real access control (the "roles" security model)
-`AUTH.mode` in [`js/config.js`](js/config.js) is `"roles"`, and that is how the live
-tool runs: each of the three passwords is the password of one Firebase account, and
+The live tool runs the "roles" model: each of the three passwords is the password of one Firebase account, and
 the Firestore rules decide what each account may do, on the server. (The old
 `"anon"` mode, where every visitor signed in anonymously, no longer works since R7:
 it found the role by decrypting `js/data.js`.) Setting the roles model up
@@ -199,7 +201,7 @@ from scratch takes these console steps (they can't be done from the repo):
    > real sign-in.
 
 3. **Firestore → Rules →** paste [`firestore.rules`](firestore.rules) → **Publish**.
-4. Check that [`js/config.js`](js/config.js) has `AUTH.mode = "roles"` (it does).
+4. Check that the emails in `AUTH` in [`js/config.js`](js/config.js) match the three accounts.
 5. Sign in as **admin** once — the app publishes the PII-free list of interview times
    to `/interviews_public/slots` (and again on every edit in Setup → Interview times),
    so applicants can read *only* that.
