@@ -46,7 +46,10 @@ export async function freshPage({ width = 1280, log = [], timing = null, skewMs 
   if (timing) await page.evaluateOnNewDocument((t) => { globalThis.__edRoundsTiming = t; }, timing);
   if (skewMs) await page.evaluateOnNewDocument((ms) => { const now = Date.now; Date.now = () => now() + ms; }, skewMs);
   page.on("pageerror", (e) => log.push(`pageerror: ${e.message}`));
-  page.on("console", (m) => { if (m.type() === "error") log.push(`console.error: ${m.text()}`); });
+  // a refused sign-in is how the gate finds the role (R7): the browser logs
+  // each refusal as a failed request, which is expected, not an error
+  const refusal = (m) => /status of 400/.test(m.text()) && String((m.location() || {}).url || "").includes(":9099/");
+  page.on("console", (m) => { if (m.type() === "error" && !refusal(m)) log.push(`console.error: ${m.text()}`); });
   await page.goto(SRV.url, { waitUntil: "domcontentloaded" });
   await page.waitForFunction("window.__edReady === true", { timeout: 20000 });
   page._ctx = ctx;
@@ -65,17 +68,16 @@ export const nextDownload = (page, act) => page.evaluate((act) => new Promise((r
 const history = async () => Object.values(await emu.listCollection("interviews_history"));
 
 export const cases = {
-  // R1: the first Leadership sign-in copies the questions, with a history
-  // entry stamped by the server; adding an applicant writes the roster and its
-  // history in one commit the rules accept.
-  async leadershipCopiesQuestions() {
+  // R1: adding an applicant writes the roster and its history in one commit
+  // the rules accept. R7: the Leadership sign-in found by order (ED and Guest
+  // refuse first on a new browser), and nothing is copied into a questions
+  // document any more (the page no longer reads js/data.js).
+  async leadershipAddsApplicant() {
     const problems = [], log = [];
     const p = await freshPage({ log });
     await asLeadership(p);
-    const q = await until(() => emu.getDocument("interviews_meta/questions"));
-    problems.push(...ok(q && q.migratedFrom === "data.js" && q.questions.length === 3, `questions doc: ${JSON.stringify(q)}`));
-    const h = await until(async () => (await history()).find((e) => e.action === "questions.migrate"));
-    problems.push(...ok(h && h.at && h.at.__ts, `migrate history: ${JSON.stringify(h)}`));
+    await sleep(500);
+    problems.push(...ok(!(await emu.getDocument("interviews_meta/questions")), "a questions document was written at sign-in"));
     await p.evaluate(() => { document.querySelector("#bulkAdd").value = "Dr Jane Kim";
       [...document.querySelectorAll("#screen button")].find((b) => b.textContent.trim() === "Add candidates").click(); });
     const added = await until(async () => Object.values(await emu.listCollection("interviews_candidates")).find((c) => c.name === "Dr Jane Kim"));
@@ -120,6 +122,7 @@ export const cases = {
   async backupIsAFreshRead() {
     const problems = [], log = [];
     await emu.seed({
+      "interviews_meta/questions": { version: 1, questions: [{ id: "0", text: "Tell us about yourself" }], scale: ["1", "2", "3", "4", "5"], guide: [] },
       "interviews_screening/Bruns~c-1": { member: "Bruns", candId: "c-1", rating: 3, flag: false },
       "interviews_availCand/ashcombe": { slots: { t0: "ip" }, reply: "confirmed", replyAt: { __ts: "2027-02-22T18:00:00.000Z" } },
     });
@@ -143,6 +146,8 @@ export const cases = {
   // make (no client-side guard) is refused too.
   async stageRefusals() {
     const problems = [], log = [];
+    // since R7 the questions come only from the document (R1 copied them live)
+    await emu.seed({ "interviews_meta/questions": { version: 1, questions: [{ id: "0", text: "Tell us about yourself" }], scale: ["1", "2", "3", "4", "5"], guide: [] } });
     const p = await freshPage({ log });
     await asED(p, "Chen"); await tab(p, "score");
     await p.select("select[aria-label='Candidate to score']", "c-1"); await sleep(200);
@@ -465,11 +470,14 @@ export const cases = {
     problems.push(...ok(true, ""));
     // duplicate: a second page in the SAME browser profile with the same tab id
     const dup = await a._ctx.newPage();
-    await dup.evaluateOnNewDocument((id) => { sessionStorage.setItem("ed_iv_tab", id); globalThis.__edRoundsTiming = { renewMs: 600000 }; },
-      await a.evaluate(() => sessionStorage.getItem("ed_iv_tab")));
+    // a browser's Duplicate copies the whole sessionStorage: the tab id and
+    // Firebase's tab-only sign-in, so the copy resumes signed in (R7)
+    const copied = await a.evaluate(() => JSON.stringify(Object.fromEntries(Object.keys(sessionStorage).map((k) => [k, sessionStorage.getItem(k)]))));
+    await dup.evaluateOnNewDocument((all) => {
+      if (!sessionStorage.getItem("ed_iv_tab")) for (const [k, v] of Object.entries(JSON.parse(all))) sessionStorage.setItem(k, v);
+      globalThis.__edRoundsTiming = { renewMs: 600000 };
+    }, copied);
     await dup.goto(SRV.url, { waitUntil: "domcontentloaded" }); await dup.waitForFunction("window.__edReady === true");
-    await dup.evaluate((c) => sessionStorage.setItem("ed_iv_code", c), "adminpw");
-    await dup.reload({ waitUntil: "domcontentloaded" }); await dup.waitForFunction("window.__edReady === true");
     await waitFlow(dup, "Now save the backup", 20000);
     await sleep(1000);
     const t = await a.$eval("#flowBody", (e) => e.textContent).catch(() => "");

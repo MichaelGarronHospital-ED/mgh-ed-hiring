@@ -1,161 +1,118 @@
 #!/usr/bin/env node
 // ============================================================================
-//  diagnose-login.mjs — why won't a code sign in?
+//  diagnose-login.mjs: why won't a password sign in?
 //
-//  A code has to clear TWO independent hurdles, and the app cannot tell you
-//  which one it failed:
-//
-//    1. It must DECRYPT the questions (js/data.js). This is what decides
-//       whether you are staff or admin. Nothing else unwraps the content key,
-//       so decrypting is proof the code is genuine.
-//    2. It must be the PASSWORD of the matching Firebase account
-//       (admin@ / committee@ / applicant@ed-hiring.app). That password lives
-//       only in the Firebase console — it is not derived from the code and
-//       nothing keeps the two in step.
-//
-//  Clear 1 and fail 2 and the app used to say "Incorrect code.", sending the
-//  one person holding a correct code away to retype it. This script tells the
-//  two apart in one run.
+//  Since R7 there is one test, the same one the page makes: which role account
+//  accepts the password? The page tries ED (committee@), Guest (applicant@) and
+//  Leadership (admin@ed-hiring.app); this script tries all three and says which
+//  accepted it, or why none did. With --voting it also tries Motion Voting's
+//  two accounts (ed@ and leadership@ed-motion-voting.app), which Setup,
+//  "Passwords for all ED tools" keeps on the same values.
 //
 //  READ ONLY. It reads no documents and writes nothing; it only attempts
-//  sign-ins. It never prints the code.
+//  sign-ins, with Firebase's REST sign-in call (nothing is kept). The web API
+//  keys only answer requests from the live site, so each call says it comes
+//  from there (the same Referer the browser sends); if a key still refuses,
+//  the script says it can't test from here rather than "wrong password".
+//  It never prints the password.
 //
 //  Usage:
-//    ED_IV_CODE='…' node diagnose-login.mjs            # decrypt + sign-in
-//    ED_IV_CODE='…' node diagnose-login.mjs --offline   # decrypt check only
-//    ED_IV_CODE='…' node diagnose-login.mjs --all       # try all three accounts
+//    ED_PASSWORD='...' node diagnose-login.mjs            # the three hiring accounts
+//    ED_PASSWORD='...' node diagnose-login.mjs --voting   # and Motion Voting's two
 //
-//  The code goes in an ENV VAR, not an argument, so it stays out of shell
-//  history and the process list.
+//  The password goes in an ENV VAR, not an argument, so it stays out of shell
+//  history and the process list. (ED_IV_CODE, the old name, still works.)
 //
 //  NOTE ON RETRIES: Firebase throttles by DEVICE after repeated failures
 //  (auth/too-many-requests), and every attempt extends the block. If you see
-//  that, stop, wait ~15 minutes, and run this ONCE.
+//  that, stop, wait about 15 minutes, and run this ONCE.
 // ============================================================================
 
-// js/data.js is browser code: it reaches for `window.crypto.subtle`. Node has
-// the same WebCrypto at globalThis.crypto, so lend it a window.
-if (!globalThis.window) globalThis.window = { crypto: globalThis.crypto };
+import { firebaseConfig, AUTH, PARTNERS } from "../js/config.js";
 
-import { initializeApp } from "firebase/app";
-import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
-import { firebaseConfig, AUTH } from "../js/config.js";
-import { decryptContent } from "../js/data.js";
+const REFERER = "https://michaelgarronhospital-ed.github.io/";
+// -> "ok" | "refused" | "throttled" | "disabled" | "blocked" (the key won't
+//    answer from here) | "network" | the error code
+async function trySignIn(apiKey, email, password) {
+  let res, body = {};
+  try {
+    res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${encodeURIComponent(apiKey)}`, {
+      method: "POST", headers: { "content-type": "application/json", Referer: REFERER },
+      body: JSON.stringify({ email, password, returnSecureToken: false }), signal: AbortSignal.timeout(10000) });
+    body = await res.json().catch(() => ({}));
+  } catch { return "network"; }
+  if (res.ok) return "ok";
+  const msg = String((body.error && body.error.message) || "");
+  if (/^(INVALID_LOGIN_CREDENTIALS|INVALID_PASSWORD|EMAIL_NOT_FOUND)/.test(msg)) return "refused";
+  if (/^TOO_MANY_ATTEMPTS_TRY_LATER/.test(msg)) return "throttled";
+  if (/^USER_DISABLED/.test(msg)) return "disabled";
+  if (res.status === 403 || /REFERRER|API_KEY|PERMISSION_DENIED/.test(msg)) return "blocked";
+  return msg || `HTTP ${res.status}`;
+}
 
-const argv = process.argv.slice(2);
-const OFFLINE = argv.includes("--offline");
-const ALL = argv.includes("--all");
-
-const CODE = process.env.ED_IV_CODE;
-if (!CODE) {
-  console.error("ED_IV_CODE is not set.\n" +
-    "Run:  ED_IV_CODE='<the code to test>' node diagnose-login.mjs");
+const VOTING = process.argv.slice(2).includes("--voting");
+const PW = process.env.ED_PASSWORD || process.env.ED_IV_CODE;
+if (!PW) {
+  console.error("ED_PASSWORD is not set.\nRun:  ED_PASSWORD='<the password to test>' node diagnose-login.mjs");
   process.exit(1);
 }
-if (CODE !== CODE.trim()) {
-  console.log("⚠  The code has leading or trailing whitespace. The app trims it, so this is");
-  console.log("   only a problem if the Firebase password was SET with the spaces included.\n");
+if (PW !== PW.trim()) {
+  console.log("Note: the password has a space at the start or end. The page trims it, so this");
+  console.log("only matters if the account's password was SET with the spaces included.\n");
 }
-
-const ok = (s) => `  ✓ ${s}`;
-const no = (s) => `  ✗ ${s}`;
-
 console.log(`Project: ${firebaseConfig.projectId}`);
-console.log(`Auth mode: ${AUTH.mode}`);
-console.log(`Code length: ${CODE.length} characters` +
-  (CODE.length < 6 ? "  ⚠ under 6 — Firebase REFUSES to set a password this short, so the" +
-                     "\n                     account password CANNOT equal this code." : ""));
+console.log(`Password length: ${PW.length} characters` +
+  (PW.length < 6 ? " (under 6: Firebase refuses to set a password this short, so no account can have it)" : ""));
 
-// ------------------------------------------------- 1. does it decrypt?
-console.log(`\n1. Does the code decrypt the questions? (js/data.js)`);
-let decrypted = null;
-try { decrypted = await decryptContent(CODE); } catch { /* not a staff/admin code */ }
-
-let expectRole = null;
-if (decrypted) {
-  expectRole = decrypted.isAdmin ? "admin" : "committee";
-  console.log(ok(`yes — this is the ${decrypted.isAdmin ? "ADMIN" : "STAFF"} code.`));
-  console.log(`     (${decrypted.q.length} questions, ${decrypted.s.length} rating levels)`);
-  if (!decrypted.isAdmin)
-    console.log(`\n  →  If someone expected the leadership view, THIS IS THE ANSWER: the staff code\n` +
-                `     signs in fine but has no Panels, Ranking or Setup. They need the admin code.`);
-} else {
-  console.log(no(`no — it unwraps neither the staff nor the admin key.`));
-  console.log(`     It is therefore the APPLICANT code, an out-of-date code, or simply wrong.`);
-  console.log(`     If it should be an admin code, the admin wrap in js/data.js was re-keyed`);
-  console.log(`     without this code (README → "Re-keying").`);
-  expectRole = "candidate";
-}
-
-// ------------------------------------------------- 2. does Firebase accept it?
-if (OFFLINE) {
-  console.log(`\n2. Firebase sign-in — skipped (--offline).`);
-  process.exit(0);
-}
-
-const EMAILS = { admin: AUTH.adminEmail, committee: AUTH.committeeEmail, candidate: AUTH.candidateEmail };
-const roles = ALL ? ["admin", "committee", "candidate"] : [expectRole];
-
-console.log(`\n2. Does Firebase accept it as the password for ${roles.length > 1 ? "each account" : EMAILS[expectRole]}?`);
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const results = {};
-
-for (const role of roles) {
-  const email = EMAILS[role];
-  try {
-    await signInWithEmailAndPassword(auth, email, CODE);
-    results[role] = "ok";
-    console.log(ok(`${email} — accepted.`));
-  } catch (e) {
-    const code = (e && e.code) || String(e);
-    results[role] = code;
-    console.log(no(`${email} — rejected (${code})`));
-    if (code.includes("too-many-requests")) {
-      console.log(`\n     STOP. Firebase has throttled this DEVICE, not the account, and every`);
-      console.log(`     further attempt extends the block. Wait ~15 minutes, then run this once.`);
-      break;
-    }
+const accounts = [
+  ["ED", "hiring", AUTH.committeeEmail], ["Guest", "hiring", AUTH.candidateEmail], ["Leadership", "hiring", AUTH.adminEmail],
+  ...(VOTING ? [["ED", "voting", PARTNERS.voting.edEmail], ["Leadership", "voting", PARTNERS.voting.leadershipEmail]] : []),
+];
+const configs = { hiring: firebaseConfig, voting: PARTNERS.voting.firebaseConfig };
+const results = [];
+const SAY = { ok: "accepted", refused: "refused (wrong password)", throttled: "Firebase is pausing tries from this computer",
+  disabled: "the account is switched off", blocked: "can't test from here (the key refused this computer)", network: "couldn't reach Firebase" };
+for (const [role, project, email] of accounts) {
+  const r = await trySignIn(configs[project].apiKey, email, PW);
+  results.push({ role, project, email, r });
+  console.log(`  ${email}: ${SAY[r] || `no answer (${r})`}`);
+  if (r === "throttled") {
+    console.log("\n  STOP. Firebase has throttled this DEVICE, not the account, and every further");
+    console.log("  attempt extends the block. Wait about 15 minutes, then run this once.");
+    break;
   }
 }
 
-// ------------------------------------------------------------- verdict
-console.log(`\n${"─".repeat(64)}\nWhat to do`);
-const r = results[expectRole];
-
-if (!decrypted && r === "ok") {
-  console.log(`  This is the applicant code and it works. It is not an admin code and never`);
-  console.log(`  will be — admins need the separate admin code.`);
-} else if (!decrypted) {
-  console.log(`  The code decrypts nothing AND no account accepts it. It is simply not a`);
-  console.log(`  current code for this deployment. Get the current one, or re-key js/data.js.`);
-} else if (r === "ok") {
-  console.log(`  Both halves pass. This code signs in as ${expectRole.toUpperCase()} and the app should`);
-  console.log(`  let it in. If a person still can't get in, the fault is on their side:`);
-  console.log(`    • they are on http:// or a saved copy of the page (WebCrypto needs https)`);
-  console.log(`    • their network blocks www.gstatic.com, so the Firebase SDK never loads`);
-  console.log(`    • they are throttled from earlier retries (wait 15 minutes)`);
-  console.log(`    • they typed the STAFF code and expected the leadership view`);
-} else if (String(r).includes("operation-not-allowed")) {
-  console.log(`  Email/Password sign-in is OFF for this project. Nobody can sign in at all.`);
-  console.log(`  Firebase console → Authentication → Sign-in method → enable Email/Password.`);
-} else if (String(r).includes("too-many-requests")) {
-  console.log(`  Throttled. Wait ~15 minutes without attempting, then run this once.`);
-} else if (String(r).includes("user-disabled")) {
-  console.log(`  The ${EMAILS[expectRole]} account is disabled. Re-enable it in the console.`);
+console.log(`\n${"-".repeat(64)}\nWhat it means`);
+const hiring = results.filter((x) => x.project === "hiring" && x.r === "ok");
+const codes = results.map((x) => String(x.r));
+if (codes.some((c) => /OPERATION_NOT_ALLOWED|PASSWORD_LOGIN_DISABLED/.test(c))) {
+  console.log("  Email/Password sign-in is OFF for this project. Nobody can sign in at all.");
+  console.log("  Firebase console, Authentication, Sign-in method: enable Email/Password.");
+} else if (codes.some((c) => c === "network")) {
+  console.log("  Couldn't reach Firebase from here. Check the network and run it again.");
+} else if (codes.every((c) => c === "blocked")) {
+  console.log("  The keys wouldn't answer this computer, so nothing was tested. That says nothing about the");
+  console.log("  password. Try it on the sign-in page itself instead.");
+} else if (hiring.length) {
+  const role = hiring[0].role;
+  console.log(`  This is the ${role.toUpperCase()} password for Physician Hiring; the page signs in with it.`);
+  if (role === "ED") console.log("  The ED password has no Panels, Ranking or Setup: those need the Leadership password.");
+  console.log("  If a person still can't get in, the fault is on their side: their network blocks");
+  console.log("  www.gstatic.com, or they are throttled from earlier tries (wait 15 minutes).");
+  if (VOTING) {
+    const v = results.filter((x) => x.project === "voting" && x.role === role);
+    if (v.length && v[0].r === "refused") console.log(`  Motion Voting's ${role} account does NOT take it: the tools have drifted apart.\n  Fix it in Physician Hiring, Setup, Passwords ("The tools already have different passwords").`);
+  }
+} else if (codes.some((c) => c === "blocked")) {
+  console.log("  Some accounts couldn't be tested from here (the key refused this computer), and none of the");
+  console.log("  others accepted it. Try it on the sign-in page itself.");
+} else if (codes.some((c) => c === "disabled")) {
+  console.log("  An account is disabled. Firebase console, Authentication, Users: enable it.");
 } else {
-  console.log(`  THIS IS THE FAULT, and it is not the code.`);
-  console.log(`  The code is a valid ${expectRole.toUpperCase()} code — it decrypted the questions, which`);
-  console.log(`  nothing else can do — but ${EMAILS[expectRole]} rejected it.`);
-  console.log(`  So that account either does not exist, or its password is something else.`);
-  console.log(``);
-  console.log(`  Fix: Firebase console → Authentication → Users`);
-  console.log(`       • no ${EMAILS[expectRole]} row? Add user, email above, password = this code.`);
-  console.log(`       • row exists? ⋮ → Reset password, and set it to this code.`);
-  console.log(``);
-  console.log(`  ("${r}" covers both cases: with email-enumeration protection on, Firebase`);
-  console.log(`   deliberately will not say which.)`);
+  console.log("  No hiring account accepts this password. It is out of date or mistyped.");
+  console.log("  If nobody knows the current one, see README, \"If a password stops working and nobody");
+  console.log("  knows the new one\" (Firebase console, department account).");
 }
-console.log(`\nRead-only — nothing was written.`);
+console.log("\nRead-only: nothing was written.");
 process.exit(0);

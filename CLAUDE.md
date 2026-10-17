@@ -83,8 +83,8 @@ Full design and reference data (committee, candidates, questions, rules) live in
 - **Questions lock once scoring starts** (any score with a number or a note): only the wording
   may change. Never add, remove or reorder mid-round; notes are filed under the ids.
 - **Score notes are keyed by question id. Legacy ids are `"0"`..`"9"`; never renumber.** The
-  questions live in `interviews_meta/questions`; the first Leadership sign-in copies them out
-  of the old encrypted `js/data.js` with exactly those ids (`js/questions.js`).
+  questions live in `interviews_meta/questions` only (R1 to R6 copied them out of the old
+  encrypted `js/data.js` with exactly those ids; since R7 nothing reads that file).
 - **Every module import carries `?v=<release>`** (same as `version.json` and `RELEASE` in
   `app.js`, checked by `tests/versions.test.mjs`). Bump them all together each release. Never
   remove a module or an export in the release that stops using it; remove it one release later.
@@ -108,10 +108,12 @@ Full design and reference data (committee, candidates, questions, rules) live in
   un-ticking a time is `deleteField()` under merge (an update), and clearing a rating
   or score saves `0`. Keep it that way; a committee write that needs `deleteDoc` is a
   sign the write is wrong, not the rule. Pinned in `tests/firestore.rules.test.mjs`.
-- **Sign-ins last one tab, and Log out signs out of Firebase.** `signInFor` sets
-  `browserSessionPersistence` (memory only if sessionStorage is blocked) to match the
-  per-tab saved password, and both Log out buttons call `logOut()`, which signs out
-  before reloading. Firebase's default kept the sign-in in the browser for good and
+- **Sign-ins last one tab, and Log out signs out of Firebase.** `tabOnly()` sets
+  `browserSessionPersistence` (memory only if sessionStorage is blocked) before the first
+  attempt; a reload in the same tab resumes from it (`resume()`, `auth.authStateReady()`),
+  and a sign-in that ends while the page is open returns to the gate with "You were signed
+  out, probably because a password changed." Both Log out buttons call `logOut()`, which
+  signs out before reloading. Firebase's default kept the sign-in in the browser for good and
   let a second tab switch the first tab's account. Pinned by `sim/auth.mjs`.
 - **Admin signs in with no name; `ui.member` can be `null`.** The admin code
   lands as "Admin" (coordinators hold it, not just physicians). Every view that
@@ -233,18 +235,22 @@ Full design and reference data (committee, candidates, questions, rules) live in
   `doubleBooked`) or seat someone who never said they were free (now warned).
   Overlapping times are only *warned* at creation — accept one and the chair can
   be auto-scheduled into two at once.
-- **A sign-in failure is not a wrong code.** A code that decrypts is *proof* it
-  is a real staff/admin code (nothing else unwraps the content key), so a
-  Firebase rejection after that means the **account** is wrong — its password was
-  never set to that code, or it doesn't exist. `signInError(e, {codeVerified})`
-  keeps those apart; never collapse them back to "Incorrect code.", which sends
-  the one person holding a valid code away to retype it. The two halves are
-  independent by design and nothing keeps them in step: `data.js` decides
-  staff-vs-admin, the Firebase console decides whether the password matches.
-  `scripts/diagnose-login.mjs` tests both halves for a given code and names the
-  fault. Note Firebase throttles the **device** after repeated failures, so a
-  stale code in `sessionStorage` used to lock people out by replaying on every
-  reload — it is now cleared on failure.
+- **The role is found by signing in, and nothing in any repo may be derived from a password.**
+  Since R7 the gate tries the password on the role accounts in `roleOrder()` (Guest first on
+  `#apply`, else the role that last worked on this browser, `ls` `ed_iv_lastrole`, else ED,
+  Guest, Leadership); a refusal moves on, any other error stops with its own message
+  (`signInError`), all refused is "Incorrect password." So a password can change with no
+  commit, from Setup, "Passwords for all ED tools" (`js/passwords.js`). Never bring back a
+  file, hash, wrap or check value made from a password (the old `js/data.js` wraps let anyone
+  test guesses offline and forced a commit for every change), and never let a password reach
+  the console, storage, Firestore or history: `tests/passwords.test.mjs` spies on all of them.
+  The change order is fixed (Motion Voting first, hiring `admin@`, the page's own account,
+  last), each account is signed in seconds before its own change (Firebase's 5-minute
+  recent-login rule), helpers use `initializeAuth` with `inMemoryPersistence` (never
+  `getAuth`, which would store the ED and Guest sign-ins on the Leadership computer), and a
+  re-run converges. The three passwords must all differ, or the gate cannot tell roles apart.
+  Firebase throttles the **device** after repeated failures, so nothing replays a password:
+  it is never stored (an older page's `ed_iv_code` is deleted on load).
 - **Storage must never be touched directly — use `ss`/`ls` from `util.js`.**
   iOS Safari with "Block All Cookies", Private Browsing and some in-app browsers
   make `localStorage`/`sessionStorage` throw, *including the property getter*,
@@ -284,10 +290,10 @@ Full design and reference data (committee, candidates, questions, rules) live in
   message diagnosis — were invisible in the code, which was busy being correct.
 - **Verify layout by rendering it, not by reading the CSS.** Both phone bugs
   above looked fine on inspection and were obvious the moment the page was drawn
-  at 390px. Drive `index.html` in Chromium with `js/config.js` (blank
-  `firebaseConfig` → LocalStore) and `js/data.js` (stub `decryptContent`)
-  swapped for doubles, so the gate opens without the real code and nothing
-  reaches Firebase. Check every width for horizontal scroll, escaping elements,
+  at 390px. Drive `index.html` in Chromium with `js/config.js` swapped for a double
+  (blank `firebaseConfig` → LocalStore, test passwords in `LOCAL_CODES`), so
+  the gate opens without a real password and nothing reaches Firebase
+  (`sim/make-site.sh`). Check every width for horizontal scroll, escaping elements,
   sub-16px fields and tap targets under ~40px.
 - **The tooltip class is `.tooltip`, never `.tip`.** `.note.tip` is the blue
   guidance box and has been since the first build; when the instant tooltip was

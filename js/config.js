@@ -18,24 +18,47 @@ export const firebaseConfig = {
 };
 
 // ---- 2. Access ------------------------------------------------------------
-// THREE independent codes, none stored here: a STAFF code (ED physicians) and an
-// ADMIN code each independently decrypt the questions (wrapped keys in data.js);
-// admins additionally see Panels/Ranking/Setup. A separate GUEST code takes
-// applicants straight to their own scheduling (they never see the roster,
-// questions, scores, or other applicants). To change the staff/admin codes or the
-// questions, re-run the re-keying recipe in README → "Re-keying".
+// THREE shared passwords, none stored here or anywhere in the repo: ED (the
+// committee), Leadership (adds Panels, Ranking and Setup) and Guest (applicants,
+// straight to their own scheduling; they never see the roster, questions, scores
+// or other applicants). Each is only the password of a Firebase role account
+// (AUTH below); the page finds the role by which account accepts it. Since R7 no
+// file is derived from a password, so changing one needs no commit: Setup,
+// "Passwords for all ED tools" (README, "Passwords").
 
 // Guest password for LOCAL mode only (no Firebase; the sim copy sets its own).
 // Deliberately blank here: this repo is public, and in the live (roles) model the
 // Guest password is only the applicant Firebase account's password, checked by
 // Firebase at sign-in. Never write a real password into this file.
-export const CANDIDATE_CODE_LOCAL = "";
+export const CANDIDATE_CODE_LOCAL = "";   // unused since R7; kept one release for cached older pages
+
+// The three passwords for LOCAL mode only (no Firebase; sim/make-site.sh fills
+// them in its own copy). Blank here, always: this repo is public, and in the
+// live model a password is only ever the password of a Firebase account.
+export const LOCAL_CODES = { admin: "", committee: "", candidate: "" };
+
+// ---- 2c. The other tools that share these passwords (H3) -----------------
+// Motion Voting's public web config and its two role accounts (public values,
+// already in the voting repo). Setup, Passwords changes them together with ours.
+export const PARTNERS = {
+  voting: {
+    firebaseConfig: {
+      apiKey: "AIzaSyD1IvlP16tceVfwMUHEvrMrxKf5BVZIok0",
+      authDomain: "ed-motion-voting-99b96.firebaseapp.com",
+      projectId: "ed-motion-voting-99b96",
+      storageBucket: "ed-motion-voting-99b96.firebasestorage.app",
+      messagingSenderId: "121642121257",
+      appId: "1:121642121257:web:5ef04d3e13f0b84983c438",
+    },
+    leadershipEmail: "leadership@ed-motion-voting.app",
+    edEmail: "ed@ed-motion-voting.app",
+  },
+};
 
 // ---- 2b. Auth / security model -------------------------------------------
-// mode "anon"  → old model: every client signs in anonymously and the data is
-//                only protected by the page. The published rules refuse it.
-//                Do not use with real data.
-// mode "roles" → Firebase Auth email/password "role accounts". Rules branch on
+// Firebase Auth email/password "role accounts" (the only model since R7). `mode`
+// is no longer read; it stays for one release because cached older pages read
+// it (removed in R8). Rules branch on
 //                request.auth.token.email so applicants CANNOT read committee
 //                data and reviewers CANNOT read scores/ranking. Activate this
 //                only AFTER creating the three accounts + publishing the hardened

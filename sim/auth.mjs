@@ -4,10 +4,17 @@
 // the three gstatic imports with tiny fakes that write down what the app asked
 // of them. Nothing here can reach Firebase or real data.
 //
-// What it pins (Oct 2026 security pass):
+// What it pins (Oct 2026 security pass; R7 sign-in by order):
 //   - the sign-in is kept for this tab only (browserSessionPersistence), set
 //     BEFORE signing in;
-//   - a reload in the same tab still signs straight back in;
+//   - the role is found by signing in, in order: ED, Guest, Leadership; the
+//     role that last worked on this browser first; Guest first on #apply;
+//     all refused is "Incorrect password.";
+//   - the password is never kept in sessionStorage (an older page's
+//     "ed_iv_code" is deleted on load), and a reload in the same tab resumes
+//     from Firebase's own tab-only sign-in without signing in again;
+//   - a sign-in that ends while the page is open (a password changed
+//     elsewhere) returns to the gate and says why;
 //   - Log out (committee header and applicant page) calls Firebase signOut
 //     before reloading, and nothing signs in again afterwards;
 //   - a browser that blocks sessionStorage falls back to memory only and can
@@ -18,17 +25,31 @@ import { serve, browser, signIn, pickMember, landAsAdmin, sleep, SITE } from "./
 
 const GS = "https://www.gstatic.com/firebasejs/10.12.2/";
 const STUB = {
-  "firebase-app.js": `export function initializeApp(c) { return { options: c }; }`,
+  "firebase-app.js": `export function initializeApp(c) { return { options: c }; } export async function deleteApp() {}`,
+  // The fake keeps the tab-only sign-in in sessionStorage ("__stubuser"), like
+  // the real SDK, so a reload can resume from it; passwords are the sim's three.
   "firebase-auth.js": `
     const log = (e) => { const a = JSON.parse(localStorage.getItem("__authlog") || "[]"); a.push(e); localStorage.setItem("__authlog", JSON.stringify(a)); };
+    const PW = { "admin@ed-hiring.app": "adminpw", "committee@ed-hiring.app": "staffpw", "applicant@ed-hiring.app": "guestpw" };
     export const browserSessionPersistence = { type: "SESSION" };
     export const browserLocalPersistence = { type: "LOCAL" };
     export const inMemoryPersistence = { type: "NONE" };
-    export function getAuth() { return { currentUser: null }; }
-    export async function setPersistence(auth, p) { log("persist:" + p.type); }
-    export async function signInWithEmailAndPassword(auth, email) { log("signIn:" + email); auth.currentUser = { email }; return { user: auth.currentUser }; }
-    export async function signInAnonymously(auth) { log("signIn:anon"); auth.currentUser = {}; }
-    export async function signOut(auth) { log("signOut"); auth.currentUser = null; }`,
+    const subs = new Set();
+    let kept = null; try { kept = sessionStorage.getItem("__stubuser"); } catch {}
+    const theAuth = { currentUser: kept ? { email: kept } : null, persistence: "SESSION", async authStateReady() {} };
+    const fire = () => subs.forEach((f) => f(theAuth.currentUser));
+    window.__stubRevoke = () => { theAuth.currentUser = null; try { sessionStorage.removeItem("__stubuser"); } catch {} log("revoked"); fire(); };
+    export function getAuth() { return theAuth; }
+    export function initializeAuth() { return { currentUser: null }; }
+    export async function setPersistence(auth, p) { auth.persistence = p.type; log("persist:" + p.type); }
+    export async function signInWithEmailAndPassword(auth, email, pw) {
+      if (PW[email] !== pw) { log("refused:" + email); const e = new Error("refused"); e.code = "auth/invalid-credential"; throw e; }
+      log("signIn:" + email); auth.currentUser = { email };
+      if (auth.persistence === "SESSION") try { sessionStorage.setItem("__stubuser", email); } catch {}
+      fire(); return { user: auth.currentUser };
+    }
+    export function onAuthStateChanged(auth, f) { subs.add(f); setTimeout(() => f(auth.currentUser), 0); return () => subs.delete(f); }
+    export async function signOut(auth) { log("signOut"); auth.currentUser = null; try { sessionStorage.removeItem("__stubuser"); } catch {} fire(); }`,
   "firebase-firestore.js": `
     const snap = { docs: [], data: () => undefined, exists: () => false };
     export function getFirestore() { return {}; }
@@ -62,7 +83,7 @@ const site = await serve();
 const b = await browser();
 const log = [];
 
-async function page({ blockSession = false } = {}) {
+async function page({ blockSession = false, hash = "" } = {}) {
   const p = await b.newPage();
   p.on("pageerror", (e) => log.push(`pageerror: ${e.message}`));
   await p.setRequestInterception(true);
@@ -82,7 +103,7 @@ async function page({ blockSession = false } = {}) {
       Object.defineProperty(window, "sessionStorage", { get() { throw new DOMException("blocked", "SecurityError"); } });
     });
   }
-  await p.goto(site.url, { waitUntil: "domcontentloaded" });
+  await p.goto(site.url + hash, { waitUntil: "domcontentloaded" });
   await p.evaluate(() => { localStorage.clear(); try { sessionStorage.clear(); } catch {} });
   await p.reload({ waitUntil: "domcontentloaded" });
   await p.waitForFunction("window.__edReady === true", { timeout: 15000 });
@@ -102,40 +123,89 @@ try {
     await signIn(p, "staffpw");
     await pickMember(p, "Vojdani");
     let a = await authLog(p);
-    R("ED: session-only persistence set before signing in",
+    R("ED: session-only persistence set before signing in, ED tried first",
       a.join() === "persist:SESSION,signIn:committee@ed-hiring.app", a.join());
+    R("ED: the password is not kept in sessionStorage", !(await p.evaluate(() => JSON.stringify(sessionStorage)).then((t) => t.includes("staffpw"))));
 
     await reloaded(p, () => p.reload());
     a = await authLog(p);
-    R("ED: a reload in the same tab signs straight back in",
-      !(await gateShown(p)) && a.slice(2).join() === "persist:SESSION,signIn:committee@ed-hiring.app", a.join());
+    R("ED: a reload in the same tab resumes without signing in again",
+      !(await gateShown(p)) && a.length === 2, a.join());
     await pickMember(p, "Vojdani");
 
     await reloaded(p, () => p.click("#logout"));
     a = await authLog(p);
     R("ED: Log out signs out of Firebase, then shows the gate",
       a[a.length - 1] === "signOut" && (await gateShown(p)), a.join());
-    R("ED: Log out forgets the saved password", (await p.evaluate(() => sessionStorage.getItem("ed_iv_code"))) === null);
     await p.close(); }
 
   // ---- Leadership password -------------------------------------------------
   { const p = await page();
     await signIn(p, "adminpw");
     await landAsAdmin(p);
+    let a = await authLog(p);
+    R("Leadership on a new browser: ED and Guest refuse, then Leadership",
+      a.join() === "persist:SESSION,refused:committee@ed-hiring.app,refused:applicant@ed-hiring.app,signIn:admin@ed-hiring.app", a.join());
     await reloaded(p, () => p.click("#logout"));
-    const a = await authLog(p);
-    R("Leadership: signs in session-only and signs out on Log out",
-      a.join() === "persist:SESSION,signIn:admin@ed-hiring.app,signOut" && (await gateShown(p)), a.join());
+    a = await authLog(p);
+    R("Leadership: signs out on Log out", a[a.length - 1] === "signOut" && (await gateShown(p)), a.join());
+    await p.evaluate(() => localStorage.setItem("__authlog", "[]"));
+    await signIn(p, "adminpw");
+    await landAsAdmin(p);
+    a = await authLog(p);
+    R("Leadership again on the same browser: the remembered role first, nothing refused",
+      a.join() === "persist:SESSION,signIn:admin@ed-hiring.app", a.join());
     await p.close(); }
 
   // ---- Guest password (applicant) -----------------------------------------
-  { const p = await page();
+  { const p = await page({ hash: "#apply" });
     await signIn(p, "guestpw");
     await p.waitForSelector("#candview:not(.hidden)");
+    let a = await authLog(p);
+    R("Guest on an applicant link: Guest tried first", a.join() === "persist:SESSION,signIn:applicant@ed-hiring.app", a.join());
     await reloaded(p, () => p.evaluate(() => window.CAND.logout()));
+    a = await authLog(p);
+    R("Guest: Log out signs out", a[a.length - 1] === "signOut" && (await gateShown(p)), a.join());
+    await p.close(); }
+
+  // ---- a wrong password ---------------------------------------------------
+  { const p = await page();
+    await signIn(p, "not-a-password");
+    await p.waitForFunction(() => /Incorrect password/.test(document.querySelector("#gerr").textContent), { timeout: 5000 }).catch(() => {});
     const a = await authLog(p);
-    R("Guest: signs in session-only and Log out signs out",
-      a.join() === "persist:SESSION,signIn:applicant@ed-hiring.app,signOut" && (await gateShown(p)), a.join());
+    R("wrong password: every role refused once, then \"Incorrect password.\"",
+      a.filter((x) => x.startsWith("refused:")).length === 3 && (await p.$eval("#gerr", (e) => e.textContent)).includes("Incorrect password."), a.join());
+    await p.close(); }
+
+  // ---- three wrong passwords: the device waits 30 seconds ---------------------
+  { const p = await page();
+    for (let i = 0; i < 3; i++) { await signIn(p, "wrong-" + i); await sleep(300); }
+    const btn = await p.$eval("#gbtn", (b) => [b.disabled, b.textContent]);
+    const before = (await authLog(p)).filter((x) => x.startsWith("refused:")).length;
+    await p.click("#gbtn"); await sleep(300);
+    const after = (await authLog(p)).filter((x) => x.startsWith("refused:")).length;
+    const msg = await p.$eval("#gerr", (e) => e.textContent);
+    R("three wrong passwords: the page waits 30 seconds before another try",
+      btn[0] === true && /^Wait \d+ s$/.test(btn[1]) && before === 9 && after === 9 && msg.includes("wait 30 seconds"), `${btn} ${before} ${after} ${msg}`);
+    await p.close(); }
+
+  // ---- an older page's saved password is deleted -----------------------------
+  { const p = await page();
+    await p.evaluate(() => sessionStorage.setItem("ed_iv_code", "staffpw"));
+    await reloaded(p, () => p.reload());
+    const a = await authLog(p);
+    R("an older page's saved password is deleted on load and never replayed",
+      (await p.evaluate(() => sessionStorage.getItem("ed_iv_code"))) === null && !a.some((x) => x.startsWith("signIn")) && (await gateShown(p)), a.join());
+    await p.close(); }
+
+  // ---- signed out while the page is open ------------------------------------
+  { const p = await page();
+    await signIn(p, "staffpw");
+    await pickMember(p, "Vojdani");
+    await reloaded(p, () => p.evaluate(() => window.__stubRevoke()));
+    const msg = await p.$eval("#gerr", (e) => e.textContent);
+    R("a revoked sign-in returns to the gate and says why",
+      (await gateShown(p)) && msg.includes("You were signed out, probably because a password changed."), msg);
     await p.close(); }
 
   // ---- storage blocked ----------------------------------------------------

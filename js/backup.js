@@ -20,7 +20,7 @@
 //  every older version (upgrading in memory) and refuses newer ones.
 // ============================================================================
 
-import { canonicalJson, hashOf } from "./history.js?v=R6";
+import { canonicalJson, hashOf } from "./history.js?v=R7";
 
 export const FORMAT = "mgh-ed-hiring-backup";
 export const VERSION = 1;

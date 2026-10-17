@@ -31,6 +31,98 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## R7: sign in without data.js, and change the passwords in Setup (Oct 16 2026)
+
+- **The gate finds the role by signing in (design 5.2).** `app.js` no longer imports
+  `js/data.js` (the file is unchanged and unused for one release, so a cached older page still
+  works for its last minutes; R8 deletes it). The password is tried on the role accounts in
+  `roleOrder()`: Guest first on an `#apply` link, else the role that last worked on this browser
+  (`ed_iv_lastrole`, not secret), else ED, Guest, Leadership. A refusal moves on; any other error
+  stops with its own message; all refused is "Incorrect password." A disabled account is tried
+  last so it can't hide the others. The password is never stored: `ed_iv_code` is deleted on load,
+  and a reload resumes from Firebase's own tab-only sign-in (`authStateReady`). If the sign-in
+  ends while the page is open, the gate comes back with "You were signed out, probably because a
+  password changed. Enter the current password." `signInError` lost its "the code decrypted"
+  branch (one source of truth now). Local mode uses `LOCAL_CODES` in `config.js` (blank here).
+- **Setup, "Passwords for all ED tools" (H3, design 5.4 and 5.5).** NEW `js/passwords.js`. Shows
+  when each password last changed (or "Not changed in this app yet"). "Change a password": tick
+  Leadership, ED or Guest; type the three current and the new ones (with Show, and the
+  warnings); validation (match, 10 characters, no outer spaces, not "password", differs from
+  now, the three all different); **Check** signs in to every account with its current value in
+  memory-only helper apps (`initializeAuth` + `inMemoryPersistence`; the page's own account by
+  `reauthenticateWithCredential`) and changes nothing; **Change now** goes voting `ed@`, voting
+  `leadership@`, hiring `committee@`, `applicant@`, `admin@` last, each signed in seconds
+  before its own change, retrying once on `requires-recent-login`; then every new value is
+  checked, the dates written with one history line ("Changed the ED password"), and "Done" with a
+  copy-ready message that has no password in it. Progress is kept in
+  `interviews_meta/passwords.pending` (account keys only), so a half-done change says exactly
+  which tool has the new value, "Try again" finishes it, and a closed tab's change is finished
+  from Setup ("A password change didn't finish (started ...). Open it to finish."). The card
+  waits until the questions are in the database. "The tools already have different passwords"
+  takes one account's own current value.
+- `store.updatePasswords` (both stores; transaction with its history entry). `config.js`:
+  `PARTNERS.voting` (Motion Voting's public web config and account emails), `LOCAL_CODES`;
+  `CANDIDATE_CODE_LOCAL` stays one release, unused. `loadFirestore` also returns the app
+  functions. `maybeMigrateQuestions` is inert (removed in R8).
+- `scripts/diagnose-login.mjs` now only tries sign-ins (the three hiring accounts, `--voting` for
+  Motion Voting's two), each in a memory-only app; env var `ED_PASSWORD`.
+- README "Passwords" rewritten (how to change, half-done changes, honest limit, and the console
+  steps for when nobody knows a password), "Re-keying" reduced to a note; CLAUDE.md "A sign-in
+  failure is not a wrong code" replaced by "The role is found by signing in, and nothing in any
+  repo may be derived from a password".
+- **Deploy gate:** the latest JSON backup must contain `interviews_meta/questions` with every
+  question, and nobody changes a password in the first 15 minutes after R7 goes live (cached
+  older pages still decide the role by decrypting).
+- **Not done exactly as written:** the old `"anon"` auth mode is no longer supported (it found the
+  role by decrypting `data.js`; the live tool has used `"roles"` since Sept). In local mode the role
+  (not the password) is kept for the tab (`ed_iv_localrole`), standing in for Firebase's tab-only
+  sign-in. In the emulator the two Motion Voting accounts live in the same Auth emulator project as
+  hiring's (the Auth emulator maps every API key to its default project); they are still reached
+  through separate memory-only helper apps.
+
+- **Review fixes:**
+  - A new password may not be any password in use now (any role's, or a value one tool
+    already has): if a change stopped part way, that account would let people in as the wrong
+    role. Check also signs in to the Physician Hiring account of each unticked password, so
+    "all different" rests on values an account accepted.
+  - While a change is unfinished, "Change a password" is gone and every way in finishes it
+    (a new change used to overwrite the record of where the old one stopped).
+  - A check after the change that couldn't connect, or was paused, is reported as that, not as
+    a mismatch, and Try again checks those accounts with the new value first (kept in the
+    record too). A switched-off account is named in Check and Change.
+  - The browser asks before leaving the page while "Changing" runs; the dialog itself checks
+    that the questions are saved and that this is the live site.
+  - At the sign-in page, every account refusing is "Incorrect password." (a switched-off
+    account is named only when it is Leadership's).
+  - `scripts/diagnose-login.mjs` signs in with Firebase's REST call and the live site's
+    Referer (the keys refuse anything else); a key that still refuses is "can't test from
+    here", never "wrong password".
+  - Final review: finishing an unfinished change has no Back to the tick boxes, and starting a
+    change refuses (in the same transaction) when another page has an unfinished change of other
+    passwords, so its record is never overwritten (`sim/passwords.mjs`).
+  - After 3 wrong passwords on a device, the sign-in page waits 30 seconds (a countdown on the
+    button) before the next try: each wrong password is refused by three accounts, and Firebase
+    pauses devices that keep failing. The Passwords card stays hidden unless Firebase is loaded.
+  - With no questions document but notes already filed under question ids, the questions
+    editor is not locked (nothing could be added before) and offers "Start from the noted
+    questions", which rebuilds the ids the notes use ("0" to "n-1") for the wording to be typed
+    again, so the notes stay attached.
+  - `AUTH.mode` is no longer read (removed in R8, since cached older pages still read it); the
+    sim's anonymous sign-in stub and old comments about it are gone.
+
+Tests: NEW `tests/passwords.test.mjs` (11 with the review fixes: validation table; Check stops at the first refusal and
+changes nothing; a 6-minute pause between Check and Change now still changes all five against a
+fake auth that enforces the 5-minute rule; fixed order with each account signed in right before
+its change; converge from every half state with the in-progress account changed or not; one retry
+on `requires-recent-login`; memory-only helpers and re-authentication of the page's own account;
+no value reaches the console, storage or what is recorded). `sim/auth.mjs` rewritten (13 checks,
+sign-in by order, reload resume, revoked sign-in). NEW `sim/passwords.mjs` (`npm run passwords`,
+emulators: change ED at 1280 px, change all three at 390 px with the connection cut after two
+accounts and finished from a new browser, drift caught by Check). Emulator cases updated for no
+questions copy. Checked: see the release commit message.
+
+---
+
 ## R6: close the round, past rounds, keep-until, restore from a file (Oct 16 2026)
 
 - **Close the round (H1c).** `js/rounds.js`. Setup, This round: name the round, "Close this
