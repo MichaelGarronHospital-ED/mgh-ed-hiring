@@ -57,6 +57,9 @@ the three role-account sign-ins (see the console steps in README).
   `migrate-candidate` read and move the right document, and `rename-candidate` recomputes
   `availKey` the way the app's Rename does (and refuses, pointing to the app, when a rename
   would create a new shared surname).
+  The local (sim) store also listens to the storage event, as from R5 (a channel message can
+  arrive before the other tab's write is visible), and the two-tab sim answers from the
+  storage event too, with the newer tab in front.
 
 Tests: `tests/keys.test.mjs`, `tests/candidates.test.mjs` (the remove-and-re-add fixture from
 `scripts/seed-migration.mjs`), `applicant-availability` two-Kims case; `sim/applicants.mjs`

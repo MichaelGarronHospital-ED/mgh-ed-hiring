@@ -111,6 +111,11 @@ export class LocalStore extends BaseStore {
       this._ch = new BroadcastChannel("ed_interviews");
       this._ch.onmessage = () => { this._load(); this._emit(); };
     } catch { /* BroadcastChannel unsupported — single-tab only */ }
+    // The channel message can arrive before another tab's write is visible
+    // here; the storage event fires only once it is, so listen to both.
+    try {
+      window.addEventListener("storage", (e) => { if (e.key === LS_KEY) { this._load(); this._emit(); } });
+    } catch { /* no window (tests) */ }
   }
   _load() {
     try {

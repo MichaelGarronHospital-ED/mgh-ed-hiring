@@ -214,10 +214,14 @@ const scenarios = {
         if (JSON.stringify(s.allowedNames) === JSON.stringify(want)) return;
         s.allowedNames = want; localStorage.setItem("ed_interviews_v1", JSON.stringify(s)); ch.postMessage(1);
       };
-      ch.onmessage = () => setTimeout(fight, 30);
+      // answer when the newer tab's write is visible here (the storage event), not
+      // on its message, which can arrive first; no timers (this tab is in the background)
+      window.addEventListener("storage", (e) => { if (e.key === "ed_interviews_v1") fight(); });
       fight();
     });
-    await sleep(4000);
+    // this tab gathers changes for 250 ms; keep it in front so its timers aren't slowed
+    await page.bringToFront();
+    await sleep(6000);
     const writes = await page.evaluate(() => window.__allowedWrites);
     problems.push(...ok(writes <= 3, `the newer tab wrote ${writes} times`));
     const line = await page.$eval("#updateLine", (e) => e.textContent);
