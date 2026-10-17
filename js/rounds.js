@@ -26,7 +26,7 @@ import { escapeHtml, flowDialog, toast, ss } from "./util.js?v=R6";
 import { bookingFor } from "./stages.js?v=R6";
 
 export const TIMING = { renewMs: 30000, staleMs: 5 * 60000, idleMs: 30 * 60000, lateMs: 2 * 60000, progressMs: 30000,
-  keptMax: 200, chunk: 450, partBytes: 900000 };
+  keptMax: 200, chunk: 450, partBytes: 900000, keptHistoryBytes: 400000 };
 
 const rand = () => Math.random().toString(36).slice(2, 8);
 const ymd = (d = new Date()) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
@@ -283,7 +283,10 @@ export function createRounds(deps) {
         }
         keptHere.forEach((k) => (coll === "interviews_history" ? C.keptHistory : C.kept).push(k));
       }
-      if (C.kept.length > TIMING.keptMax || C.keptHistory.length > TIMING.keptMax) {
+      // history kept from after the copy rides on the attempt document, which
+      // must stay under Firestore's 1 MiB: count bytes as well as entries
+      if (C.kept.length > TIMING.keptMax || C.keptHistory.length > TIMING.keptMax
+          || utf8Length(JSON.stringify(C.keptHistory)) > TIMING.keptHistoryBytes) {
         show({ title: "The round was not closed",
           html: `<p>More than ${TIMING.keptMax} items changed after the copy was saved, so the round was not closed. Something is still
             writing to it (often an older Physician Hiring page left open). Reload or close every other Physician Hiring page, then stop

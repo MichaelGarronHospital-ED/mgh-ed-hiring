@@ -85,6 +85,9 @@ the three role-account sign-ins (see the console steps in README).
     items only" accepts a file from before rounds for a round brought back from such a file.
   - "Try again" deletes the failed copy's parts inside its own transaction (no plain delete).
   - Other pages are made read-only with `inert`, not only greyed out.
+  - Final review: history kept from after the copy is limited by size too (400,000 bytes on the
+    attempt document, well under Firestore's 1 MiB); more offers only "Stop closing and put
+    everything back".
 
 Tests: `tests/close-scope.test.mjs` (with `tests/helpers/memfirestore.mjs`), R6 cases in
 `tests/backup.test.mjs`; `sim/rounds.mjs` (6 scenarios); emulator: quiet close then bring back

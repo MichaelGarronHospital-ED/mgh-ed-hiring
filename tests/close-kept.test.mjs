@@ -15,7 +15,7 @@ globalThis.document = { getElementById: () => null, addEventListener() {}, visib
 if (!globalThis.navigator) globalThis.navigator = { userAgent: "node", maxTouchPoints: 0 };
 
 const { FirestoreStore } = await import("../js/store.js");
-const { createRounds } = await import("../js/rounds.js");
+const { createRounds, TIMING } = await import("../js/rounds.js");
 const { planRestore, buildBackup } = await import("../js/backup.js");
 const { memFirestore } = await import("./helpers/memfirestore.mjs");
 
@@ -88,4 +88,19 @@ test("a file from before rounds can add missing items to a round brought back fr
   assert.equal(planRestore(file, live, "missing", {}).ok, true);
   const other = { interviews_meta: { state: { roundId: "r-9" } } };
   assert.equal(planRestore(file, other, "missing", {}).ok, false);
+});
+
+test("history kept after the copy is limited by bytes too (the attempt document stays under 1 MiB)", async () => {
+  const m = memFirestore(); seedRound(m);
+  const store = new FirestoreStore(m.fb, {});
+  const r = rounds(m, store);
+  const keep = TIMING.keptHistoryBytes;
+  TIMING.keptHistoryBytes = 200;
+  try {
+    await r._steps.pause();
+    m.seed("interviews_history/h-late", { at: "y", by: "leadership", action: "settings.save", text: "x".repeat(400) });
+    await r._steps.clear();
+    assert.equal(m.read("interviews_meta/state").roundStatus, "closing", "closed with too much kept history");
+    assert.ok(m.read("interviews_history/h-late"), "late history was deleted");
+  } finally { TIMING.keptHistoryBytes = keep; r._steps.setActive(false); }
 });

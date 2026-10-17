@@ -58,7 +58,7 @@ python3 - "$DST/js/rounds.js" "$DST/js/app.js" <<'PY'
 import sys
 r, a = sys.argv[1], sys.argv[2]
 s = open(r).read()
-old = "  keptMax: 200, chunk: 450, partBytes: 900000 };\n"
+old = "  keptMax: 200, chunk: 450, partBytes: 900000, keptHistoryBytes: 400000 };\n"
 if s.count(old) != 1: sys.exit("make-site: TIMING not found in rounds.js")
 s = s.replace(old, old + "Object.assign(TIMING, globalThis.__edRoundsTiming || {});\n")
 open(r, "w").write(s)
