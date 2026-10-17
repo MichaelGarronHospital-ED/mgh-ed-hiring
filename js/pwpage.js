@@ -14,13 +14,13 @@
 //  is kept, and 3 wrong tries on a device mean a 30-second wait (the same
 //  count as the hiring page).
 // ============================================================================
-import { firebaseConfig, PARTNERS, AUTH } from "./config.js?v=R8";
+import { firebaseConfig, PARTNERS, AUTH } from "./config.js?v=R8b";
 import { ROLES, ROLE_WORD, ACCOUNTS, accountsFor, validateCurrent, validateNew, preflight, applyChange, verify, halfDoneText,
-         makeFirebaseAdapter } from "./passwords.js?v=R8";
-import { FirestoreStore } from "./store.js?v=R8";
-import { entry as hEntry, toDate } from "./history.js?v=R8";
-import { escapeHtml, flowDialog, ss, ls, storageWorks } from "./util.js?v=R8";
-import { emailOrder, rememberKind, signInPinned } from "./signin.js?v=R8";
+         makeFirebaseAdapter } from "./passwords.js?v=R8b";
+import { FirestoreStore } from "./store.js?v=R8b";
+import { entry as hEntry, toDate } from "./history.js?v=R8b";
+import { escapeHtml, flowDialog, ss, ls, storageWorks } from "./util.js?v=R8b";
+import { signInPinned } from "./signin.js?v=R8b";
 
 const $ = (s) => document.querySelector(s);
 const isConfigured = () => !!(firebaseConfig && firebaseConfig.apiKey);
@@ -95,12 +95,10 @@ async function unlock(typed) {
   try {
     const keep = storageWorks("sessionStorage") ? fb.authFns.browserSessionPersistence : fb.authFns.inMemoryPersistence;
     await fb.authFns.setPersistence(fb.auth, keep);
-    // the email that last worked here first, then the other (they move to
-    // .invalid in Phase A); only the pinned Leadership account (by uid) opens it
-    const { kind } = await signInPinned((email, pw) => fb.authFns.signInWithEmailAndPassword(fb.auth, email, pw),
-      { emails: { old: AUTH.adminEmail, new: AUTH.newEmails.admin }, uid: AUTH.uids.admin, project: "hiring" }, typed,
+    // only the pinned Leadership account (by uid) opens it
+    await signInPinned((email, pw) => fb.authFns.signInWithEmailAndPassword(fb.auth, email, pw),
+      { email: AUTH.adminEmail, uid: AUTH.uids.admin }, typed,
       { onWrongUid: async () => { try { await fb.authFns.signOut(fb.auth); } catch { /* local anyway */ } } });
-    rememberKind("hiring", kind);
   } catch (e) {
     if (isRefusal(e)) {
       const paused = gateWrong();

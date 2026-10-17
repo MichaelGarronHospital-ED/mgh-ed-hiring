@@ -24,6 +24,43 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## R8b: the R7d cleanup, new emails only (ships after the email switch, NOT in its window)
+
+R7d, built on R8 (it was `hiring-r7d` on R7c; that branch is superseded by `hiring-r8b`).
+Cleanup only: R7c already signs in through the switch (and through an `--undo`) by trying both
+emails of each account; nothing in the window needs this release. If something else is live by
+then, rebase this on it.
+
+- `js/config.js`: `AUTH` and `PARTNERS.voting` sign-in emails are the `.invalid` ones only
+  (`admin@`, `committee@`, `applicant@mgh-ed-hiring.invalid`; `leadership@`, `ed@mgh-ed-voting.invalid`).
+  `newEmails` stays one release, with the same `.invalid` values, for an older page still open or
+  cached (it reads it); removed in the release after this.
+- `js/signin.js`: one sign-in with the account's one email, accepted only for the pinned uid; the
+  "which email worked" note (`ed_iv_emailkind`, `ed_iv_emailkind_voting`) is deleted on load.
+  `emailOrder` and `rememberKind` stay exported one more release (review): an older page imports
+  them; they now give `["new"]` and do nothing, and `signInPinned` still takes an older page's
+  `{ emails: { old, new } }` and uses the new one. The gate, `#apply`, the passwords page and the
+  flow's helpers use it; both scripts sign in once with the one email and check the uid. A wrong
+  password is three refused sign-ins on the gate again, still ONE try toward the wait.
+- Ship it only when the switch is settled: once `--undo` would no longer be wanted (this page
+  refuses the right password if the accounts are back on the old emails; pinned by the emulator).
+- Version `R8b`.
+
+Tests: NEW `tests/emails.test.mjs` (every sign-in email ends in `.invalid`; no
+`@ed-hiring.app` or `@ed-motion-voting.app` address in `js/` or a page); `tests/signin.test.mjs`
+(one call with the `.invalid` email, a wrong password one refused call, another uid refused, the
+old notes deleted, an older page's imports and call shape reach the new email only);
+`tests/passwords.test.mjs` (the helpers sign in once each, `.invalid` only); every rules test signs
+in with the new emails and the sims make the accounts with them; `sim/auth.mjs` back to three
+refusals per wrong password, one wait per three; emulator `signInWithInvalidEmailsOnly` (each
+role, another uid refused, and after an `--undo` this page refuses: why it ships late); the
+email-change cases (`emailChangeKeepsSessions`, `sim/auth.mjs`, `sim/passwords.mjs`) change the
+email BACK (what `--undo` would do): an old page signed in under the other email still knows the
+role. R7c's switch cases (`signInAcrossTheSwitch`, `afterApplyPageAndFlowWork`) are gone with
+the fallback.
+
+---
+
 ## R8: remove what R7 stopped using (built Oct 16, carries R7c; ships on or after Oct 24 2026)
 
 - **Contains R7c** (`main` merged in, Oct 17): roles by uid, rules v3, and R7c's two-email

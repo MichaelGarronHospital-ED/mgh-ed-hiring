@@ -21,7 +21,7 @@ const ok = (c, m) => { if (!c) problems.push(m); };
 
 await emu.loadRules();
 await emu.clearFirestore(); await emu.clearAuth();
-await emu.addUser("admin@ed-hiring.app", LEAD);
+await emu.addUser("admin@mgh-ed-hiring.invalid", LEAD);
 await emu.seed({ ...baseDocs(),
   "interviews_meta/questions": { version: 1, questions: [{ id: "0", text: "Tell us about yourself" }], scale: ["1", "2", "3", "4", "5"], guide: [] } });
 

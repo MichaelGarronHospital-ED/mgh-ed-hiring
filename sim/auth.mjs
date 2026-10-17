@@ -25,20 +25,14 @@ import { serve, browser, signIn, pickMember, landAsAdmin, sleep, SITE } from "./
 
 const GS = "https://www.gstatic.com/firebasejs/10.12.2/";
 const { AUTH } = await import(new URL("../js/config.js", import.meta.url));
-const UID_BY_EMAIL = { [AUTH.adminEmail]: AUTH.uids.admin, [AUTH.committeeEmail]: AUTH.uids.committee, [AUTH.candidateEmail]: AUTH.uids.candidate,
-  [AUTH.newEmails.admin]: AUTH.uids.admin, [AUTH.newEmails.committee]: AUTH.uids.committee, [AUTH.newEmails.candidate]: AUTH.uids.candidate };
-// where the accounts' emails are: "old" (before migrate-emails.py --apply) or "new" (after it)
-const MOVE = { [AUTH.adminEmail]: AUTH.newEmails.admin, [AUTH.committeeEmail]: AUTH.newEmails.committee, [AUTH.candidateEmail]: AUTH.newEmails.candidate };
+const UID_BY_EMAIL = { [AUTH.adminEmail]: AUTH.uids.admin, [AUTH.committeeEmail]: AUTH.uids.committee, [AUTH.candidateEmail]: AUTH.uids.candidate };
 const STUB = {
   "firebase-app.js": `export function initializeApp(c) { return { options: c }; } export async function deleteApp() {}`,
   // The fake keeps the tab-only sign-in in sessionStorage ("__stubuser"), like
   // the real SDK, so a reload can resume from it; passwords are the sim's three.
   "firebase-auth.js": `
     const log = (e) => { const a = JSON.parse(localStorage.getItem("__authlog") || "[]"); a.push(e); localStorage.setItem("__authlog", JSON.stringify(a)); };
-    const PW0 = { "admin@ed-hiring.app": "adminpw", "committee@ed-hiring.app": "staffpw", "applicant@ed-hiring.app": "guestpw" };
-    const MOVE = ${JSON.stringify(MOVE)};
-    // localStorage "__stubemails" = "new": the accounts have their new emails (as after --apply)
-    const PW = localStorage.getItem("__stubemails") === "new" ? Object.fromEntries(Object.entries(PW0).map(([e, p]) => [MOVE[e], p])) : { ...PW0 };
+    const PW = { "admin@mgh-ed-hiring.invalid": "adminpw", "committee@mgh-ed-hiring.invalid": "staffpw", "applicant@mgh-ed-hiring.invalid": "guestpw" };
     // the accounts' uids (the same as js/config.js): a role is known by uid (R7c)
     const UID = ${JSON.stringify(UID_BY_EMAIL)};
     export const browserSessionPersistence = { type: "SESSION" };
@@ -137,7 +131,7 @@ try {
     await pickMember(p, "Vojdani");
     let a = await authLog(p);
     R("ED: session-only persistence set before signing in, ED tried first",
-      a.join() === "persist:SESSION,signIn:committee@ed-hiring.app", a.join());
+      a.join() === "persist:SESSION,signIn:committee@mgh-ed-hiring.invalid", a.join());
     R("ED: the password is not kept in sessionStorage", !(await p.evaluate(() => JSON.stringify(sessionStorage)).then((t) => t.includes("staffpw"))));
 
     await reloaded(p, () => p.reload());
@@ -158,7 +152,7 @@ try {
     await landAsAdmin(p);
     let a = await authLog(p);
     R("Leadership on a new browser: ED and Guest refuse, then Leadership",
-      a.join() === "persist:SESSION,refused:committee@ed-hiring.app,refused:applicant@ed-hiring.app,signIn:admin@ed-hiring.app", a.join());
+      a.join() === "persist:SESSION,refused:committee@mgh-ed-hiring.invalid,refused:applicant@mgh-ed-hiring.invalid,signIn:admin@mgh-ed-hiring.invalid", a.join());
     await reloaded(p, () => p.click("#logout"));
     a = await authLog(p);
     R("Leadership: signs out on Log out", a[a.length - 1] === "signOut" && (await gateShown(p)), a.join());
@@ -167,7 +161,7 @@ try {
     await landAsAdmin(p);
     a = await authLog(p);
     R("Leadership again on the same browser: the remembered role first, nothing refused",
-      a.join() === "persist:SESSION,signIn:admin@ed-hiring.app", a.join());
+      a.join() === "persist:SESSION,signIn:admin@mgh-ed-hiring.invalid", a.join());
     await p.close(); }
 
   // ---- Guest password (applicant) -----------------------------------------
@@ -175,7 +169,7 @@ try {
     await signIn(p, "guestpw");
     await p.waitForSelector("#candview:not(.hidden)");
     let a = await authLog(p);
-    R("Guest on an applicant link: Guest tried first", a.join() === "persist:SESSION,signIn:applicant@ed-hiring.app", a.join());
+    R("Guest on an applicant link: Guest tried first", a.join() === "persist:SESSION,signIn:applicant@mgh-ed-hiring.invalid", a.join());
     await reloaded(p, () => p.evaluate(() => window.CAND.logout()));
     a = await authLog(p);
     R("Guest: Log out signs out", a[a.length - 1] === "signOut" && (await gateShown(p)), a.join());
@@ -186,9 +180,8 @@ try {
     await signIn(p, "not-a-password");
     await p.waitForFunction(() => /Incorrect password/.test(document.querySelector("#gerr").textContent), { timeout: 5000 }).catch(() => {});
     const a = await authLog(p);
-    // every role, with both of its emails while they move (R7c)
-    R("wrong password: every role refused (both emails), then \"Incorrect password.\"",
-      a.filter((x) => x.startsWith("refused:")).length === 6 && (await p.$eval("#gerr", (e) => e.textContent)).includes("Incorrect password."), a.join());
+    R("wrong password: every role refused once, then \"Incorrect password.\"",
+      a.filter((x) => x.startsWith("refused:")).length === 3 && (await p.$eval("#gerr", (e) => e.textContent)).includes("Incorrect password."), a.join());
     await p.close(); }
 
   // ---- three wrong passwords: the device waits 30 seconds ---------------------
@@ -200,36 +193,8 @@ try {
     const after = (await authLog(p)).filter((x) => x.startsWith("refused:")).length;
     const msg = await p.$eval("#gerr", (e) => e.textContent);
     R("three wrong passwords: the page waits 30 seconds before another try",
-      // each wrong password counts ONCE toward the wait, though it costs 6 refusals (3 roles, 2 emails)
-      btn[0] === true && /^Wait \d+ s$/.test(btn[1]) && before === 18 && after === 18 && msg.includes("wait 30 seconds"), `${btn} ${before} ${after} ${msg}`);
-    await p.close(); }
-
-  // ---- R7c: the accounts' emails move (migrate-emails.py --apply), and back (--undo) -----
-  { const p = await page();
-    await p.evaluate(() => localStorage.setItem("__stubemails", "new"));
-    await reloaded(p, () => p.reload());
-    await signIn(p, "adminpw");
-    await landAsAdmin(p);
-    let a = await authLog(p);
-    // a new browser: the old emails of all three roles, then the new ones (ED, Guest, Leadership)
-    R("after --apply, an R7c page (old emails) still signs in: the old emails refused, the new one works",
-      a.filter((x) => x.startsWith("refused:")).length === 5 && a[a.length - 1] === "signIn:admin@mgh-ed-hiring.invalid"
-      && (await p.evaluate(() => localStorage.getItem("ed_iv_emailkind"))) === "new", a.join());
-    await reloaded(p, () => p.click("#logout"));
-    await p.evaluate(() => localStorage.setItem("__authlog", "[]"));
-    await signIn(p, "adminpw"); await landAsAdmin(p);
-    a = await authLog(p);
-    R("the next sign-in on that browser tries the new email first: no refusal",
-      a.join() === "persist:SESSION,signIn:admin@mgh-ed-hiring.invalid", a.join());
-    // --undo: the accounts are back on the old emails; this browser remembers "new"
-    await reloaded(p, () => p.click("#logout"));
-    await p.evaluate(() => { localStorage.removeItem("__stubemails"); localStorage.setItem("__authlog", "[]"); });
-    await reloaded(p, () => p.reload());
-    await signIn(p, "adminpw"); await landAsAdmin(p);
-    a = await authLog(p);
-    R("after --undo, the same browser still signs in (new refused, old works) and notes it",
-      a.filter((x) => x.startsWith("refused:")).length === 3 && a[1] === "refused:admin@mgh-ed-hiring.invalid" && a[a.length - 1] === "signIn:admin@ed-hiring.app"
-      && (await p.evaluate(() => localStorage.getItem("ed_iv_emailkind"))) === "old", a.join());
+      // each wrong password counts ONCE toward the wait, though it costs 3 refusals
+      btn[0] === true && /^Wait \d+ s$/.test(btn[1]) && before === 9 && after === 9 && msg.includes("wait 30 seconds"), `${btn} ${before} ${after} ${msg}`);
     await p.close(); }
 
   // ---- an older page's saved password is deleted -----------------------------
@@ -245,10 +210,10 @@ try {
   { const p = await page();
     await signIn(p, "adminpw");
     await landAsAdmin(p);
-    await p.evaluate(() => window.__stubChangeEmail("admin@mgh-ed-hiring.invalid"));
+    await p.evaluate(() => window.__stubChangeEmail("admin@ed-hiring.app"));   // R7d: back to the old one (a rollback)
     await reloaded(p, () => p.reload());
     const a = await authLog(p);
-    R("signed in, email changed, reload: still in, same role (known by uid)",
+    R("signed in, email changed (here: back, as a rollback would), reload: still in, same role (known by uid)",
       !(await gateShown(p)) && (await p.$eval("#whoLine", (e) => e.textContent.trim())) === "Admin" && a.filter((x) => x.startsWith("signIn")).length === 1, a.join());
     await p.close(); }
 
@@ -268,7 +233,7 @@ try {
     await pickMember(p, "Vojdani");
     const a = await authLog(p);
     R("sessionStorage blocked: memory-only persistence, still signs in",
-      a.join() === "persist:NONE,signIn:committee@ed-hiring.app", a.join());
+      a.join() === "persist:NONE,signIn:committee@mgh-ed-hiring.invalid", a.join());
     await p.close(); }
 } finally {
   await b.close(); site.close();

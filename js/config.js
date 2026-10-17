@@ -44,10 +44,10 @@ export const PARTNERS = {
       messagingSenderId: "121642121257",
       appId: "1:121642121257:web:5ef04d3e13f0b84983c438",
     },
-    leadershipEmail: "leadership@ed-motion-voting.app",
-    edEmail: "ed@ed-motion-voting.app",
-    // the .invalid emails these accounts move to (Phase A); the pages try both
-    // until R7d (js/signin.js)
+    leadershipEmail: "leadership@mgh-ed-voting.invalid",
+    edEmail: "ed@mgh-ed-voting.invalid",
+    // the same emails under R7c's name: kept one release for an older page
+    // still open or cached (it reads them); removed in the release after R8b
     newEmails: { leadership: "leadership@mgh-ed-voting.invalid", ed: "ed@mgh-ed-voting.invalid" },
     // the same accounts by uid (Motion Voting's rules know them by these)
     uids: { leadership: "3eigCLaK0RQ5PmVhxfDgI0qoYzQ2", ed: "CXyo7yciWpc78J1TQYRzrPpu77C3" },
@@ -58,18 +58,19 @@ export const PARTNERS = {
 // Firebase Auth email/password "role accounts" (the only model since R7).
 // A ROLE IS KNOWN BY ITS ACCOUNT'S UID, NEVER BY ITS EMAIL (R7c): the rules and
 // every page check `uid` (the same values as firestore.rules; tests/uids.test.mjs
-// keeps them equal). The emails are used only to sign in, so they can move to
-// .invalid addresses without the rules or a signed-in page noticing; until R7d
-// a sign-in tries both (js/signin.js).
+// keeps them equal). The emails are used only to sign in; since R8b (the R7d
+// cleanup) they are the .invalid addresses nobody can ever register (the old
+// ones were on domains anyone could buy, which would have let a stranger reset
+// a password).
 // Never delete a role account: a new one has a new uid, refused until the rules
 // and these uids are updated. Uids and emails are public identifiers; the
 // PASSWORDS are the shared secrets and live only in Firebase, never in a file.
 export const AUTH = {
-  adminEmail: "admin@ed-hiring.app",
-  committeeEmail: "committee@ed-hiring.app",
-  candidateEmail: "applicant@ed-hiring.app",
-  // the .invalid emails these accounts move to (Phase A). Until R7d every
-  // sign-in tries the kind that last worked here, then the other (js/signin.js)
+  adminEmail: "admin@mgh-ed-hiring.invalid",
+  committeeEmail: "committee@mgh-ed-hiring.invalid",
+  candidateEmail: "applicant@mgh-ed-hiring.invalid",
+  // the same emails under R7c's name: kept one release for an older page
+  // still open or cached (it reads them); removed in the release after R8b
   newEmails: { admin: "admin@mgh-ed-hiring.invalid", committee: "committee@mgh-ed-hiring.invalid", candidate: "applicant@mgh-ed-hiring.invalid" },
   uids: { admin: "ULgtfRrkAVPS2aT69Tc4CjMqbsx1", committee: "36FXvbR8ExgU7p4cmwuCNfkgFgD2", candidate: "jvmQYhgYlRMf3f2J3uw8XXos8yD3" },
 };
