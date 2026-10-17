@@ -64,6 +64,8 @@ the three role-account sign-ins (see the console steps in README).
 - **Review fixes (deployability pass):** the day-chair and room-2 pickers are 16px on phones (no
   iOS zoom); the Score tab's empty choice reads "Choose an applicant" (the longer text was cut off
   on a phone).
+- **Final review:** the email to an applicant who shares first and last name with another
+  (Jane B Kim beside Jane Kim) says "For your first name, type exactly: Jane B".
 
 Tests: `tests/panels.rooms.test.mjs` (identity over 400 rounds, two rooms disjoint and legal,
 no-chair days, brute-force maximum), `tests/ics.test.mjs`, `tests/notify.test.mjs`;

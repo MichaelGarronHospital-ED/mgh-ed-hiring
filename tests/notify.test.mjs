@@ -54,3 +54,12 @@ test("mailto falls back to copy when the link would pass 1,800 characters", () =
   assert.match(ok, /^mailto:\?bcc=a\.b%40tehn\.ca,c\.d%40tehn\.ca&subject=Hi&body=Short$/);
   assert.equal(mailtoLink({ bcc: Array.from({ length: 120 }, (_, i) => `person${i}@tehn.ca`), subject: "x", body: "y".repeat(100) }), null);
 });
+
+test("an applicant who shares first and last name with another is told exactly what to type", () => {
+  const m = applicantInvite({ name: "Dr Jane B Kim", slot: { date: "2027-03-03", start: "09:00", end: "10:00" }, modality: "ip", typeFirst: "Jane B" },
+    { applicantLink: "https://x/index.html#apply" });
+  assert.match(m.body, /For your first name, type exactly: Jane B/);
+  const n = applicantInvite({ name: "Dr Min Kim", slot: { date: "2027-03-03", start: "09:00", end: "10:00" }, modality: "ip", typeFirst: null },
+    { applicantLink: "https://x/index.html#apply" });
+  assert.doesNotMatch(n.body, /type exactly/);
+});

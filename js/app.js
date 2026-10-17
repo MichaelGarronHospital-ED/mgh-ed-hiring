@@ -14,7 +14,7 @@ import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R5";
 import { autoPanels, buildPanel } from "./panels.js?v=R5";
 import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell, lastKey,
          ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R5";
-import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan } from "./candidates.js?v=R5";
+import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R5";
 import { effectiveSlots, slotLabel, slotTimeLabel, groupByDate, checkSlot, splitRange, responseCounts,
          newSlotId, isStructured, fmtDate } from "./slots.js?v=R5";
 import { normalizeCommittee, interviewers as interviewersOf, pickable as pickableOf, memberName, memberStatus,
@@ -2251,7 +2251,8 @@ function panelMsg(p) {
   const c = cand(p.cand) || { name: "the applicant" };
   const t = EFF().slots.find((x) => x.id === String(p.slot));
   return { name: c.name, slot: t || { label: slotName(p.slot) }, room: p.room || 1, modality: p.modality,
-    chairName: p.chair ? mname(p.chair) : null, memberNames: p.members.map(mname) };
+    chairName: p.chair ? mname(p.chair) : null, memberNames: p.members.map(mname),
+    typeFirst: c.id ? typeExactly(S.candidates, c) : null };
 }
 function icsFor(p, forApplicant) {
   const t = EFF().slots.find((x) => x.id === String(p.slot));

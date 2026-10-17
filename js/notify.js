@@ -3,7 +3,8 @@
 //  Pure; no DOM. Plain words, and never an em or en dash (tests/notify.test.mjs).
 //
 //  p   = { name, slot: { date, start, end, label }, room, modality, chairName,
-//          memberNames: [...] }
+//          memberNames: [...], typeFirst }  typeFirst: what to type as the
+//          first name when another applicant has the same first and last name
 //  ctx = { applicantLink, staffLink, location, zoomLink, contact, replyBy,
 //          availabilityBy }
 // ============================================================================
@@ -54,7 +55,8 @@ export function applicantInvite(p, ctx) {
     whenText(p.slot),
     whereText(p, ctx, false), "",
     `${ctx.replyBy ? `Please confirm by ${longDate(ctx.replyBy)}. ` : ""}You can confirm, or tell us you can no longer come, here: `
-      + `${ctx.applicantLink}. Sign in with the Guest password we sent you, then your name.`, "",
+      + `${ctx.applicantLink}. Sign in with the Guest password we sent you, then your name.`
+      + (p.typeFirst ? ` For your first name, type exactly: ${p.typeFirst}` : ""), "",
     "If you have questions, reply to this email.",
   ];
   return { subject: "Your interview with the MGH Emergency Department", body: lines.join("\n") };
