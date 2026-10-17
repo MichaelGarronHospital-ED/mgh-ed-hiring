@@ -24,6 +24,13 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## Tests run on GitHub for every push (Oct 17 2026)
+
+- `.github/workflows/tests.yml` runs the rules and unit tests and the full round simulations on
+  every push and pull request. No page, rule or test changed.
+
+---
+
 ## R6: close the round, past rounds, keep-until, restore from a file (Oct 16 2026)
 
 - **Close the round (H1c).** `js/rounds.js`. Setup, This round: name the round, "Close this
