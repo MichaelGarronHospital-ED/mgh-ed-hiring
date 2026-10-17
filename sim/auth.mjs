@@ -177,6 +177,18 @@ try {
       a.filter((x) => x.startsWith("refused:")).length === 3 && (await p.$eval("#gerr", (e) => e.textContent)).includes("Incorrect password."), a.join());
     await p.close(); }
 
+  // ---- three wrong passwords: the device waits 30 seconds ---------------------
+  { const p = await page();
+    for (let i = 0; i < 3; i++) { await signIn(p, "wrong-" + i); await sleep(300); }
+    const btn = await p.$eval("#gbtn", (b) => [b.disabled, b.textContent]);
+    const before = (await authLog(p)).filter((x) => x.startsWith("refused:")).length;
+    await p.click("#gbtn"); await sleep(300);
+    const after = (await authLog(p)).filter((x) => x.startsWith("refused:")).length;
+    const msg = await p.$eval("#gerr", (e) => e.textContent);
+    R("three wrong passwords: the page waits 30 seconds before another try",
+      btn[0] === true && /^Wait \d+ s$/.test(btn[1]) && before === 9 && after === 9 && msg.includes("wait 30 seconds"), `${btn} ${before} ${after} ${msg}`);
+    await p.close(); }
+
   // ---- an older page's saved password is deleted -----------------------------
   { const p = await page();
     await p.evaluate(() => sessionStorage.setItem("ed_iv_code", "staffpw"));

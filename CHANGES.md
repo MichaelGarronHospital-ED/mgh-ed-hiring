@@ -90,6 +90,9 @@ the three role-account sign-ins (see the console steps in README).
   - `scripts/diagnose-login.mjs` signs in with Firebase's REST call and the live site's
     Referer (the keys refuse anything else); a key that still refuses is "can't test from
     here", never "wrong password".
+  - After 3 wrong passwords on a device, the sign-in page waits 30 seconds (a countdown on the
+    button) before the next try: each wrong password is refused by three accounts, and Firebase
+    pauses devices that keep failing. The Passwords card stays hidden unless Firebase is loaded.
   - With no questions document but notes already filed under question ids, the questions
     editor is not locked (nothing could be added before) and offers "Start from the noted
     questions", which rebuilds the ids the notes use ("0" to "n-1") for the wording to be typed

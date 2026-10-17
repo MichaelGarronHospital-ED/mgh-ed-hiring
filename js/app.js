@@ -147,6 +147,7 @@ async function unlock(typed) {
       return;
     }
     ls.set("ed_iv_lastrole", role);
+    ls.del("ed_iv_gate");
     ss.set("ed_iv_signedin", "1");
     await enter(role);
     return;
@@ -154,8 +155,33 @@ async function unlock(typed) {
   // every account refused: the password is wrong. A disabled account answers
   // the same whatever was typed, so it is named only when it is Leadership's
   // (the one account nobody else could have meant)
-  gateFail(disabled && disabled.role === "admin"
-    ? `Incorrect password. (Also: ${signInError(disabled.e, { email: ROLE_EMAIL.admin })})` : "Incorrect password.");
+  const paused = gateWrong();
+  gateFail((disabled && disabled.role === "admin"
+    ? `Incorrect password. (Also: ${signInError(disabled.e, { email: ROLE_EMAIL.admin })})` : "Incorrect password.")
+    + (paused ? " To protect the accounts, wait 30 seconds before trying again." : ""));
+}
+
+// Each wrong password costs a refused sign-in on all three accounts, and
+// Firebase pauses a device that keeps failing. After 3 wrong passwords on this
+// device, the page itself waits 30 seconds first (review). Not secret: only a
+// count and a time, in this browser.
+const GATE_PAUSE_MS = 30000;
+function gateState() { try { return JSON.parse(ls.get("ed_iv_gate") || "{}") || {}; } catch { return {}; } }
+const gatePausedFor = () => Math.max(0, (gateState().until || 0) - Date.now());
+function gateWrong() {
+  const g = gateState();
+  g.n = (g.n || 0) + 1;
+  if (g.n >= 3) { g.n = 0; g.until = Date.now() + GATE_PAUSE_MS; }
+  ls.set("ed_iv_gate", JSON.stringify(g));
+  return !!g.until && g.until > Date.now();
+}
+function gateCountdown() {
+  const btn = $("#gbtn"); if (!btn) return;
+  if (!btn.dataset.label) btn.dataset.label = btn.textContent;
+  const left = gatePausedFor();
+  if (!left) { btn.disabled = false; btn.textContent = btn.dataset.label; return; }
+  btn.disabled = true; btn.textContent = `Wait ${Math.ceil(left / 1000)} s`;
+  setTimeout(gateCountdown, 500);
 }
 
 // Signed in (or resumed) as this role: open the store and the right view.
@@ -2363,7 +2389,7 @@ function passwordsBody() {
   // R7: the card waits until the questions live in the database, so nothing
   // the page needs can depend on a password (design 5.2).
   if (!S.questions) return `<p class="note">This opens once the interview questions are saved in the database (Interview questions, above).</p>`;
-  if (!isConfigured()) return `<p class="small muted">Passwords can only be changed on the live site.</p>`;
+  if (!isConfigured() || !_fb) return `<p class="small muted">Passwords can only be changed on the live site.</p>`;
   const pm = S.passwordsMeta || {};
   const rows = ROLES.map((r) => {
     const d = longDay(pm[r] && pm[r].changedAt);
@@ -2390,7 +2416,7 @@ const pwField = (id, label, auto) => `<label class="ed-label" for="${id}">${esca
   <button type="button" class="btn ghost small" onclick="IV.pwShow('${id}',this)" aria-label="Show ${escapeHtml(label)}">Show</button></div>`;
 
 async function changePasswords(resuming) {
-  if (!S || !S.questions || !isConfigured() || ui.role !== "admin") return;
+  if (!S || !S.questions || !isConfigured() || !_fb || ui.role !== "admin") return;
   // an unfinished change is always finished first, whatever button was used
   const pend = S.passwordsMeta && S.passwordsMeta.pending;
   // everything typed lives here, and only for as long as the dialog is open
@@ -4247,9 +4273,10 @@ document.addEventListener("scroll", hideTip, true);
 $("#gateForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const btn = $("#gbtn"), val = $("#gpw").value.trim();
-  if (!val) return;
+  if (!val || gatePausedFor()) return;
   $("#gerr").textContent = "";
   await withBusy(btn, () => unlock(val)).catch(() => {});
+  if (gatePausedFor()) gateCountdown();
 });
 $("#memberBtn").onclick = () => {
   const v = $("#memberSel").value;
@@ -4286,4 +4313,5 @@ if (ss.get("ed_iv_bye")) {
   if (el) el.innerHTML = `<div style="text-align:left" class="muted">You are logged out. Your scores are saved, but this device won't show them to you again after you sign in.</div>`;
 }
 
+if (gatePausedFor()) gateCountdown();
 resume().catch((e) => console.warn("resume failed:", e && e.code));
