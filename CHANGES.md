@@ -24,6 +24,48 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## R7c: roles known by uid, ahead of the account emails moving to .invalid (Oct 17 2026)
+
+Phase A of the passwords design. The account emails (`admin@ed-hiring.app` and so on) are on a
+domain nobody owns, so a stranger could register it and reset a password; they move to
+`@mgh-ed-hiring.invalid` addresses that can never be registered. For that to break nothing, a
+role must be known by its account's uid, which never changes, and not by its email.
+
+- **Rules v3** (`firestore.rules`): `isAdmin`, `isCommittee` and `isApplicant` check the account's
+  pinned uid and a password sign-in (`signedIn(uid)`), never `token.email`. Everything else is
+  unchanged. Header: the accounts by uid and email, "never delete a role account". Published
+  separately, before this page (deploy step A3), with a tag `rules-v3-<date>`.
+- **Pages by uid** (`js/config.js` `AUTH.uids`, `PARTNERS.voting.uids`): the hiring page's resume
+  (`roleOfUser`), the passwords page's resume and sign-in, and the passwords flow's own account
+  all compare uids; a sign-in that lands on another uid than the role account's counts as a
+  refusal. The flow re-authenticates the page's account with the email it has NOW. The sign-in
+  emails stay the OLD ones in R7c (a page can only sign in with the email the account has right
+  now); R7d switches them in the window.
+- Scripts: `diagnose-login.mjs` and `report-data.mjs` check the returned uid. README (a uid table,
+  "never delete", the lost-password steps no longer delete and re-add an account), DESIGN, CLAUDE.
+- Version `R7c`.
+
+Tests: NEW `tests/rules-uids.test.mjs` (for each role: right uid with the old email allowed, with
+the new `.invalid` email allowed, right email with another uid refused, anonymous and custom-token
+sign-ins refused; no role's uid acts as another); NEW `tests/uids.test.mjs` (config uids equal
+the rules', no email role check in `js/`); every rules test now uses the pinned uids with a
+password sign-in (`tests/helpers/identities.mjs`). Sims: emulator accounts are made with the
+pinned uids (`sim/emu.mjs`); NEW emulator case `emailChangeKeepsSessions`: (1) signed in as
+each role, the email changed by the admin API, reload: in as the same role or at the sign-in box,
+never another role; (2) an old cached page (old emails in its config) with the account signed in
+under its new email: reload, still in, same role (a page deciding by email fails this); (3) a
+fresh sign-in with the old emails says Incorrect password. `sim/auth.mjs` (a stub that keeps the
+session: signed in, email changed, reload, still in) and `sim/passwords.mjs` (the passwords page,
+as (2)).
+
+**Finding for the window:** the Auth emulator, like Firebase, ends sessions on an email change:
+an ID token issued a second or more before the change is refused (`TOKEN_EXPIRED`) and the SDK
+clears the user on the next load, though the refresh token itself still works. So expect every
+signed-in device to be asked for its password once after `migrate-emails.py --apply`, as the
+design already plans (A.3 point 4, A.5.1).
+
+---
+
 ## R7b: the passwords get their own page (Oct 17 2026)
 
 Alvin's R7 phone check: every sign-in works, but he wants password changing on the ED

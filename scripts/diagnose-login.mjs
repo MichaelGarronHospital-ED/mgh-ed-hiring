@@ -32,8 +32,10 @@ import { firebaseConfig, AUTH, PARTNERS } from "../js/config.js";
 
 const REFERER = "https://michaelgarronhospital-ed.github.io/";
 // -> "ok" | "refused" | "throttled" | "disabled" | "blocked" (the key won't
-//    answer from here) | "network" | the error code
-async function trySignIn(apiKey, email, password) {
+//    answer from here) | "network" | "other-account" | the error code
+// uid: the role account's pinned uid (R7c: a role is its uid, never its email);
+// an answer for another account is not that role.
+async function trySignIn(apiKey, email, password, uid) {
   let res, body = {};
   try {
     res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${encodeURIComponent(apiKey)}`, {
@@ -41,7 +43,7 @@ async function trySignIn(apiKey, email, password) {
       body: JSON.stringify({ email, password, returnSecureToken: false }), signal: AbortSignal.timeout(10000) });
     body = await res.json().catch(() => ({}));
   } catch { return "network"; }
-  if (res.ok) return "ok";
+  if (res.ok) return !uid || body.localId === uid ? "ok" : "other-account";
   const msg = String((body.error && body.error.message) || "");
   if (/^(INVALID_LOGIN_CREDENTIALS|INVALID_PASSWORD|EMAIL_NOT_FOUND)/.test(msg)) return "refused";
   if (/^TOO_MANY_ATTEMPTS_TRY_LATER/.test(msg)) return "throttled";
@@ -65,15 +67,16 @@ console.log(`Password length: ${PW.length} characters` +
   (PW.length < 6 ? " (under 6: Firebase refuses to set a password this short, so no account can have it)" : ""));
 
 const accounts = [
-  ["ED", "hiring", AUTH.committeeEmail], ["Guest", "hiring", AUTH.candidateEmail], ["Leadership", "hiring", AUTH.adminEmail],
-  ...(VOTING ? [["ED", "voting", PARTNERS.voting.edEmail], ["Leadership", "voting", PARTNERS.voting.leadershipEmail]] : []),
+  ["ED", "hiring", AUTH.committeeEmail, AUTH.uids.committee], ["Guest", "hiring", AUTH.candidateEmail, AUTH.uids.candidate],
+  ["Leadership", "hiring", AUTH.adminEmail, AUTH.uids.admin],
+  ...(VOTING ? [["ED", "voting", PARTNERS.voting.edEmail, PARTNERS.voting.uids.ed], ["Leadership", "voting", PARTNERS.voting.leadershipEmail, PARTNERS.voting.uids.leadership]] : []),
 ];
 const configs = { hiring: firebaseConfig, voting: PARTNERS.voting.firebaseConfig };
 const results = [];
 const SAY = { ok: "accepted", refused: "refused (wrong password)", throttled: "Firebase is pausing tries from this computer",
-  disabled: "the account is switched off", blocked: "can't test from here (the key refused this computer)", network: "couldn't reach Firebase" };
-for (const [role, project, email] of accounts) {
-  const r = await trySignIn(configs[project].apiKey, email, PW);
+  disabled: "the account is switched off", "other-account": "accepted, but by ANOTHER account than the role account (different uid): not this role", blocked: "can't test from here (the key refused this computer)", network: "couldn't reach Firebase" };
+for (const [role, project, email, uid] of accounts) {
+  const r = await trySignIn(configs[project].apiKey, email, PW, uid);
   results.push({ role, project, email, r });
   console.log(`  ${email}: ${SAY[r] || `no answer (${r})`}`);
   if (r === "throttled") {

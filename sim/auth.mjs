@@ -24,6 +24,8 @@ import path from "node:path";
 import { serve, browser, signIn, pickMember, landAsAdmin, sleep, SITE } from "./drive.mjs";
 
 const GS = "https://www.gstatic.com/firebasejs/10.12.2/";
+const { AUTH } = await import(new URL("../js/config.js", import.meta.url));
+const UID_BY_EMAIL = { [AUTH.adminEmail]: AUTH.uids.admin, [AUTH.committeeEmail]: AUTH.uids.committee, [AUTH.candidateEmail]: AUTH.uids.candidate };
 const STUB = {
   "firebase-app.js": `export function initializeApp(c) { return { options: c }; } export async function deleteApp() {}`,
   // The fake keeps the tab-only sign-in in sessionStorage ("__stubuser"), like
@@ -31,21 +33,26 @@ const STUB = {
   "firebase-auth.js": `
     const log = (e) => { const a = JSON.parse(localStorage.getItem("__authlog") || "[]"); a.push(e); localStorage.setItem("__authlog", JSON.stringify(a)); };
     const PW = { "admin@ed-hiring.app": "adminpw", "committee@ed-hiring.app": "staffpw", "applicant@ed-hiring.app": "guestpw" };
+    // the accounts' uids (the same as js/config.js): a role is known by uid (R7c)
+    const UID = ${JSON.stringify(UID_BY_EMAIL)};
     export const browserSessionPersistence = { type: "SESSION" };
     export const browserLocalPersistence = { type: "LOCAL" };
     export const inMemoryPersistence = { type: "NONE" };
     const subs = new Set();
-    let kept = null; try { kept = sessionStorage.getItem("__stubuser"); } catch {}
-    const theAuth = { currentUser: kept ? { email: kept } : null, persistence: "SESSION", async authStateReady() {} };
+    let kept = null; try { kept = JSON.parse(sessionStorage.getItem("__stubuser") || "null"); } catch {}
+    const theAuth = { currentUser: kept, persistence: "SESSION", async authStateReady() {} };
     const fire = () => subs.forEach((f) => f(theAuth.currentUser));
     window.__stubRevoke = () => { theAuth.currentUser = null; try { sessionStorage.removeItem("__stubuser"); } catch {} log("revoked"); fire(); };
+    // what the admin API's email change does to a signed-in tab: same uid, new email
+    window.__stubChangeEmail = (email) => { const u = { ...theAuth.currentUser, email }; theAuth.currentUser = u;
+      try { sessionStorage.setItem("__stubuser", JSON.stringify(u)); } catch {} PW[email] = PW[Object.keys(UID).find((e) => UID[e] === u.uid)]; };
     export function getAuth() { return theAuth; }
     export function initializeAuth() { return { currentUser: null }; }
     export async function setPersistence(auth, p) { auth.persistence = p.type; log("persist:" + p.type); }
     export async function signInWithEmailAndPassword(auth, email, pw) {
       if (PW[email] !== pw) { log("refused:" + email); const e = new Error("refused"); e.code = "auth/invalid-credential"; throw e; }
-      log("signIn:" + email); auth.currentUser = { email };
-      if (auth.persistence === "SESSION") try { sessionStorage.setItem("__stubuser", email); } catch {}
+      log("signIn:" + email); auth.currentUser = { email, uid: UID[email] };
+      if (auth.persistence === "SESSION") try { sessionStorage.setItem("__stubuser", JSON.stringify(auth.currentUser)); } catch {}
       fire(); return { user: auth.currentUser };
     }
     export function onAuthStateChanged(auth, f) { subs.add(f); setTimeout(() => f(auth.currentUser), 0); return () => subs.delete(f); }
@@ -196,6 +203,17 @@ try {
     const a = await authLog(p);
     R("an older page's saved password is deleted on load and never replayed",
       (await p.evaluate(() => sessionStorage.getItem("ed_iv_code"))) === null && !a.some((x) => x.startsWith("signIn")) && (await gateShown(p)), a.join());
+    await p.close(); }
+
+  // ---- R7c: the account's email changes while signed in -----------------------
+  { const p = await page();
+    await signIn(p, "adminpw");
+    await landAsAdmin(p);
+    await p.evaluate(() => window.__stubChangeEmail("admin@mgh-ed-hiring.invalid"));
+    await reloaded(p, () => p.reload());
+    const a = await authLog(p);
+    R("signed in, email changed, reload: still in, same role (known by uid)",
+      !(await gateShown(p)) && (await p.$eval("#whoLine", (e) => e.textContent.trim())) === "Admin" && a.filter((x) => x.startsWith("signIn")).length === 1, a.join());
     await p.close(); }
 
   // ---- signed out while the page is open ------------------------------------

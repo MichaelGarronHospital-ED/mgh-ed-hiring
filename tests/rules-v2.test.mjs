@@ -21,6 +21,7 @@ import {
   doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, serverTimestamp, Timestamp,
   writeBatch, runTransaction, deleteField,
 } from "firebase/firestore";
+import { UID, pw } from "./helpers/identities.mjs";
 
 const RULES = readFileSync(new URL("../firestore.rules", import.meta.url), "utf8");
 let env;
@@ -33,9 +34,9 @@ before(async () => {
 after(async () => { if (env) await env.cleanup(); });
 beforeEach(async () => { await env.clearFirestore(); });
 
-const admin = () => env.authenticatedContext("u-admin", { email: "admin@ed-hiring.app" }).firestore();
-const committee = () => env.authenticatedContext("u-committee", { email: "committee@ed-hiring.app" }).firestore();
-const applicant = () => env.authenticatedContext("u-applicant", { email: "applicant@ed-hiring.app" }).firestore();
+const admin = () => env.authenticatedContext(UID.admin, pw("admin@ed-hiring.app")).firestore();
+const committee = () => env.authenticatedContext(UID.committee, pw("committee@ed-hiring.app")).firestore();
+const applicant = () => env.authenticatedContext(UID.applicant, pw("applicant@ed-hiring.app")).firestore();
 const stranger = () => env.authenticatedContext("u-stranger", { email: "someone@example.com" }).firestore();
 
 const seed = (path, data) => env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), path), data));
@@ -676,7 +677,7 @@ describe("load-bearing: the stage gates are what refuse", () => {
     await broken.clearFirestore();
     await broken.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), STATE),
       { roundStatus: "closing", stages: { screening: { closed: true }, scoring: { closed: true }, availability: { closed: true } } }));
-    const ed = broken.authenticatedContext("u-committee", { email: "committee@ed-hiring.app" }).firestore();
+    const ed = broken.authenticatedContext(UID.committee, pw("committee@ed-hiring.app")).firestore();
     await assertSucceeds(setDoc(doc(ed, "interviews_screening/Marrocco~c-1"), { rating: 3 }, { merge: true }));
     await assertSucceeds(setDoc(doc(ed, "interviews_scores/Marrocco~c-1"), { overall: 3 }, { merge: true }));
     await assertSucceeds(setDoc(doc(ed, "interviews_availIv/Marrocco"), { slots: { t1: "ip" } }, { merge: true }));

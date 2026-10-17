@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+const CONFIG = await import(new URL("../js/config.js", import.meta.url));
 export const FS = "http://127.0.0.1:8080";
 export const AUTH = "http://127.0.0.1:9099";
 export const PROJECT = "mgh-ed-hiring-test-emu";
@@ -30,10 +31,27 @@ export async function clearFirestore(project = PROJECT) {
 export async function clearAuth(project = PROJECT) {
   await call(`${AUTH}/emulator/v1/projects/${project}/accounts`, { method: "DELETE" });
 }
-export async function addUser(email, password, project = PROJECT) {
+// localId: the account's uid. The rules know each role by its pinned uid (R7c),
+// so the role accounts are made with exactly those (UIDS below, from js/config.js).
+export async function addUser(email, password, project = PROJECT, localId = undefined) {
+  if (localId === undefined) localId = UID_OF_EMAIL[email];
   await call(`${AUTH}/identitytoolkit.googleapis.com/v1/projects/${project}/accounts`, {
-    method: "POST", body: JSON.stringify({ email, password, emailVerified: true }) });
+    method: "POST", body: JSON.stringify({ email, password, emailVerified: true, ...(localId ? { localId } : {}) }) });
 }
+// The admin API's email change (no email sent; uid and password unchanged), the
+// same call migrate-emails.py makes live.
+export async function setEmail(localId, email, project = PROJECT) {
+  await call(`${AUTH}/identitytoolkit.googleapis.com/v1/projects/${project}/accounts:update`, {
+    method: "POST", body: JSON.stringify({ localId, email }) });
+}
+export const UIDS = { admin: CONFIG.AUTH.uids.admin, committee: CONFIG.AUTH.uids.committee, applicant: CONFIG.AUTH.uids.candidate,
+  votingLeadership: CONFIG.PARTNERS.voting.uids.leadership, votingEd: CONFIG.PARTNERS.voting.uids.ed };
+const UID_OF_EMAIL = {
+  "admin@ed-hiring.app": UIDS.admin, "committee@ed-hiring.app": UIDS.committee, "applicant@ed-hiring.app": UIDS.applicant,
+  "leadership@ed-motion-voting.app": UIDS.votingLeadership, "ed@ed-motion-voting.app": UIDS.votingEd,
+  "admin@mgh-ed-hiring.invalid": UIDS.admin, "committee@mgh-ed-hiring.invalid": UIDS.committee, "applicant@mgh-ed-hiring.invalid": UIDS.applicant,
+  "leadership@mgh-ed-voting.invalid": UIDS.votingLeadership, "ed@mgh-ed-voting.invalid": UIDS.votingEd,
+};
 export const ROLE_USERS = [["admin@ed-hiring.app", "adminpw"], ["committee@ed-hiring.app", "staffpw"], ["applicant@ed-hiring.app", "guestpw"]];
 
 // ---- Firestore REST values <-> plain JS -------------------------------------

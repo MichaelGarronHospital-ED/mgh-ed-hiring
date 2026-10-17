@@ -59,6 +59,22 @@ applicant link). The password itself is never saved: a reload in the same tab re
 from Firebase's own sign-in for that tab. Since release R7 nothing in the repo is
 derived from a password, so changing one needs no code change.
 
+**A role is known by its account's uid, never by its email (R7c).** The rules and every page
+check the account's uid; the emails are only for signing in. That lets the account emails
+move to addresses nobody can ever register (`admin@mgh-ed-hiring.invalid` and so on, Phase A
+of the passwords design) without signing anyone in as the wrong role, and an account somebody
+makes with a freed email gets another uid and nothing else.
+
+| Role | uid | Email now | Email after the move |
+|---|---|---|---|
+| Leadership | `ULgtfRrkAVPS2aT69Tc4CjMqbsx1` | `admin@ed-hiring.app` | `admin@mgh-ed-hiring.invalid` |
+| ED | `36FXvbR8ExgU7p4cmwuCNfkgFgD2` | `committee@ed-hiring.app` | `committee@mgh-ed-hiring.invalid` |
+| Guest | `jvmQYhgYlRMf3f2J3uw8XXos8yD3` | `applicant@ed-hiring.app` | `applicant@mgh-ed-hiring.invalid` |
+
+**Never delete a role account.** A new one has a new uid, which the rules and the pages refuse
+until both are updated (`firestore.rules` and `AUTH.uids` in `js/config.js`;
+`tests/uids.test.mjs` keeps them equal). Uids are public identifiers, not secrets.
+
 **To change one: the ED tools passwords page**,
 https://michaelgarronhospital-ed.github.io/mgh-ed-hiring/passwords.html (the ED dashboard
 has a tile for it; Physician Hiring's Setup links to it). Sign in with the Leadership
@@ -101,13 +117,14 @@ No terminal needed:
    signs in at console.firebase.google.com with that Google account.
 2. Physician Hiring: open project `mgh-ed-hiring`, then Build, Authentication, Users.
    Motion Voting: project `ed-motion-voting-99b96`, same place.
-3. Find the account (`committee@ed-hiring.app` for ED, `applicant@ed-hiring.app` for Guest,
-   `admin@ed-hiring.app` for Leadership; `ed@` and `leadership@ed-motion-voting.app` in
-   Motion Voting). The console cannot type a new password into an existing account, and
-   "Reset password" sends an email these made-up addresses never receive. So: open the
-   account's menu (the three dots at the end of its row), "Delete account", then "Add
-   user" with the same email and the new password. Nothing else is lost: the rules
-   recognise the account by its email, not by its internal id.
+3. Find the account (`committee@` for ED, `applicant@` for Guest, `admin@` for Leadership;
+   `ed@` and `leadership@` in Motion Voting; the uids are in the table above). **Do NOT
+   delete it and add it again**: the new account would get a new uid, which the rules and
+   pages refuse. The console cannot type a new password into an existing account, and
+   "Reset password" sends an email these made-up addresses never receive, so the password is
+   set by the break-glass script instead: on a Mac with the Firebase CLI signed in as the
+   department account, `python3 set-passwords.py` in the `MGH-ED-Tools` folder (its own
+   instructions), which changes the password of the same account (same uid).
 4. Then open the ED tools passwords page, sign in as Leadership and change it there with the
    value you just set as the current one, so every tool ends up the same.
 
@@ -177,7 +194,9 @@ from scratch takes these console steps (they can't be done from the repo):
 
 1. **Firebase console → Authentication → Sign-in method →** enable **Email/Password**.
 2. **Authentication → Users → Add user** three times (emails must match
-   `AUTH` in `js/config.js`; the **passwords are the shared secrets** you hand out):
+   `AUTH` in `js/config.js`; the **passwords are the shared secrets** you hand out). These
+   three exist; this step is only for a brand-new project. Their uids then go into
+   `firestore.rules` and `AUTH.uids` (the rules know each role by uid):
 
    | Email | Password | Who |
    |---|---|---|

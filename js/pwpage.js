@@ -14,12 +14,12 @@
 //  is kept, and 3 wrong tries on a device mean a 30-second wait (the same
 //  count as the hiring page).
 // ============================================================================
-import { firebaseConfig, PARTNERS, AUTH } from "./config.js?v=R7b";
+import { firebaseConfig, PARTNERS, AUTH } from "./config.js?v=R7c";
 import { ROLES, ROLE_WORD, ACCOUNTS, accountsFor, validateCurrent, validateNew, preflight, applyChange, verify, halfDoneText,
-         makeFirebaseAdapter } from "./passwords.js?v=R7b";
-import { FirestoreStore } from "./store.js?v=R7b";
-import { entry as hEntry, toDate } from "./history.js?v=R7b";
-import { escapeHtml, flowDialog, ss, ls, storageWorks } from "./util.js?v=R7b";
+         makeFirebaseAdapter } from "./passwords.js?v=R7c";
+import { FirestoreStore } from "./store.js?v=R7c";
+import { entry as hEntry, toDate } from "./history.js?v=R7c";
+import { escapeHtml, flowDialog, ss, ls, storageWorks } from "./util.js?v=R7c";
 
 const $ = (s) => document.querySelector(s);
 const isConfigured = () => !!(firebaseConfig && firebaseConfig.apiKey);
@@ -94,7 +94,12 @@ async function unlock(typed) {
   try {
     const keep = storageWorks("sessionStorage") ? fb.authFns.browserSessionPersistence : fb.authFns.inMemoryPersistence;
     await fb.authFns.setPersistence(fb.auth, keep);
-    await fb.authFns.signInWithEmailAndPassword(fb.auth, AUTH.adminEmail, typed);
+    const cred = await fb.authFns.signInWithEmailAndPassword(fb.auth, AUTH.adminEmail, typed);
+    // only the pinned Leadership account (by uid, R7c) opens the page
+    if (cred.user.uid !== AUTH.uids.admin) {
+      try { await fb.authFns.signOut(fb.auth); } catch { /* local anyway */ }
+      const e = new Error("not the Leadership account"); e.code = "auth/invalid-credential"; throw e;
+    }
   } catch (e) {
     if (isRefusal(e)) {
       const paused = gateWrong();
@@ -115,9 +120,10 @@ async function resume() {
   if (!ss.get("ed_iv_signedin")) return;
   let fb;
   try { fb = await firebase(); await fb.auth.authStateReady(); } catch { return; }
-  const email = fb.auth.currentUser && fb.auth.currentUser.email;
-  if (email === AUTH.adminEmail) enter();
-  else if (email) gateMsg("This page needs the Leadership password.");
+  // who is signed in: by uid, never by email (R7c)
+  const u = fb.auth.currentUser;
+  if (u && u.uid === AUTH.uids.admin) enter();
+  else if (u) gateMsg("This page needs the Leadership password.");
 }
 
 function watchSignOut() {

@@ -51,8 +51,11 @@ if (process.env.ED_IV_EMULATOR) {
   if (process.env.ED_IV_AUTH_EMULATOR) connectAuthEmulator(auth, `http://${process.env.ED_IV_AUTH_EMULATOR}`, { disableWarnings: true });
   console.log(`*** EMULATOR MODE (${process.env.ED_IV_EMULATOR}) ***`);
 } else {
-  try { await signInWithEmailAndPassword(auth, AUTH.adminEmail, PASSWORD); }
+  let cred;
+  try { cred = await signInWithEmailAndPassword(auth, AUTH.adminEmail, PASSWORD); }
   catch (e) { console.error(`Sign-in failed (${e.code || e.message}). Check the admin password.`); process.exit(1); }
+  // the Leadership account by its uid (R7c), never by its email
+  if (cred.user.uid !== AUTH.uids.admin) { console.error("That email belongs to another account than the Leadership account (different uid). Stopping."); process.exit(1); }
 }
 console.log(`Project: ${firebaseConfig.projectId}`);
 

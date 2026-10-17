@@ -24,16 +24,16 @@
 //    auth.close(session)            -> void
 // ============================================================================
 
-import { AUTH, PARTNERS } from "./config.js?v=R7b";
+import { AUTH, PARTNERS } from "./config.js?v=R7c";
 
 export const ROLES = Object.freeze(["leadership", "ed", "guest"]);
 export const ROLE_WORD = Object.freeze({ leadership: "Leadership", ed: "ED", guest: "Guest" });
 export const ACCOUNTS = Object.freeze([
-  { key: "voting:ed", project: "voting", role: "ed", email: PARTNERS.voting.edEmail, label: "Motion Voting, ED account" },
-  { key: "voting:leadership", project: "voting", role: "leadership", email: PARTNERS.voting.leadershipEmail, label: "Motion Voting, Leadership account" },
-  { key: "hiring:committee", project: "hiring", role: "ed", email: AUTH.committeeEmail, label: "Physician Hiring, ED account" },
-  { key: "hiring:applicant", project: "hiring", role: "guest", email: AUTH.candidateEmail, label: "Physician Hiring, Guest account" },
-  { key: "hiring:admin", project: "hiring", role: "leadership", email: AUTH.adminEmail, label: "Physician Hiring, Leadership account", main: true },
+  { key: "voting:ed", project: "voting", role: "ed", email: PARTNERS.voting.edEmail, uid: PARTNERS.voting.uids.ed, label: "Motion Voting, ED account" },
+  { key: "voting:leadership", project: "voting", role: "leadership", email: PARTNERS.voting.leadershipEmail, uid: PARTNERS.voting.uids.leadership, label: "Motion Voting, Leadership account" },
+  { key: "hiring:committee", project: "hiring", role: "ed", email: AUTH.committeeEmail, uid: AUTH.uids.committee, label: "Physician Hiring, ED account" },
+  { key: "hiring:applicant", project: "hiring", role: "guest", email: AUTH.candidateEmail, uid: AUTH.uids.candidate, label: "Physician Hiring, Guest account" },
+  { key: "hiring:admin", project: "hiring", role: "leadership", email: AUTH.adminEmail, uid: AUTH.uids.admin, label: "Physician Hiring, Leadership account", main: true },
 ]);
 // in the order they are changed
 export const accountsFor = (roles) => ACCOUNTS.filter((a) => roles.includes(a.role));
@@ -196,16 +196,22 @@ export function makeFirebaseAdapter(sdk, { mainAuth, configs, connect = null }) 
   let n = 0;
   return {
     async open(a, password) {
-      if (a.main && mainAuth && mainAuth.currentUser && mainAuth.currentUser.email === a.email) {
+      // the page's own account, known by uid (R7c), never by email
+      if (a.main && mainAuth && mainAuth.currentUser && mainAuth.currentUser.uid === a.uid) {
         const user = mainAuth.currentUser;
-        await sdk.reauthenticateWithCredential(user, sdk.EmailAuthProvider.credential(a.email, password));
+        // with the email the account has NOW (it may have moved since this page loaded)
+        await sdk.reauthenticateWithCredential(user, sdk.EmailAuthProvider.credential(user.email || a.email, password));
         return { main: true, user };
       }
       const app = sdk.initializeApp(configs[a.project], `pw-${Date.now().toString(36)}-${n++}`);
       const auth = sdk.initializeAuth(app, { persistence: sdk.inMemoryPersistence });
       if (connect) connect(auth, a.project);
-      try { const cred = await sdk.signInWithEmailAndPassword(auth, a.email, password); return { app, auth, user: cred.user }; }
-      catch (e) { try { await sdk.deleteApp(app); } catch { /* gone */ } throw e; }
+      try {
+        const cred = await sdk.signInWithEmailAndPassword(auth, a.email, password);
+        // only the pinned account: another uid behind the email is a refusal
+        if (a.uid && cred.user.uid !== a.uid) { const e = new Error("not the role account"); e.code = "auth/invalid-credential"; throw e; }
+        return { app, auth, user: cred.user };
+      } catch (e) { try { await sdk.signOut(auth); } catch { /* none */ } try { await sdk.deleteApp(app); } catch { /* gone */ } throw e; }
     },
     async update(s, value) { await sdk.updatePassword(s.user, value); },
     async close(s) {

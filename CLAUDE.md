@@ -236,6 +236,15 @@ Full design and reference data (committee, candidates, questions, rules) live in
   `doubleBooked`) or seat someone who never said they were free (now warned).
   Overlapping times are only *warned* at creation — accept one and the chair can
   be auto-scheduled into two at once.
+- **A role is known by its account's uid, never by its email (R7c, rules v3).** `firestore.rules`
+  checks `request.auth.uid` and the `password` sign-in provider (`signedIn(uid)`); every page and
+  script decides "who is this" by `uid` against `AUTH.uids` (and `PARTNERS.voting.uids`), and uses
+  the emails only to sign in (and treats a sign-in that lands on another uid as a refusal).
+  `tests/uids.test.mjs` keeps the config uids equal to the rules' and fails on any `.email ===`
+  role check in `js/`. This is what lets the account emails move to `.invalid` addresses with no
+  rules change and no signed-in page dropping out (`sim/emulator.mjs` `emailChangeKeepsSessions`).
+  **Never delete a role account**: a new account has a new uid, refused until the rules and
+  `AUTH.uids` are updated; a lost password is set by `set-passwords.py` on the same account.
 - **The role is found by signing in, and nothing in any repo may be derived from a password.**
   Since R7 the gate tries the password on the role accounts in `roleOrder()` (Guest first on
   `#apply`, else the role that last worked on this browser, `ls` `ed_iv_lastrole`, else ED,

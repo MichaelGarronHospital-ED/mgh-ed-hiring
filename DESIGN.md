@@ -27,6 +27,12 @@ run end-to-end against a live Firebase project (needs the user's project + a bro
   admin (Kyle/Amanda) sees everyone's input + the aggregate. Mirrors last year's
   "send your list to Amanda" and avoids one opinion anchoring others. All input is
   editable until the admin **closes** that phase.
+- **Role accounts (Oct 2026):** the three passwords are the passwords of three Firebase
+  accounts (Leadership `admin@`, ED `committee@`, Guest `applicant@`). Since R7c a role is
+  known by its account's **uid**, never its email (rules v3 and every page); the emails only
+  sign in, and move to `@mgh-ed-hiring.invalid` addresses nobody can register (Phase A of the
+  passwords design). **Never delete a role account**: a new one has a new uid. The uids are in
+  README ("Passwords") and `js/config.js`.
 
 ## Phase 1 — Screen → shortlist (DEADLINE: Sept 23 2026)
 
@@ -241,7 +247,7 @@ tool. The schedule she needs (Panels → Export CSV) is admin-only, and admin al
 means screening, scores and the ranking, which she has no reason to see. In 2026
 this went by email: an admin exported the CSV and forwarded it to her.
 
-**What to build.** A fourth role account, `coordinator@ed-hiring.app`, enforced
+**What to build.** A fourth role account, `coordinator@mgh-ed-hiring.invalid` (known by its uid, like the others), enforced
 in `firestore.rules` and not just hidden in the UI:
 - **read/write:** candidates, interviewer + applicant availability,
   `interviews_meta/config` (committee, times, panel overrides) and `allowed`,

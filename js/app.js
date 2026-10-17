@@ -8,32 +8,32 @@
 //  enforced by the Firestore rules (see config.js and firestore.rules).
 // ============================================================================
 import { firebaseConfig, ORG_NAME, CHAIR, COMMITTEE, SLOTS, ONEDRIVE,
-         LOCAL_CODES, AUTH, SCREENING_DEADLINE } from "./config.js?v=R7b";
-import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R7b";
-import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R7b";
-import { autoPanels, buildPanel } from "./panels.js?v=R7b";
+         LOCAL_CODES, AUTH, SCREENING_DEADLINE } from "./config.js?v=R7c";
+import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R7c";
+import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R7c";
+import { autoPanels, buildPanel } from "./panels.js?v=R7c";
 import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell, lastKey,
-         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R7b";
-import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R7b";
+         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R7c";
+import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R7c";
 import { effectiveSlots, slotLabel, slotTimeLabel, groupByDate, checkSlot, splitRange, responseCounts,
-         newSlotId, isStructured, fmtDate } from "./slots.js?v=R7b";
+         newSlotId, isStructured, fmtDate } from "./slots.js?v=R7c";
 import { normalizeCommittee, interviewers as interviewersOf, pickable as pickableOf, memberName, memberStatus,
-         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R7b";
+         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R7c";
 import { fromLegacy, normalizeQuestions, liveQuestions, idsWithNotes, scoringStarted, checkEdit, newQuestionId,
-         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R7b";
+         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R7c";
 import { entry as hEntry, newHistoryId, panelUndo, shortlistUndo, screeningUndo, canUndo, undoneIds, textFor, whoFor, whenFor,
-         hashOf, toDate } from "./history.js?v=R7b";
-import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R7b";
-import { createRounds, pageId } from "./rounds.js?v=R7b";
-import { icsEvent, icsCalendar } from "./ics.js?v=R7b";
-import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R7b";
+         hashOf, toDate } from "./history.js?v=R7c";
+import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R7c";
+import { createRounds, pageId } from "./rounds.js?v=R7c";
+import { icsEvent, icsCalendar } from "./ics.js?v=R7c";
+import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R7c";
 import { STAGES, STAGE_WORD, stageOpen, stageClosedAt, roundOpen, bookingFor, thresholdOf, isOnList, closePlan, reopenPlan,
-         lockEntry } from "./stages.js?v=R7b";
+         lockEntry } from "./stages.js?v=R7c";
 
 // The release this page is. Must equal version.json and every "?v=" in every
 // import (tests/versions.test.mjs). A page that sees a different version.json
 // was updated underneath it (section "Reload notice" below).
-const RELEASE = "R7b";
+const RELEASE = "R7c";
 
 // Interview questions (H2): the saved document (interviews_meta/questions).
 // Since R7 there is no other source: the old encrypted js/data.js is no longer
@@ -109,8 +109,12 @@ const planState = () => ({ ...S, availRaw: S.availRaw || Object.fromEntries(Obje
 // one accepts. Nothing in the repo is derived from a password any more, so a
 // password can change without a commit. The password itself is never kept: a
 // reload in the same tab resumes from Firebase's own tab-only sign-in.
+// The emails are only for signing in. "Who is this" is always the account's
+// UID (R7c), the same uids as firestore.rules: a role account keeps its uid
+// when its email changes, so a signed-in page stays signed in through the move
+// of the emails to .invalid addresses, in either order.
 const ROLE_EMAIL = { admin: AUTH.adminEmail, committee: AUTH.committeeEmail, candidate: AUTH.candidateEmail };
-const roleOfEmail = (email) => Object.keys(ROLE_EMAIL).find((r) => ROLE_EMAIL[r] === email) || null;
+const roleOfUser = (u) => (u && Object.keys(AUTH.uids).find((r) => AUTH.uids[r] === u.uid)) || null;
 const isRefusal = (e) => /wrong-password|invalid-credential|user-not-found|invalid-login-credentials/.test(String((e && e.code) || ""));
 const SIGNED_OUT_MSG = "You were signed out, probably because a password changed. Enter the current password.";
 // Guest first on an applicant link (every applicant-facing link is
@@ -136,7 +140,15 @@ async function unlock(typed) {
   try { await tabOnly(fb); } catch (e) { gateFail(signInError(e)); return; }
   let disabled = null;
   for (const role of roleOrder()) {
-    try { await fb.authFns.signInWithEmailAndPassword(fb.auth, ROLE_EMAIL[role], typed); }
+    try {
+      const cred = await fb.authFns.signInWithEmailAndPassword(fb.auth, ROLE_EMAIL[role], typed);
+      // only the pinned account counts: an account somebody made with a freed
+      // old email has another uid, and is treated as a refusal
+      if (roleOfUser(cred.user) !== role) {
+        try { await fb.authFns.signOut(fb.auth); } catch { /* local anyway */ }
+        const e = new Error("not the role account"); e.code = "auth/invalid-credential"; throw e;
+      }
+    }
     catch (e) {
       if (isRefusal(e)) continue;
       // a disabled account says so whatever was typed: try the others first
@@ -211,7 +223,7 @@ async function resume() {
   if (!ss.get("ed_iv_signedin") && !older) return;   // nothing to resume: don't load the SDK yet
   let fb;
   try { fb = await firebase(); await fb.auth.authStateReady(); } catch { return; }
-  const role = fb.auth.currentUser && roleOfEmail(fb.auth.currentUser.email);
+  const role = roleOfUser(fb.auth.currentUser);
   if (!role) { ss.del("ed_iv_signedin"); return; }
   ss.set("ed_iv_signedin", "1");
   await enter(role);

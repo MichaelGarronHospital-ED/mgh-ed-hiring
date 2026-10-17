@@ -67,7 +67,72 @@ export const nextDownload = (page, act) => page.evaluate((act) => new Promise((r
 }), act);
 const history = async () => Object.values(await emu.listCollection("interviews_history"));
 
+// R7c: the emails the accounts move FROM and TO in emailChangeKeepsSessions (R7d swaps them: a rollback)
+const FROM = { admin: "admin@ed-hiring.app", committee: "committee@ed-hiring.app", applicant: "applicant@ed-hiring.app" };
+const TO = { admin: "admin@mgh-ed-hiring.invalid", committee: "committee@mgh-ed-hiring.invalid", applicant: "applicant@mgh-ed-hiring.invalid" };
 export const cases = {
+  // R7c (Phase A): a role is known by uid, never by email.
+  // (1) Signed in as each role, the account's email is changed by the admin API
+  //     (as migrate-emails.py will do live) and the page reloads. The Auth
+  //     emulator, like Firebase, ends sessions on an email change: an ID token
+  //     issued a second or more before the change is refused (TOKEN_EXPIRED) and
+  //     the SDK clears the user on reload. So the page either carries on as the
+  //     SAME role or is back at the sign-in box; never another role, never stuck.
+  // (2) "An old cached page after the change": this page still has the OLD emails
+  //     in its config while the session is the account under its NEW email (signed
+  //     in again in the same tab after the change). Reload: still in, same role.
+  //     A page that decided the role by email would put each one at the sign-in box.
+  // (3) A fresh sign-in with the old emails is refused and says Incorrect password
+  //     (the minute between the change and R7d going live).
+  async emailChangeKeepsSessions() {
+    const problems = [], log = [];
+    const roles = [
+      ["admin", "adminpw", FROM.admin, TO.admin, async (p) => { await p.waitForSelector("#app:not(.hidden)", { timeout: 15000 });
+        return (await p.$eval("#whoLine", (e) => e.textContent.trim())) === "Admin"; }],
+      ["committee", "staffpw", FROM.committee, TO.committee, async (p) => { await p.waitForSelector("#memberpick:not(.hidden)", { timeout: 15000 }); return true; }],
+      ["applicant", "guestpw", FROM.applicant, TO.applicant, async (p) => { await p.waitForSelector("#candview:not(.hidden)", { timeout: 15000 }); return true; }],
+    ];
+    const gateUp = (p) => p.$eval("#gate", (e) => !e.classList.contains("hidden"));
+    const reload = async (p) => { await p.reload({ waitUntil: "domcontentloaded" }); await p.waitForFunction("window.__edReady === true"); await sleep(1500); };
+    const pages = [];
+    for (const [role, pw, , , landed] of roles) {
+      const p = await freshPage({ log });
+      await signIn(p, pw);
+      problems.push(...ok(await landed(p), `${role}: didn't land before the change`));
+      pages.push(p);
+    }
+    await sleep(1200);   // so the change comes at least a second after the sign-ins (Firebase counts whole seconds)
+    for (const [role, , , to] of roles) await emu.setEmail(emu.UIDS[role], to);
+    for (let i = 0; i < roles.length; i++) {
+      const [role, pw, , to, landed] = roles[i], p = pages[i];
+      // (1) a plain reload: same role, or the sign-in box
+      await reload(p);
+      let same = false; try { same = !(await gateUp(p)) && await landed(p); } catch { same = false; }
+      problems.push(...ok(same || await gateUp(p), `${role}: after the change the page is neither in as the same role nor at the sign-in box`));
+      // (2) the account under its new email signs in again in this tab (as the
+      // live page will after R7d); this page's config still has the old email
+      await p.evaluate(async (to, pw) => {
+        const fbm = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
+        const appm = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
+        const auth = fbm.getAuth(appm.getApp());
+        await fbm.setPersistence(auth, fbm.browserSessionPersistence);
+        await fbm.signInWithEmailAndPassword(auth, to, pw);
+        sessionStorage.setItem("ed_iv_signedin", "1");
+      }, to, pw);
+      await reload(p);
+      let still = false; try { still = !(await gateUp(p)) && await landed(p); } catch { still = false; }
+      problems.push(...ok(still, `${role}: an old page signed in as the account under its new email doesn't recognise the role after a reload`));
+    }
+    for (const p of pages) await closePage(p);
+    // (3) the old emails no longer sign in
+    const fresh = await freshPage({ log });
+    await signIn(fresh, "adminpw"); await sleep(1500);
+    const msg = await fresh.$eval("#gerr", (e) => e.textContent);
+    problems.push(...ok(msg.includes("Incorrect password."), `a fresh sign-in with an email the accounts no longer have: ${msg}`));
+    await closePage(fresh);
+    return [...problems, ...log.filter((l) => !/console\.error/.test(l) || !/400/.test(l))];
+  },
+
   // R1: adding an applicant writes the roster and its history in one commit
   // the rules accept. R7: the Leadership sign-in found by order (ED and Guest
   // refuse first on a new browser), and nothing is copied into a questions

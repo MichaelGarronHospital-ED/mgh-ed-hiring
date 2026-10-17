@@ -37,6 +37,8 @@ const ACCTS = [
   ["hiring:admin", "admin@ed-hiring.app", "leadership"],
 ];
 const ok = (cond, msg) => (cond ? [] : [msg]);
+// R7c: the Leadership account's email moves FROM, TO (R7d swaps them: a rollback)
+const EMAIL_FROM = "admin@ed-hiring.app", EMAIL_TO = "admin@mgh-ed-hiring.invalid";
 
 async function signInWorks(email, password) {
   const r = await fetch(`${emu.AUTH}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake-api-key`, {
@@ -129,6 +131,23 @@ const cases = {
     const msg = await p.$eval("#gerr", (e) => e.textContent);
     problems.push(...ok(msg.includes("Incorrect password.") && msg.includes("Leadership"), `ED password: ${msg}`));
     await signIn(p, OLD.leadership); await onPage(p);
+    // R7c: the account's email changes (admin API). Firebase ends the session, so
+    // the account signs in again in this tab under its NEW email, while this page
+    // still has the OLD one in its config: reload, still in (known by uid)
+    await sleep(1200);
+    await emu.setEmail(emu.UIDS.admin, EMAIL_TO);
+    await p.evaluate(async (to, pw) => {
+      const fbm = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
+      const appm = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
+      const auth = fbm.getAuth(appm.getApp());
+      await fbm.setPersistence(auth, fbm.browserSessionPersistence);
+      await fbm.signInWithEmailAndPassword(auth, to, pw);
+      sessionStorage.setItem("ed_iv_signedin", "1");
+    }, EMAIL_TO, OLD.leadership);
+    await p.reload({ waitUntil: "domcontentloaded" }); await p.waitForFunction("window.__edReady === true");
+    let stillIn = true; try { await onPage(p); } catch { stillIn = false; }
+    problems.push(...ok(stillIn, "the passwords page doesn't recognise Leadership under the account's new email"));
+    await emu.setEmail(emu.UIDS.admin, EMAIL_FROM);
     await closePage(p);
     const h = await freshPage(1280, log, "light", SRV.url);
     await signIn(h, OLD.leadership); await landAsAdmin(h); await sleep(300);
