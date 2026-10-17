@@ -30,7 +30,7 @@ the three role-account sign-ins (see the console steps in README).
   reads the questions only from `interviews_meta/questions` and finds the role by signing in, so
   nothing used it; it stayed one release so cached older pages kept working. After this release
   no file in the repo is derived from a password.
-- Removed the compatibility leftovers kept for one release: `CANDIDATE_CODE_LOCAL` (config),
+- Removed the compatibility leftovers kept for one release: `CANDIDATE_CODE_LOCAL` and `AUTH.mode` (config),
   the inert `maybeMigrateQuestions` and `store.createQuestions` (the R1 to R6 questions copy),
   and the old `IV.clearOverrides` name (now only `IV.resetPanels`). `fromLegacy` stays: it
   defines the legacy question ids and the tests build fixtures with it.

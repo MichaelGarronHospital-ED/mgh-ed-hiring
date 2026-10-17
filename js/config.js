@@ -50,9 +50,7 @@ export const PARTNERS = {
 };
 
 // ---- 2b. Auth / security model -------------------------------------------
-// Firebase Auth email/password "role accounts" (the only model since R7). `mode`
-// is no longer read; it stays for one release because cached older pages read
-// it (removed in R8). Rules branch on
+// Firebase Auth email/password "role accounts" (the only model since R7). Rules branch on
 //                request.auth.token.email so applicants CANNOT read committee
 //                data and reviewers CANNOT read scores/ranking. Activate this
 //                only AFTER creating the three accounts + publishing the hardened
@@ -60,7 +58,6 @@ export const PARTNERS = {
 // The role EMAILS are public identifiers (safe here). The account PASSWORDS are
 // the shared secrets and live only in the Firebase console — never in this file.
 export const AUTH = {
-  mode: "roles",
   adminEmail: "admin@ed-hiring.app",
   committeeEmail: "committee@ed-hiring.app",
   candidateEmail: "applicant@ed-hiring.app",
