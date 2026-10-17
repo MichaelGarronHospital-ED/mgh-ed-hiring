@@ -26,9 +26,9 @@
 //  with the server time. There is no "saved but not logged".
 // ============================================================================
 
-import { effectiveSlots, toStored } from "./slots.js?v=R2";
-import { lastKey, ls } from "./util.js?v=R2";
-import { ROUND_COLLECTIONS } from "./backup.js?v=R2";
+import { effectiveSlots, toStored } from "./slots.js?v=R3";
+import { lastKey, ls } from "./util.js?v=R3";
+import { ROUND_COLLECTIONS } from "./backup.js?v=R3";
 
 export const key = (member, candId) => `${member}~${candId}`;
 
@@ -77,6 +77,15 @@ class BaseStore {
   // picks (H12, at log out). The server copy is untouched.
   clearLocalCopies() { ls.del(ECHO_KEY); ls.del(CAND_ECHO_KEY); }
 }
+
+// A field value that removes the field (deleteField() on Firestore).
+export const DEL = Object.freeze({ __del: true });
+const isDel = (v) => v === DEL || (v && v.__del === true);
+const applyPatch = (obj, patch) => {
+  const o = { ...(obj || {}) };
+  Object.entries(patch || {}).forEach(([k, v]) => { if (isDel(v)) delete o[k]; else o[k] = v; });
+  return o;
+};
 
 // history may be an entry, or a function (savedBefore, patch) → entry | null
 const histOf = (h, before, patch) => (typeof h === "function" ? h(before, patch) : h) || null;
@@ -236,6 +245,54 @@ export class LocalStore extends BaseStore {
     this._hist(histOf(history, before, next));
     this._save();
   }
+  now() { return new Date().toISOString(); }
+  // H4: one change to interviews_meta/state (fields replaced whole), with the
+  // public booking flag and candidate patches in the same commit.
+  async updateState(mutate, history, extra = {}) {
+    this._load();
+    const before = JSON.parse(JSON.stringify(this.state.meta || {}));
+    const patch = mutate(before);
+    this.state.meta = applyPatch(this.state.meta, patch);
+    if (extra.public && "booking" in extra.public) this.state.booking = extra.public.booking;
+    if (extra.candidates) this.state.candidates = this.state.candidates.map((c) => extra.candidates[c.id] ? { id: c.id, ...applyPatch(c, extra.candidates[c.id]) } : c);
+    this._hist(histOf(history, before, patch));
+    this._save();
+  }
+  // H4: interviews_meta/schedule, replaced whole by mutate(before).
+  async updateSchedule(mutate, history) {
+    this._load();
+    const before = this.state.schedule ? JSON.parse(JSON.stringify(this.state.schedule)) : null;
+    const next = mutate(before);
+    this.state.schedule = next;
+    this._hist(histOf(history, before, next));
+    this._save();
+  }
+  // H7: patches to candidate documents ({ id: { field: value | DEL } }), one commit.
+  async setCandidates(patches, history) {
+    this._load();
+    this.state.candidates = this.state.candidates.map((c) => patches[c.id] ? { id: c.id, ...applyPatch(c, patches[c.id]) } : c);
+    this._hist(histOf(history));
+    this._save();
+  }
+  // A checked change to one document: mutate(before) returns the new document,
+  // null to delete it, or throws to refuse (undo uses it to check "changed since").
+  async txDoc(coll, id, mutate, history) {
+    this._load();
+    if (coll === "interviews_screening") {
+      const before = this.state.screening[id] ? JSON.parse(JSON.stringify(this.state.screening[id])) : null;
+      const next = mutate(before);
+      const m = { ...this.state.screening }; if (next == null) delete m[id]; else m[id] = next;
+      this.state.screening = m;
+    } else if (coll === "interviews_candidates") {
+      const cur = this.state.candidates.find((c) => c.id === id);
+      const before = cur ? (({ id: _x, ...rest }) => rest)(JSON.parse(JSON.stringify(cur))) : null;
+      const next = mutate(before);
+      this.state.candidates = next == null ? this.state.candidates.filter((c) => c.id !== id)
+        : cur ? this.state.candidates.map((c) => (c.id === id ? { id, ...next } : c)) : [...this.state.candidates, { id, ...next }];
+    } else throw new Error("txDoc: " + coll);
+    this._hist(histOf(history));
+    this._save();
+  }
 }
 
 // ---------------------------------------------------------------- firestore
@@ -335,7 +392,7 @@ export class FirestoreStore extends BaseStore {
       const d = snap.data() || {};
       this.state.settings = { ...this.state.settings, slots: d.slots || [] };
       if (Array.isArray(d.times)) this.state.settings.times = d.times; else delete this.state.settings.times;
-      this.state.publicInfo = { orgName: d.orgName || "", note: d.note || "" };
+      this.state.publicInfo = { orgName: d.orgName || "", note: d.note || "", booking: d.booking || "open" };
       arrive();
     });
   }
@@ -653,6 +710,54 @@ export class FirestoreStore extends BaseStore {
       const next = mutate(before);
       tx.set(ref, { ...next, updatedAt: serverTimestamp() });
       const h = histOf(history, before, next);
+      if (h) tx.set(...this._histDoc(h));
+    });
+  }
+  now() { return this._fb.serverTimestamp(); }
+  _fsPatch(patch) {
+    const { deleteField } = this._fb;
+    return Object.fromEntries(Object.entries(patch || {}).map(([k, v]) => [k, isDel(v) ? deleteField() : v]));
+  }
+  // H4: one transaction on interviews_meta/state (each returned field replaced
+  // whole), plus the public booking flag and candidate patches, plus history.
+  async updateState(mutate, history, extra = {}) {
+    const { db, runTransaction } = this._fb;
+    const ref = this._doc("interviews_meta", "state");
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      const before = snap.exists() ? snap.data() : {};
+      const patch = mutate(before);
+      if (Object.keys(patch).length) tx.set(ref, this._fsPatch(patch), { mergeFields: Object.keys(patch) });
+      if (extra.public) tx.set(this._doc("interviews_public", "slots"), extra.public, { mergeFields: Object.keys(extra.public) });
+      Object.entries(extra.candidates || {}).forEach(([id, p]) => tx.update(this._doc("interviews_candidates", id), this._fsPatch(p)));
+      const h = histOf(history, before, patch);
+      if (h) tx.set(...this._histDoc(h));
+    });
+  }
+  async updateSchedule(mutate, history) {
+    const { db, runTransaction } = this._fb;
+    const ref = this._doc("interviews_meta", "schedule");
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      const before = snap.exists() ? snap.data() : null;
+      const next = mutate(before);
+      tx.set(ref, next);
+      const h = histOf(history, before, next);
+      if (h) tx.set(...this._histDoc(h));
+    });
+  }
+  async setCandidates(patches, history) {
+    await this._withHistory((b) => Object.entries(patches || {}).forEach(([id, p]) =>
+      b.update(this._doc("interviews_candidates", id), this._fsPatch(p))), history);
+  }
+  async txDoc(coll, id, mutate, history) {
+    const { db, runTransaction } = this._fb;
+    const ref = this._doc(coll, id);
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      const next = mutate(snap.exists() ? snap.data() : null);
+      if (next == null) tx.delete(ref); else tx.set(ref, next);
+      const h = histOf(history);
       if (h) tx.set(...this._histDoc(h));
     });
   }

@@ -269,6 +269,22 @@ it, so every leadership save would fail.
 - **Setup, Interview questions** edits the questions, the rating scale and the guidance.
   Once anyone has scored, questions can't be added, removed or reordered (only the wording
   fixed), because notes are filed under each question.
+- **Round stages (Setup).** Close screening, availability and scoring as each deadline
+  passes. A closed stage can't be changed with the ED password; the server refuses it, and
+  the page greys the buttons out ("Screening is closed. Your answers are saved."). Closing
+  screening saves the interview list as it is then. Closing availability tells applicants
+  booking is closed (they can still confirm or withdraw). Any stage can be reopened.
+  Revealing the ranking offers to close scoring in the same step.
+- **Deadlines (Setup)** sets the screening countdown everyone sees (no code edit), and the
+  availability and reply dates used in reminders.
+- **Screening rule (Setup)**: how many concerns take an applicant off the interview list
+  automatically (0 = decide each one yourself). On the Screen tab each applicant has
+  "Interview list: Auto / On / Off"; your On or Off always wins. Reviewers can raise a
+  **concern** (counts) or leave a **note** (never counts, with "I know this applicant
+  personally"); "Make this a note" moves a concern's words into a note.
+- **Lock the schedule (Panels)** freezes every panel; later availability changes don't move
+  an interview, and Needs attention names anyone no longer free or no longer on the
+  committee. You can still edit a locked panel, and unlock.
 - **Interview questions now live in the database.** The first Leadership sign-in on the Oct
   2026 release copies them out of the old locked `js/data.js` automatically; Change history
   then shows "Copied the interview questions". Notes stay attached to their question.

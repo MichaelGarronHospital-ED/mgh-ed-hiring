@@ -135,6 +135,61 @@ export const cases = {
     await closePage(p);
     return [...problems, ...log];
   },
+
+  // R3 (H4): a note still waiting out its pause when scoring closes is refused by
+  // the rules, says why, and nothing is written. A write an older page would
+  // make (no client-side guard) is refused too.
+  async stageRefusals() {
+    const problems = [], log = [];
+    const p = await freshPage({ log });
+    await asED(p, "Chen"); await tab(p, "score");
+    await p.select("select[aria-label='Candidate to score']", "c-1"); await sleep(200);
+    await p.type("#note-0", "typed just before the close");
+    await emu.setDocument("interviews_meta/state", { stages: { scoring: { closed: true } } });
+    await sleep(2500);
+    const toastText = await p.$eval("#toast", (e) => e.textContent);
+    problems.push(...ok(toastText.includes("Scoring is closed. This change was not saved."), `toast: ${toastText}`));
+    problems.push(...ok(!(await emu.getDocument("interviews_scores/Chen~c-1")), "a score was written after scoring closed"));
+    const hint = await p.$eval("#score .hint", (e) => e.textContent);
+    problems.push(...ok(hint === "Scoring is closed. Your answers are saved.", `hint: ${hint}`));
+    await emu.setDocument("interviews_meta/state", { stages: { screening: { closed: true } } });
+    await sleep(500);
+    const code = await p.evaluate(() => window.__edStore.setScreening("Chen", "c-2", { rating: 5 }).then(() => "saved", (e) => e.code));
+    problems.push(...ok(code === "permission-denied", `old-page screening write: ${code}`));
+    await closePage(p);
+    return [...problems, ...log];
+  },
+
+  // R3 (H4, review M6): closing availability writes booking "closed" to the
+  // public times document in the same commit; reopening writes "open".
+  async bookingFlag() {
+    const problems = [], log = [];
+    const p = await freshPage({ log });
+    await asLeadership(p);
+    await p.evaluate(() => document.querySelector("#setupBtn").click()); await sleep(150);
+    await p.evaluate(() => { const d = document.querySelector('details[data-sec="setStages"]'); d.open = true; });
+    await p.evaluate(() => [...document.querySelectorAll("#settings button")].find((b) => b.textContent.trim() === "Close availability").click());
+    await p.waitForSelector("#confirmWrap:not(.hidden)"); await p.click("#confirmYes");
+    const pub = await until(async () => { const d = await emu.getDocument("interviews_public/slots"); return d && d.booking === "closed" && d; });
+    problems.push(...ok(pub, "booking wasn't set to closed"));
+    const st = await emu.getDocument("interviews_meta/state");
+    problems.push(...ok(st && st.stages && st.stages.availability.closed === true && st.stages.availability.at.__ts, `state: ${JSON.stringify(st)}`));
+    await sleep(300);
+    // review: an applicant sees "Booking is closed" before any name step
+    const g = await freshPage({ log });
+    await signIn(g, "guestpw");
+    await g.waitForFunction(() => /Booking is closed/.test(document.querySelector("#candview").textContent), { timeout: 8000 }).catch(() => {});
+    const gt = await g.$eval("#candview", (e) => e.textContent);
+    problems.push(...ok(gt.includes("Booking is closed") && !(await g.$("#candName")), `applicant sees: ${gt.slice(0, 120)}`));
+    await closePage(g);
+    await p.evaluate(() => [...document.querySelectorAll("#settings button")].find((b) => b.textContent.trim() === "Reopen").click());
+    const pub2 = await until(async () => { const d = await emu.getDocument("interviews_public/slots"); return d && d.booking === "open" && d; });
+    problems.push(...ok(pub2, "booking wasn't set back to open"));
+    const h = (await history()).filter((e) => e.action.startsWith("stage."));
+    problems.push(...ok(h.length === 2, `${h.length} stage history entries`));
+    await closePage(p);
+    return [...problems, ...log];
+  },
 };
 
 // Extra cases from later releases register here (see the files they live in).

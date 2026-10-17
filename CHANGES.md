@@ -31,6 +31,51 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## R3: stages, deadlines, the schedule lock, leadership decides the list (Oct 16 2026)
+
+- **Round stages (H4).** `js/stages.js`; Setup, Round stages: Close screening, availability,
+  scoring (confirms as in the design), "closed Oct 3" with Reopen. Each close is one
+  transaction on `interviews_meta/state` with its history entry; closing availability also
+  writes `interviews_public/slots.booking = "closed"` in the same commit (reopen: "open");
+  closing screening freezes every applicant without a leadership decision as on or off
+  (`shortlistBy: "auto"`), reopening clears only those. ED pages: one grey line ("Screening is
+  closed. Your answers are saved.") and every input `disabled` + `aria-disabled`; a save the
+  rules refuse because a stage closed says so instead of "check your connection".
+- **Deadlines (H4).** Setup, Deadlines (screening, availability, applicants confirm by). The
+  countdown banner reads Setup first, `SCREENING_DEADLINE` in `config.js` only as a fallback,
+  and stops once screening is closed.
+- **Lock the schedule (H4).** Panels: "Lock the schedule" saves every panel to
+  `interviews_meta/schedule`; while locked panels come from there (re-validated), nothing is
+  computed, Edit edits the locked panel, and Needs attention names anyone no longer free then
+  or no longer on the committee. Unlock goes back to following availability; hand-made panels
+  from before the lock are kept.
+- **Ranking reveal** offers "Reveal and close scoring" (one transaction) or "Reveal only".
+- **Leadership decides the list (H7).** Reviewers: "Concern" (counts) and "Note" (never counts,
+  "I know this applicant personally", at most 2,000 characters). Collation: "N concerns",
+  notes under "Notes (don't count)" with a "knows them" tag, "Make this a note" on each concern
+  (one checked write; undoable), and "Interview list: Auto / On / Off" with pills only when
+  not the expected state (undoable). Setup, Screening rule: the threshold (0 = never
+  automatically). Shortlist CSV and the Excel screening sheet gain notes and "knows them".
+- `store`: `updateState`, `updateSchedule`, `setCandidates`, `txDoc` (a checked one-document
+  change, used by undo), `now()`, `DEL`.
+- `sim/check.mjs` restates the new list rule (leadership decision, then the Setup threshold).
+
+- **Review fix:** the applicant page reads `booking` from the public times document (it was
+  only read from R5 on), so once availability is closed an applicant sees "Booking is closed.
+  If you need to change your times, reply to our email." instead of every name being "not
+  found". Checked in the emulator (`bookingFlag`).
+- **Review fixes (deployability pass):** the applicant's name form is redrawn only when
+  booking changes, so a name being typed or filled in by the browser is never wiped by an
+  unrelated update (`sim/stages.mjs`). The screening-rule number box is 16px on phones (no
+  iOS zoom).
+
+Tests: `tests/stages.test.mjs` (the `isOnList` truth table, freeze and reopen plans);
+`sim/stages.mjs` (7 scenarios); emulator `stageRefusals` (a note pending when scoring closes
+is refused with the right message and nothing is written; an older page's screening write is
+refused) and `bookingFlag`. Checked: see the release commit message.
+
+---
+
 ## R2: committee editor and questions editor (Oct 16 2026)
 
 - **Setup, Committee and screeners (H6)** replaces the textarea: one row per person (name,

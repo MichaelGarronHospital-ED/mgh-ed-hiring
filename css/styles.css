@@ -679,6 +679,25 @@ td.adj { font-variant-numeric:tabular-nums; color:var(--ed-ink-2); }
 .qscale span { width:1.2em; color:var(--ed-ink-2); font-variant-numeric:tabular-nums; }
 .qscale input { flex:1; margin:0; }
 
+/* ---- stages, deadlines, the schedule lock, list decisions (H4, H7) ------------ */
+.stagerow { display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid var(--ed-line-soft); flex-wrap:wrap; }
+.stagerow:first-child { border-top:none; padding-top:2px; }
+.numin { width:4.5rem; display:inline-block; min-height:36px; margin:0 4px; text-align:center; font:inherit; color:var(--ed-ink);
+  border:1px solid transparent; border-radius:var(--ed-r-md); background:var(--ed-surface-2); padding:4px 8px; }
+.lockbar { display:flex; align-items:center; gap:8px; margin:0 0 6px; }
+.lockline { margin:0 0 6px; font-size:var(--ed-text-sm); color:var(--ed-ink-2); }
+.listseg { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px; }
+.listseg .seg button { min-height:32px; padding:0 12px; }
+.notesh { margin:8px 0 2px; }
+.reasons.notes li { color:var(--ed-ink-2); }
+.knows { display:flex; align-items:center; gap:8px; margin-top:6px; color:var(--ed-ink-2); }
+.knows input { width:auto; min-height:0; margin:0; }
+.flagbtn + .notebtn { margin-left:0; }
+.flagbtn.notebtn.on { background:var(--ed-purple-tint); color:var(--ed-purple); }
+.rrow button:disabled, .slotgrid button:disabled { opacity:.55; cursor:default; }
+.dlform input { min-width:0; }
+@media (max-width:640px) { .tform.dlform { grid-template-columns:1fr; } }
+
 /* ---- mobile field sizing: MUST STAY LAST ---------------------------------
    iOS Safari zooms the whole page whenever a focused field's text is smaller
    than 16px. Several fields here are set smaller for density (the times form,
@@ -693,5 +712,5 @@ td.adj { font-variant-numeric:tabular-nums; color:var(--ed-ink-2); }
   input, select, textarea,
   .overlay-box input, .overlay-box select,
   .tform input, .tform select,
-  .ofnote textarea, .ofdates input[type=date], .overall input[type=text] { font-size:16px; }
+  .ofnote textarea, .ofdates input[type=date], .overall input[type=text], .numin { font-size:16px; }
 }
