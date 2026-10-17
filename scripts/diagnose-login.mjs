@@ -7,7 +7,7 @@
 //  Leadership (admin@ed-hiring.app); this script tries all three and says which
 //  accepted it, or why none did. With --voting it also tries Motion Voting's
 //  two accounts (ed@ and leadership@ed-motion-voting.app), which Setup,
-//  "Passwords for all ED tools" keeps on the same values.
+//  the ED tools passwords page (passwords.html) keeps on the same values.
 //
 //  READ ONLY. It reads no documents and writes nothing; it only attempts
 //  sign-ins, with Firebase's REST sign-in call (nothing is kept). The web API
@@ -102,7 +102,7 @@ if (codes.some((c) => /OPERATION_NOT_ALLOWED|PASSWORD_LOGIN_DISABLED/.test(c))) 
   console.log("  www.gstatic.com, or they are throttled from earlier tries (wait 15 minutes).");
   if (VOTING) {
     const v = results.filter((x) => x.project === "voting" && x.role === role);
-    if (v.length && v[0].r === "refused") console.log(`  Motion Voting's ${role} account does NOT take it: the tools have drifted apart.\n  Fix it in Physician Hiring, Setup, Passwords ("The tools already have different passwords").`);
+    if (v.length && v[0].r === "refused") console.log(`  Motion Voting's ${role} account does NOT take it: the tools have drifted apart.\n  Fix it on the ED tools passwords page ("The tools already have different passwords").`);
   }
 } else if (codes.some((c) => c === "blocked")) {
   console.log("  Some accounts couldn't be tested from here (the key refused this computer), and none of the");

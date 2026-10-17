@@ -24,14 +24,7 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
-## Tests run on GitHub for every push (Oct 17 2026)
-
-- `.github/workflows/tests.yml` runs the rules and unit tests and the full round simulations on
-  every push and pull request. No page, rule or test changed.
-
----
-
-## R8: remove what R7 stopped using (Oct 16 2026)
+## R8: remove what R7 stopped using (built Oct 16, carries R7b; ships on or after Oct 24 2026)
 
 - **Deleted `js/data.js`**, the old encrypted copy of the interview questions. Since R7 the page
   reads the questions only from `interviews_meta/questions` and finds the role by signing in, so
@@ -55,6 +48,56 @@ the three role-account sign-ins (see the console steps in README).
   level 2 headings so no tab skips a level, and the tab row sits inside a navigation landmark.
 
 Tests: as R7, plus the new versions check. Checked: see the release commit message.
+
+---
+
+## R7b: the passwords get their own page (Oct 17 2026)
+
+Alvin's R7 phone check: every sign-in works, but he wants password changing on the ED
+dashboard, not inside Physician Hiring, and on his phone tapping Check "doesn't show anything"
+(Check wanted the new values too, and its message landed below the fold of a long dialog).
+
+- **NEW `passwords.html`, "ED tools passwords"** (`js/pwpage.js`): Leadership only, nothing
+  else on it. Same sign-in rules as Physician Hiring: the Leadership account is found by
+  signing in to it, the sign-in lasts this tab only, nothing typed is kept, 3 wrong tries on a
+  device mean a 30-second wait, and a sign-in that ends says why. Coming from Physician Hiring
+  in the same tab as Leadership needs no new sign-in. Same look (`css/ed-ui.css` unchanged) and
+  version pinning. The ED dashboard gets a tile for it; Physician Hiring's Setup card is now one
+  line linking to it (the dialog code left `app.js`).
+- **The order is now: tick, the CURRENT values and Check, then the new values.** Check needs
+  only the three current values (`validateCurrent` in `js/passwords.js`), proves every account
+  (and Physician Hiring's account of each unticked password), and lists them; only after it
+  passed are the new values asked for, with Change now. Every safety rule stays: all three
+  different, including from every value in use now; the unfinished-change record and "Finish the
+  change"; nothing over another page's unfinished change; the leave-page warning; the fixed
+  order with a fresh sign-in before each change.
+- **Messages where they can be seen:** every message sits at the top of its step, right under
+  the title (on an iPhone the keyboard covers the bottom half), is scrolled into view and is
+  announced (`role=alert`). On a touch screen the field to fix is marked (red outline,
+  `aria-invalid`) rather than focused, so the keyboard doesn't open over the message; a desktop
+  still focuses it. "Checking..." shows on the button and in the message line at once.
+- **Finishing an unfinished change runs Check too** (on the accounts not changed yet, and
+  Physician Hiring's account of each unticked password), says "Use the same new password as
+  the first time", and if an account that already changed refuses the new value typed, says
+  plainly that it differs from the first try and goes back to the new values (no loop of Try
+  again). The step with the current passwords says why all three are needed, and a new value
+  already in use gives one line instead of two.
+- Version `R7b` (a release between R7 and R8): `tests/versions.test.mjs` accepts a trailing
+  letter and also checks `passwords.html`.
+
+Tests: `tests/passwords.test.mjs` (`validateCurrent`, the skip list when finishing, a different
+value when finishing, one line for a value in use); `sim/passwords.mjs` rewritten for the page
+(5 cases, finishing with Check and with a different value); NEW `sim/passwords-webkit.mjs`
+(WebKit at iPhone 13 size: the Check message is in the top half of the screen and the field is
+marked, not focused; `playwright-core` 1.60.0, sim only); `sim/foundations.mjs` checks
+the Setup card's link.
+
+---
+
+## Tests run on GitHub for every push (Oct 17 2026)
+
+- `.github/workflows/tests.yml` runs the rules and unit tests and the full round simulations on
+  every push and pull request. No page, rule or test changed.
 
 ---
 

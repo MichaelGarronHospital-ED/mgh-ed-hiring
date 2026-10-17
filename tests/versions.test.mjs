@@ -8,7 +8,8 @@ import { readFileSync, readdirSync, existsSync } from "node:fs";
 const root = new URL("../", import.meta.url);
 const release = JSON.parse(readFileSync(new URL("version.json", root), "utf8")).release;
 
-test("version.json names a release", () => { assert.match(release, /^R\d+$/); });
+// a release is R<n>, or R<n> plus a letter for a release between two numbered ones (R7b)
+test("version.json names a release", () => { assert.match(release, /^R\d+[a-z]?$/); });
 
 test("every relative import in js/ carries ?v=<release>", () => {
   for (const f of readdirSync(new URL("js/", root)).filter((n) => n.endsWith(".js"))) {
@@ -30,6 +31,17 @@ test("index.html loads app.js with the same ?v=", () => {
 test("index.html loads both stylesheets with the same ?v=", () => {
   const html = readFileSync(new URL("index.html", root), "utf8");
   const links = [...html.matchAll(/<link rel="stylesheet" href="(css\/[^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(links.map((l) => l.split("?v=")[0]).sort(), ["css/ed-ui.css", "css/styles.css"]);
+  for (const l of links) assert.equal(l.split("?v=")[1], release, l);
+});
+
+// the passwords page (passwords.html, js/pwpage.js) is pinned the same way
+test("passwords.html loads its module and both stylesheets with the same ?v=", () => {
+  const html = readFileSync(new URL("passwords.html", root), "utf8");
+  const m = html.match(/<script type="module" src="js\/pwpage\.js\?v=([^"]+)"/);
+  assert.ok(m, "no versioned pwpage.js script tag");
+  assert.equal(m[1], release);
+  const links = [...html.matchAll(/<link rel="stylesheet" href="(css\/[^"]+)"/g)].map((x) => x[1]);
   assert.deepEqual(links.map((l) => l.split("?v=")[0]).sort(), ["css/ed-ui.css", "css/styles.css"]);
   for (const l of links) assert.equal(l.split("?v=")[1], release, l);
 });

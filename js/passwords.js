@@ -39,6 +39,16 @@ export const ACCOUNTS = Object.freeze([
 export const accountsFor = (roles) => ACCOUNTS.filter((a) => roles.includes(a.role));
 
 // ---- validation (before anything is sent) -------------------------------------
+// Step 2, before Check: the three current values (and any per-tool value typed
+// under "The tools already have different passwords"). Nothing new yet: Check
+// proves these first, and the new values are asked for only after it passed.
+export function validateCurrent(roles, current) {
+  const errors = [];
+  if (!roles.length) errors.push("Tick at least one password to change.");
+  for (const r of ROLES) if (!String(current[r] || "")) errors.push(`Type the current ${ROLE_WORD[r]} password.`);
+  return errors;
+}
+
 // current:   { leadership, ed, guest } (the values in use now)
 // next:      { <role>: { value, repeat } } for each ticked role
 // overrides: { <account key>: value } where a tool already has another value
@@ -57,14 +67,16 @@ export function validateNew(roles, current, next, overrides = {}) {
     // never a value any account accepts today: if the change stopped part way,
     // that account would let its holders in as the wrong role (review M1)
     else if (v && ROLES.some((o) => o !== r && v === String(current[o] || "")))
-      errors.push(`The new ${w} password is one of the passwords in use now. Pick one that isn't used anywhere.`);
+      errors.push(`The new ${w} password is already in use. The Leadership, ED and Guest passwords must all be different, and none can be one in use now.`);
     if (v && Object.values(overrides).some((x) => x && v === x))
-      errors.push(`The new ${w} password is one of the passwords in use now. Pick one that isn't used anywhere.`);
+      errors.push(`The new ${w} password is already in use. The Leadership, ED and Guest passwords must all be different, and none can be one in use now.`);
   }
   // the three in use afterwards must all differ (the sign-in page tells the
   // roles apart only by which account accepts the password)
   const after = Object.fromEntries(ROLES.map((r) => [r, roles.includes(r) ? String((next[r] || {}).value || "") : String(current[r] || "")]));
-  if (after.leadership && (after.leadership === after.ed || after.leadership === after.guest) || (after.ed && after.ed === after.guest))
+  // (one line, not two: when a new value is already in use, that line says it all)
+  if ((after.leadership && (after.leadership === after.ed || after.leadership === after.guest) || (after.ed && after.ed === after.guest))
+      && !errors.some((e) => e.includes("is already in use")))
     errors.push("The Leadership, ED and Guest passwords must all be different.");
   return [...new Set(errors)];
 }
@@ -81,14 +93,16 @@ const whyOf = (e) => (isThrottle(e) ? "throttled" : isRefusal(e) ? "refused" : i
 // what Check proves: every account of a ticked password, then the Physician
 // Hiring account of each unticked one, so "all different" rests on values an
 // account actually accepted (review M1)
-export const checkAccountsFor = (roles) => [...accountsFor(roles),
-  ...ACCOUNTS.filter((a) => a.project === "hiring" && !roles.includes(a.role))];
+// skip: accounts not to prove with the current value (when finishing an
+// unfinished change: those that may already have the new one)
+export const checkAccountsFor = (roles, skip = []) => [...accountsFor(roles),
+  ...ACCOUNTS.filter((a) => a.project === "hiring" && !roles.includes(a.role))].filter((a) => !skip.includes(a.key));
 
 // Step 3, "Check": prove every account with its current value; change nothing,
 // keep nothing. Stops at the first refusal. -> { ok, results: [{ key, ok, why }] }
-export async function preflight(auth, roles, current, overrides = {}) {
+export async function preflight(auth, roles, current, overrides = {}, skip = []) {
   const results = [];
-  for (const a of checkAccountsFor(roles)) {
+  for (const a of checkAccountsFor(roles, skip)) {
     let s = null;
     try { s = await auth.open(a, currentFor(a, current, overrides)); results.push({ key: a.key, label: a.label, ok: true }); }
     catch (e) {
@@ -107,7 +121,9 @@ export async function converge(auth, a, oldValue, newValue, state = "todo") {
   if (state === "done" || state === "inProgress") {
     const s = await tryOpen(newValue);
     if (s) { await auth.close(s); return "already"; }
-    if (state === "done") { const e = new Error(`${a.label} doesn't accept the new password.`); e.code = "mismatch"; throw e; }
+    // already changed, but not to this value: the new password typed now is
+    // not the one used the first time (code "not-first-value")
+    if (state === "done") { const e = new Error(`${a.label} doesn't accept the new password.`); e.code = "not-first-value"; e.account = a.key; throw e; }
   }
   // sign in seconds before the change; one retry if Firebase still asks for a
   // recent sign-in

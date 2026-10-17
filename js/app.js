@@ -8,9 +8,7 @@
 //  enforced by the Firestore rules (see config.js and firestore.rules).
 // ============================================================================
 import { firebaseConfig, ORG_NAME, CHAIR, COMMITTEE, SLOTS, ONEDRIVE,
-         LOCAL_CODES, PARTNERS, AUTH, SCREENING_DEADLINE } from "./config.js?v=R8";
-import { ROLES, ROLE_WORD, ACCOUNTS, accountsFor, validateNew, preflight, applyChange, verify, halfDoneText,
-         makeFirebaseAdapter } from "./passwords.js?v=R8";
+         LOCAL_CODES, AUTH, SCREENING_DEADLINE } from "./config.js?v=R8";
 import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R8";
 import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R8";
 import { autoPanels, buildPanel } from "./panels.js?v=R8";
@@ -21,7 +19,7 @@ import { effectiveSlots, slotLabel, slotTimeLabel, groupByDate, checkSlot, split
          newSlotId, isStructured, fmtDate } from "./slots.js?v=R8";
 import { normalizeCommittee, interviewers as interviewersOf, pickable as pickableOf, memberName, memberStatus,
          idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R8";
-import { normalizeQuestions, liveQuestions, idsWithNotes, scoringStarted, checkEdit, newQuestionId,
+import { fromLegacy, normalizeQuestions, liveQuestions, idsWithNotes, scoringStarted, checkEdit, newQuestionId,
          toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R8";
 import { entry as hEntry, newHistoryId, panelUndo, shortlistUndo, screeningUndo, canUndo, undoneIds, textFor, whoFor, whenFor,
          hashOf, toDate } from "./history.js?v=R8";
@@ -2366,231 +2364,11 @@ async function applyRestore(plan, backup, label) {
 }
 
 // ------------------------------------- Setup → Passwords for all ED tools (H3)
-// The logic (order, sign in just before each change, converge) is in
-// js/passwords.js; this is the card and the dialog. Values typed here live only
-// in this dialog's closure and are wiped when it closes: never storage,
-// Firestore, the console or history.
-const TOOL_OF = { voting: "Motion Voting", hiring: "Physician Hiring" };
+// The change itself has its own page (passwords.html, js/pwpage.js), which the
+// ED dashboard also links to; this card only points there.
 function passwordsBody() {
-  // R7: the card waits until the questions live in the database, so nothing
-  // the page needs can depend on a password (design 5.2).
-  if (!S.questions) return `<p class="note">This opens once the interview questions are saved in the database (Interview questions, above).</p>`;
-  if (!isConfigured() || !_fb) return `<p class="small muted">Passwords can only be changed on the live site.</p>`;
-  const pm = S.passwordsMeta || {};
-  const rows = ROLES.map((r) => {
-    const d = longDay(pm[r] && pm[r].changedAt);
-    return `<div class="hrow"><div class="grow small"><b>${ROLE_WORD[r]}</b>: ${d ? `last changed ${escapeHtml(d)}` : "Not changed in this app yet"}</div></div>`;
-  }).join("");
-  const pend = pm.pending;
-  // while a change is unfinished, the only way in is to finish it (a new
-  // change would lose the record of where the old one stopped)
-  return `${pend ? `<p class="small bad">A password change didn't finish${longDay(pend.startedAt) ? ` (started ${escapeHtml(longDay(pend.startedAt))})` : ""}.
-      <button class="linky" onclick="IV.changePasswords(true)">Open it to finish</button></p>` : ""}
-    <div class="hlist">${rows}</div>
-    <p class="small muted">These open Physician Hiring, Motion Voting and the Patient Hub statistics page.</p>
-    ${pend ? "" : `<div class="row backup-actions"><button class="btn tinted small" onclick="IV.changePasswords(false)">Change a password</button></div>`}`;
-}
-function pwAdapter() {
-  const fb = _fb;
-  return makeFirebaseAdapter({ ...fb.authFns, ...fb.appFns },
-    { mainAuth: fb.auth, configs: { hiring: firebaseConfig, voting: PARTNERS.voting.firebaseConfig } });
-}
-const pwTools = (r) => [...new Set(ACCOUNTS.filter((a) => a.role === r).map((a) => TOOL_OF[a.project]))];
-const pwWords = (roles) => { const w = roles.map((r) => ROLE_WORD[r]); return w.length > 1 ? `${w.slice(0, -1).join(", ")} and ${w[w.length - 1]}` : w[0]; };
-const pwField = (id, label, auto) => `<label class="ed-label" for="${id}">${escapeHtml(label)}</label>
-  <div class="pwfield"><input id="${id}" type="password" autocomplete="${auto}" autocapitalize="off" spellcheck="false"/>
-  <button type="button" class="btn ghost small" onclick="IV.pwShow('${id}',this)" aria-label="Show ${escapeHtml(label)}">Show</button></div>`;
-
-async function changePasswords(resuming) {
-  if (!S || !S.questions || !isConfigured() || !_fb || ui.role !== "admin") return;
-  // an unfinished change is always finished first, whatever button was used
-  const pend = S.passwordsMeta && S.passwordsMeta.pending;
-  // everything typed lives here, and only for as long as the dialog is open
-  const v = { roles: pend ? ROLES.filter((r) => (pend.roles || []).includes(r)) : [], cur: {}, next: {}, overrides: {} };
-  const wipe = () => { v.cur = {}; v.next = {}; v.overrides = {}; };
-  const val = (id) => { const el = document.getElementById(id); return el ? el.value : ""; };
-  const msg = (t) => { const el = document.getElementById("pwErr"); if (el) el.innerHTML = t; };
-  const ad = pwAdapter();
-  const tick = (ok) => (ok ? `<span class="ok">ready</span>` : `<span class="bad">refused</span>`);
-
-  await flowDialog((ctl) => {
-    const step1 = () => ctl.step({ title: "Which password?", html: `
-      <p class="small">Tick the passwords to change.</p>
-      <div class="pwticks">${ROLES.map((r) => `<label class="pwtick"><input type="checkbox" value="${r}" ${v.roles.includes(r) ? "checked" : ""}/> ${ROLE_WORD[r]}</label>`).join("")}</div>
-      <p id="pwErr" class="small bad"></p>`,
-      buttons: [{ label: "Cancel", run: () => ctl.close(null) },
-        { label: "Next", kind: "filled", run: () => {
-          v.roles = ROLES.filter((r) => document.querySelector(`#flowBody .pwtick input[value="${r}"]`).checked);
-          if (!v.roles.length) { msg("Tick at least one password to change."); return; }
-          step2();
-        } }] });
-
-    const read = () => {
-      v.cur = Object.fromEntries(ROLES.map((r) => [r, val("pwCur_" + r)]));
-      v.next = Object.fromEntries(v.roles.map((r) => [r, { value: val("pwNew_" + r), repeat: val("pwRep_" + r) }]));
-      v.overrides = {};
-      for (const a of accountsFor(v.roles)) { const x = val("pwOv_" + a.key.replace(":", "_")); if (x) v.overrides[a.key] = x; }
-    };
-    const step2 = () => {
-      const warn = [];
-      if (v.roles.includes("leadership") || v.roles.includes("ed")) warn.push("Everyone signed in with the old password will be asked for the new one within about an hour, including phones signed in to Motion Voting. Don't do this on a voting day.");
-      if (v.roles.includes("guest")) warn.push("Applicants who have the old Guest password won't be able to sign in. Send them the new one.");
-      if (v.roles.includes("leadership")) warn.push("Patient Hub statistics follow this password automatically.");
-      ctl.step({ title: pend ? "Finish the password change" : "Type the passwords", html: `
-        ${pend ? `<p class="small">Type the current and new values again. Accounts already changed are only checked with the new value.</p>` : ""}
-        <div class="pwgroup">${ROLES.map((r) => pwField("pwCur_" + r, `Current ${ROLE_WORD[r]} password`, "off")).join("")}</div>
-        ${v.roles.map((r) => `<div class="pwgroup">${pwField("pwNew_" + r, `New ${ROLE_WORD[r]} password`, "new-password")}
-          ${pwField("pwRep_" + r, `Type the new ${ROLE_WORD[r]} password again`, "new-password")}</div>`).join("")}
-        <p class="small muted">At least 10 characters. Three or four words are easy to say and hard to guess. Don't reuse a password from another site.</p>
-        ${warn.map((w) => `<p class="small">${escapeHtml(w)}</p>`).join("")}
-        <details class="pwdrift"><summary class="small">The tools already have different passwords</summary>
-          <p class="small muted">Only if one account uses a different current value. Leave the rest blank.</p>
-          ${accountsFor(v.roles).map((a) => pwField("pwOv_" + a.key.replace(":", "_"), `Current password for ${a.label}`, "off")).join("")}
-        </details>
-        <p id="pwErr" class="small bad" role="alert"></p>`,
-        // finishing an unfinished change: its passwords are fixed, so no Back to the tick boxes
-        buttons: [pend ? { label: "Cancel", run: () => ctl.close(null) } : { label: "Back", run: () => { read(); step1(); } },
-          { label: pend ? "Finish the change" : "Check", kind: "filled", run: async (_c, btn) => {
-            read();
-            const errs = validateNew(v.roles, v.cur, v.next, v.overrides);
-            if (errs.length) { msg(errs.map(escapeHtml).join("<br>")); return; }
-            btn.disabled = true;
-            if (pend) { await change(pend); return; }
-            msg(""); btn.textContent = "Checking...";
-            await check();
-          } }] });
-    };
-
-    // Step 3: prove every account with its current value. Changes nothing.
-    const check = async () => {
-      ctl.step({ title: "Checking", html: `<p class="small">Signing in to each account with its current password. Nothing is changed.</p>` });
-      let r;
-      try { r = await preflight(ad, v.roles, v.cur, v.overrides); }
-      catch (e) { r = { ok: false, results: [{ ok: false, why: "error", label: "" }] }; }
-      const list = r.results.map((x) => `<li>${escapeHtml(x.label)}: ${tick(x.ok)}</li>`).join("");
-      if (!r.ok) {
-        const bad = r.results[r.results.length - 1];
-        const a = ACCOUNTS.find((x) => x.key === bad.key);
-        const text = bad.why === "throttled" ? "Firebase has paused sign-ins from this device for about 15 minutes. Nothing was changed. Wait, then try once."
-          : bad.why === "disabled" ? `${a.label} is switched off in Firebase, so nothing was changed. The department account can switch it back on in the Firebase console (Authentication, Users).`
-          : bad.why === "refused" ? `${TOOL_OF[a.project]}'s ${ROLE_WORD[a.role]} account didn't accept the current ${ROLE_WORD[a.role]} password, so nothing was changed. The tools may already have different ${ROLE_WORD[a.role]} passwords; open "The tools already have different passwords". If nobody knows the current password for this account, it can only be reset in the Firebase console by the department account.`
-          : "Couldn't reach the sign-in service, so nothing was changed. Check the connection and try again.";
-        ctl.step({ title: "Nothing was changed", html: `<ul class="pwlist">${list}</ul><p class="small">${escapeHtml(text)}</p>`,
-          buttons: [{ label: "Close", run: () => ctl.close(null) }, { label: "Back", kind: "filled", run: () => step2() }] });
-        return;
-      }
-      ctl.step({ title: "Ready to change", html: `<ul class="pwlist">${list}</ul>
-        <p class="small">Every account accepted its current password. Change now changes them one by one; it takes a few seconds. Keep this page open until it says Done.</p>`,
-        buttons: [{ label: "Cancel", run: () => ctl.close(null) }, { label: "Change now", kind: "danger", run: () => change(null) }] });
-    };
-
-    // Step 4: change, in the fixed order, each account signed in just before.
-    const change = async (progress) => {
-      const accts = accountsFor(v.roles);
-      const state = Object.fromEntries(accts.map((a) => [a.key, (progress && (progress.done || []).includes(a.key)) ? "done" : "waiting"]));
-      const paint = () => ctl.step({ title: "Changing", html: `<ul class="pwlist">${accts.map((a) => `<li>${escapeHtml(a.label)}: ${
-        state[a.key] === "done" ? `<span class="ok">changed</span>` : state[a.key] === "now" ? "changing..." : `<span class="muted">waiting</span>`}</li>`).join("")}</ul>
-        <p class="small">Keep this page open.</p>` });
-      paint();
-      // closing or reloading the page now would leave the tools half changed
-      const leaving = (e) => { e.preventDefault(); e.returnValue = ""; };
-      window.addEventListener("beforeunload", leaving);
-      try { await changeSteps(progress, accts, state, paint); }
-      finally { window.removeEventListener("beforeunload", leaving); }
-    };
-    const changeSteps = async (progress, accts, state, paint) => {
-      let startedAt = null;
-      try {
-        await store.updatePasswords((d) => {
-          // another page may have started a change meanwhile: never overwrite its
-          // record with a change of other passwords (review)
-          if (d && d.pending && JSON.stringify(d.pending.roles) !== JSON.stringify(v.roles))
-            throw Object.assign(new Error("Finish the unfinished change first."), { code: "pending-other" });
-          const keep = d && d.pending ? d.pending : null;
-          startedAt = keep ? keep.startedAt : store.now();
-          return { ...(d || {}), pending: { roles: v.roles, startedAt, done: keep ? keep.done || [] : [], inProgress: keep ? keep.inProgress || null : null } };
-        });
-      } catch (e) {
-        if (e && e.code === "pending-other") {
-          ctl.step({ title: "Nothing was changed", html: `<p class="small">Another page started changing other passwords and hasn't finished. Finish the unfinished change first (Setup, Passwords for all ED tools, "Open it to finish").</p>`,
-            buttons: [{ label: "Close", kind: "filled", run: () => ctl.close(null) }] });
-          return;
-        }
-        return failed({ done: [], failedAt: accts[0].key, error: e }, "save");
-      }
-      const record = async (p) => {
-        for (const a of accts) state[a.key] = p.done.includes(a.key) ? "done" : p.inProgress === a.key ? "now" : "waiting";
-        paint();
-        await store.updatePasswords((d) => ({ ...(d || {}), pending: { roles: v.roles, startedAt: (d && d.pending && d.pending.startedAt) || startedAt, done: p.done, inProgress: p.inProgress } }));
-      };
-      const r = await applyChange(ad, v.roles, v.cur, v.next, { overrides: v.overrides, progress: progress || {}, record });
-      if (r.failedAt) return failed(r);
-      // verify with the new values, in fresh memory-only helpers
-      ctl.step({ title: "Checking the new passwords", html: `<p class="small">Signing in to each account with its new password.</p>` });
-      const bad = await verify(ad, v.roles, v.next);
-      if (bad.length) {
-        // not confirmed is not the same as wrong: Try again checks those
-        // accounts with the new value first, and a lost connection or a pause
-        // is reported as that
-        const keys = bad.map((b) => b.key);
-        const why = bad.find((b) => b.why !== "refused") || bad[0];
-        const doneNow = r.done.filter((k) => !keys.includes(k));
-        // kept in the record too, so a visit after the page closed checks them first
-        try { await store.updatePasswords((d) => ({ ...(d || {}), pending: { ...((d && d.pending) || { roles: v.roles }), done: doneNow, inProgress: null, unsure: keys } })); }
-        catch { /* the dialog still has it */ }
-        return failed({ done: doneNow, failedAt: keys[0], unsure: keys,
-          error: Object.assign(new Error("verify"), { code: why.why === "refused" ? "mismatch" : why.code || why.why }) });
-      }
-      try {
-        const now = store.now();
-        await store.updatePasswords((d) => ({ ...(d || {}), ...Object.fromEntries(v.roles.map((x) => [x, { changedAt: now }])), pending: null }),
-          hEntry("passwords.change", `Changed the ${pwWords(v.roles)} password${v.roles.length > 1 ? "s" : ""}`, { by: byWho() }));
-      } catch { /* the change itself is done; the dates are only a note */ }
-      done();
-    };
-
-    const failed = (r, where) => {
-      const lines = halfDoneText(v.roles, r.done);
-      const code = String((r.error && r.error.code) || "");
-      const acct = ACCOUNTS.find((a) => a.key === r.failedAt);
-      const why = where === "save" ? "Couldn't save the progress note, so nothing was changed. Check the connection and try again."
-        : /too-many-requests/.test(code) ? "Firebase has paused sign-ins from this device for about 15 minutes. Wait, then press Try again once."
-        : /user-disabled/.test(code) ? `${acct ? acct.label : "An account"} is switched off in Firebase. The department account can switch it back on in the Firebase console (Authentication, Users), then press Try again.`
-        : code === "mismatch" ? `${acct ? acct.label : "An account"} didn't take the new password. Press Try again.`
-        : code === "refused" ? "An account didn't accept its current password. If nobody knows the current password for this account, it can only be reset in the Firebase console by the department account."
-        : /network/.test(code) ? "The connection dropped." : "";
-      const body = lines.length
-        ? `${lines.join(" ")} Nothing is broken, but the tools now use different passwords. Try again to finish.`
-        : r.done.length ? "Try again to finish." : "Nothing was changed yet.";
-      ctl.step({ title: "Not finished", html: `<p class="small">${escapeHtml(body)}</p>${why ? `<p class="small">${escapeHtml(why)}</p>` : ""}`,
-        buttons: [{ label: "Close", run: () => ctl.close(null) },
-          { label: "Try again", kind: "filled", run: () => change({ done: r.done, inProgress: r.failedAt, unsure: r.unsure || [] }) }] });
-    };
-
-    const done = () => {
-      const who = ui.member ? mname(ui.member) : "ED leadership";
-      const words = pwWords(v.roles), many = v.roles.length > 1;
-      const note = `The ${words} password${many ? "s" : ""} for the ED tools changed today. Ask ${who} for the new one${many ? "s" : ""}.`;
-      const works = v.roles.map((r) => {
-        const t = pwTools(r); if (r === "leadership") t.push("the Patient Hub statistics page");
-        return `The new ${ROLE_WORD[r]} password works in ${t.length > 1 ? `${t.slice(0, -1).join(", ")} and ${t[t.length - 1]}` : t[0]}.`;
-      });
-      wipe();
-      ctl.step({ title: "Done", html: `${works.map((w) => `<p class="small">${escapeHtml(w)}</p>`).join("")}
-        <p class="small"><b>Next: tell people in person or by phone. Never email a password.</b></p>
-        <label class="ed-label" for="pwNote">A message without the password</label>
-        <textarea id="pwNote" rows="3" readonly>${escapeHtml(note)}</textarea>`,
-        buttons: [{ label: "Copy the message", run: async (_c, btn) => {
-          const t = document.getElementById("pwNote");
-          try { await navigator.clipboard.writeText(note); btn.textContent = "Copied"; }
-          catch { t.focus(); t.select(); btn.textContent = "Selected: copy it"; }
-        } }, { label: "Close", kind: "filled", run: () => ctl.close(null) }] });
-    };
-
-    if (pend) step2(); else step1();
-  }, { sticky: true, onClose: wipe });
-  wipe();
-  rerenderSettings();
+  return `<p class="small" style="margin-top:0">The Leadership, ED and Guest passwords are changed on their own page:
+    <a href="passwords.html">ED tools passwords</a>.</p>`;
 }
 
 // ------------------------------------------------ Setup → Change history (H12)
@@ -3050,8 +2828,6 @@ function track(promise) { pendingWrites++; return Promise.resolve(promise).final
 const unconfirmed = () => pendingWrites > 0 || Object.keys(inflight).length > 0;
 window.IV = {
   mToggle: (i) => { ui.mOpen = ui.mOpen || {}; ui.mOpen[i] = !ui.mOpen[i]; rerenderSettings(); },
-  changePasswords: (resuming) => changePasswords(!!resuming),
-  pwShow: (id, btn) => { const el = document.getElementById(id); if (!el) return; const show = el.type === "password"; el.type = show ? "text" : "password"; btn.textContent = show ? "Hide" : "Show"; },
   toggleFlag: (id) => { if (!isOpen("screening")) return; const cur = (S.screening[key(ui.member, id)] || {}).flag; saved(store.setScreening(ui.member, id, { flag: !cur, reason: cur ? "" : (S.screening[key(ui.member, id)] || {}).reason || "" }), "screening"); },
   toggleNote: (id) => { ui.noteOpen = ui.noteOpen || {}; ui.noteOpen[id] = !ui.noteOpen[id]; renderScreen(); wireSections(); },
   saveNote: (id, btn) => withBusy(btn, async () => {
