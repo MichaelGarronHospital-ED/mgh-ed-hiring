@@ -24,7 +24,10 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
-## R8: remove what R7 stopped using (built Oct 16, carries R7b; ships on or after Oct 24 2026)
+## R8: remove what R7 stopped using (built Oct 16, carries R7c; ships on or after Oct 24 2026)
+
+- **Contains R7c** (`main` merged in, Oct 17): roles by uid, rules v3, and R7c's two-email
+  sign-in (`js/signin.js`), unchanged, so R8 works before, during and after the email switch.
 
 - **Deleted `js/data.js`**, the old encrypted copy of the interview questions. Since R7 the page
   reads the questions only from `interviews_meta/questions` and finds the role by signing in, so
@@ -48,6 +51,69 @@ the three role-account sign-ins (see the console steps in README).
   level 2 headings so no tab skips a level, and the tab row sits inside a navigation landmark.
 
 Tests: as R7, plus the new versions check. Checked: see the release commit message.
+
+---
+
+## R7c: roles known by uid, ahead of the account emails moving to .invalid (Oct 17 2026)
+
+Phase A of the passwords design. The account emails (`admin@ed-hiring.app` and so on) are on a
+domain nobody owns, so a stranger could register it and reset a password; they move to
+`@mgh-ed-hiring.invalid` addresses that can never be registered. For that to break nothing, a
+role must be known by its account's uid, which never changes, and not by its email.
+
+- **Rules v3** (`firestore.rules`): `isAdmin`, `isCommittee` and `isApplicant` check the account's
+  pinned uid and a password sign-in (`signedIn(uid)`), never `token.email`. Everything else is
+  unchanged. Header: the accounts by uid and email, "never delete a role account". Published
+  separately, before this page (deploy step A3), with a tag `rules-v3-<date>`.
+- **Pages by uid** (`js/config.js` `AUTH.uids`, `PARTNERS.voting.uids`): the hiring page's resume
+  (`roleOfUser`), the passwords page's resume and sign-in, and the passwords flow's own account
+  all compare uids; a sign-in that lands on another uid than the role account's counts as a
+  refusal. The flow re-authenticates the page's account with the email it has NOW.
+- **Sign-in across the switch (review):** every sign-in (the gate, `#apply`, the passwords page,
+  and the passwords flow's helper sign-ins for the hiring AND Motion Voting accounts) tries the
+  email kind that last worked on this browser (only "old" or "new" is kept, `ed_iv_emailkind` and
+  `ed_iv_emailkind_voting`; never a password), else the old email; on a wrong-password or
+  no-such-account answer it tries the other email once; only the pinned uid is accepted
+  (`js/signin.js`, `config.js` `newEmails`). So the right password works before `--apply`, after
+  it (on this page, an open one or a cached one) and after `--undo`, with no page change in the
+  window. A wrong password still counts as ONE try toward the 30-second wait (it costs up to six
+  refused sign-ins on the gate: three roles, two emails).
+- The signed-out message is now "You were signed out. Please sign in again." (both pages).
+- Scripts: `diagnose-login.mjs` and `report-data.mjs` check the returned uid. README (a uid table,
+  "never delete", the lost-password steps no longer delete and re-add an account), DESIGN, CLAUDE.
+- Version `R7c`.
+
+**Precondition for every later hiring branch:** every hiring branch must contain R7c (merge
+`main` into it first). R7d (new emails only, dropping the old emails and the fallback) ships
+after the email switch, rebased on whatever is live then. A branch made before R7c (`hiring-r8`
+at 689b3f8 was one) signs in with the old emails only and decides roles by email: merged after
+the email switch, it would lock everyone out.
+
+Tests: NEW `tests/signin.test.mjs` (before `--apply`, after it, after `--undo`, a wrong password,
+another uid behind an email, a network error stops at once); `tests/passwords.test.mjs` (the
+flow's helpers fall back for hiring and voting accounts); `sim/auth.mjs` (after `--apply` an R7c
+page signs in and the next sign-in needs no refusal; after `--undo` too; three wrong passwords
+still mean one wait); emulator `signInAcrossTheSwitch` (each role after `--apply` with an R7c
+page, the same browser after `--undo`, a squatter on a freed old email refused);
+`sim/passwords.mjs` `afterApplyPageAndFlowWork` (the passwords page and a whole ED change after
+`--apply`). NEW `tests/rules-uids.test.mjs` (for each role: right uid with the old email allowed, with
+the new `.invalid` email allowed, right email with another uid refused, anonymous and custom-token
+sign-ins refused; no role's uid acts as another); NEW `tests/uids.test.mjs` (config uids equal
+the rules', no email role check in `js/`); every rules test now uses the pinned uids with a
+password sign-in (`tests/helpers/identities.mjs`). Sims: emulator accounts are made with the
+pinned uids (`sim/emu.mjs`); NEW emulator case `emailChangeKeepsSessions`: (1) signed in as
+each role, the email changed by the admin API, reload: in as the same role or at the sign-in box,
+never another role; (2) an old cached page (old emails in its config) with the account signed in
+under its new email: reload, still in, same role (a page deciding by email fails this); (3) a
+fresh sign-in across the switch is `signInAcrossTheSwitch`. `sim/auth.mjs` (a stub that keeps the
+session: signed in, email changed, reload, still in) and `sim/passwords.mjs` (the passwords page,
+as (2)).
+
+**Finding for the window:** the Auth emulator, like Firebase, ends sessions on an email change:
+an ID token issued a second or more before the change is refused (`TOKEN_EXPIRED`) and the SDK
+clears the user on the next load, though the refresh token itself still works. So expect every
+signed-in device to be asked for its password once after `migrate-emails.py --apply`, as the
+design already plans (A.3 point 4, A.5.1).
 
 ---
 

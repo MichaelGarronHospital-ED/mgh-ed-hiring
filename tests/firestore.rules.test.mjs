@@ -20,6 +20,7 @@ import {
   initializeTestEnvironment, assertSucceeds, assertFails,
 } from "@firebase/rules-unit-testing";
 import { doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, deleteField } from "firebase/firestore";
+import { UID, pw } from "./helpers/identities.mjs";
 
 let testEnv;
 
@@ -37,12 +38,13 @@ after(async () => { if (testEnv) await testEnv.cleanup(); });
 beforeEach(async () => { await testEnv.clearFirestore(); });
 
 // ---- the four accounts the rules know about, plus two it should not -------
-// These emails must match AUTH in js/config.js and the constants in
-// firestore.rules. If someone renames a role account in one place and not the
-// other, these tests fail — which is the point.
-const admin     = () => testEnv.authenticatedContext("u-admin",     { email: "admin@ed-hiring.app" }).firestore();
-const committee = () => testEnv.authenticatedContext("u-committee", { email: "committee@ed-hiring.app" }).firestore();
-const applicant = () => testEnv.authenticatedContext("u-applicant", { email: "applicant@ed-hiring.app" }).firestore();
+// Since rules v3 (R7c) a role is its account's UID with a password sign-in
+// (tests/helpers/identities.mjs, from AUTH.uids in js/config.js); the email is
+// still the one the account has today. tests/uids.test.mjs keeps the uids in
+// the rules and in the config equal.
+const admin     = () => testEnv.authenticatedContext(UID.admin, pw("admin@ed-hiring.app")).firestore();
+const committee = () => testEnv.authenticatedContext(UID.committee, pw("committee@ed-hiring.app")).firestore();
+const applicant = () => testEnv.authenticatedContext(UID.applicant, pw("applicant@ed-hiring.app")).firestore();
 // someone with a valid Firebase account that isn't one of the three roles
 const stranger  = () => testEnv.authenticatedContext("u-stranger",  { email: "someone@example.com" }).firestore();
 // an Anonymous sign-in: authenticated, but the token carries no email at all.

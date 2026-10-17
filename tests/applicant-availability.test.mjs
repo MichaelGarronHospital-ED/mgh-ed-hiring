@@ -19,11 +19,12 @@ import assert from "node:assert/strict";
 import { initializeTestEnvironment, assertFails, assertSucceeds } from "@firebase/rules-unit-testing";
 import { collection, doc, getDoc, setDoc, updateDoc, deleteField, deleteDoc } from "firebase/firestore";
 import { FirestoreStore } from "../js/store.js";
+import { UID, pw } from "./helpers/identities.mjs";
 
 let env;
-const applicantDb = () => env.authenticatedContext("u-applicant", { email: "applicant@ed-hiring.app" }).firestore();
-const adminDb = () => env.authenticatedContext("u-admin", { email: "admin@ed-hiring.app" }).firestore();
-const committeeDb = () => env.authenticatedContext("u-committee", { email: "committee@ed-hiring.app" }).firestore();
+const applicantDb = () => env.authenticatedContext(UID.applicant, pw("applicant@ed-hiring.app")).firestore();
+const adminDb = () => env.authenticatedContext(UID.admin, pw("admin@ed-hiring.app")).firestore();
+const committeeDb = () => env.authenticatedContext(UID.committee, pw("committee@ed-hiring.app")).firestore();
 const AV = "interviews_availCand/ashcombe";
 
 // The store as the applicant page builds it, minus the listeners: applicants

@@ -33,7 +33,7 @@ export const LOCAL_CODES = { admin: "", committee: "", candidate: "" };
 
 // ---- 2c. The other tools that share these passwords (H3) -----------------
 // Motion Voting's public web config and its two role accounts (public values,
-// already in the voting repo). Setup, Passwords changes them together with ours.
+// already in the voting repo). The ED tools passwords page changes them with ours.
 export const PARTNERS = {
   voting: {
     firebaseConfig: {
@@ -46,21 +46,32 @@ export const PARTNERS = {
     },
     leadershipEmail: "leadership@ed-motion-voting.app",
     edEmail: "ed@ed-motion-voting.app",
+    // the .invalid emails these accounts move to (Phase A); the pages try both
+    // until R7d (js/signin.js)
+    newEmails: { leadership: "leadership@mgh-ed-voting.invalid", ed: "ed@mgh-ed-voting.invalid" },
+    // the same accounts by uid (Motion Voting's rules know them by these)
+    uids: { leadership: "3eigCLaK0RQ5PmVhxfDgI0qoYzQ2", ed: "CXyo7yciWpc78J1TQYRzrPpu77C3" },
   },
 };
 
 // ---- 2b. Auth / security model -------------------------------------------
-// Firebase Auth email/password "role accounts" (the only model since R7). Rules branch on
-//                request.auth.token.email so applicants CANNOT read committee
-//                data and reviewers CANNOT read scores/ranking. Activate this
-//                only AFTER creating the three accounts + publishing the hardened
-//                firestore.rules (exact steps in README → "Real access control").
-// The role EMAILS are public identifiers (safe here). The account PASSWORDS are
-// the shared secrets and live only in the Firebase console — never in this file.
+// Firebase Auth email/password "role accounts" (the only model since R7).
+// A ROLE IS KNOWN BY ITS ACCOUNT'S UID, NEVER BY ITS EMAIL (R7c): the rules and
+// every page check `uid` (the same values as firestore.rules; tests/uids.test.mjs
+// keeps them equal). The emails are used only to sign in, so they can move to
+// .invalid addresses without the rules or a signed-in page noticing; until R7d
+// a sign-in tries both (js/signin.js).
+// Never delete a role account: a new one has a new uid, refused until the rules
+// and these uids are updated. Uids and emails are public identifiers; the
+// PASSWORDS are the shared secrets and live only in Firebase, never in a file.
 export const AUTH = {
   adminEmail: "admin@ed-hiring.app",
   committeeEmail: "committee@ed-hiring.app",
   candidateEmail: "applicant@ed-hiring.app",
+  // the .invalid emails these accounts move to (Phase A). Until R7d every
+  // sign-in tries the kind that last worked here, then the other (js/signin.js)
+  newEmails: { admin: "admin@mgh-ed-hiring.invalid", committee: "committee@mgh-ed-hiring.invalid", candidate: "applicant@mgh-ed-hiring.invalid" },
+  uids: { admin: "ULgtfRrkAVPS2aT69Tc4CjMqbsx1", committee: "36FXvbR8ExgU7p4cmwuCNfkgFgD2", candidate: "jvmQYhgYlRMf3f2J3uw8XXos8yD3" },
 };
 
 // ---- 3. Branding ----------------------------------------------------------
