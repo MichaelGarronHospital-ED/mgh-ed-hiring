@@ -337,6 +337,9 @@ function syncAllowedNow(fromTimer) {
   ui._syncingNames = true;
   g.last = { roster, list: want.join("|") };
   store.setAllowedNames(want)
+    // the list was ours when the write landed: a different list seen later was
+    // written by someone else, even if no snapshot showed ours in between
+    .then(() => { g.lastSeen = g.last.list; })
     .catch((e) => console.warn("allowed-name sync failed:", e && e.code))
     .finally(() => { ui._syncingNames = false; syncAllowedNames(); });
 }

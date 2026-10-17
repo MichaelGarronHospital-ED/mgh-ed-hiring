@@ -11,7 +11,7 @@ const src = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
 const body = src.slice(src.indexOf("const ALLOWED_WINDOW_MS"), src.indexOf("async function loadFirestore"));
 const lastKey = (n) => String(n).trim().split(/\s+/).pop().toLowerCase();
 
-function harness(cands, { autoRelease = true } = {}) {
+function harness(cands, { autoRelease = true, afterRelease = null } = {}) {
   let now = 0; const timers = []; const writes = [];
   const st = (fn, ms = 0) => { const t = { at: now + ms, fn }; timers.push(t); return t; };
   const ct = (t) => { const i = timers.indexOf(t); if (i >= 0) timers.splice(i, 1); };
@@ -28,7 +28,7 @@ function harness(cands, { autoRelease = true } = {}) {
       timers.sort((a, b) => a.at - b.at); const t = timers[0];
       if (!t || t.at > until) break;
       timers.shift(); now = t.at; t.fn(); await flush();
-      if (autoRelease && release) { const r = release; release = null; r(); await flush(); }
+      if (autoRelease && release) { const r = release; release = null; r(); await flush(); if (afterRelease) afterRelease(S); }
     }
     now = until;
   };
@@ -66,4 +66,12 @@ test("a roster edit made while a write is in flight is picked up once it settles
   assert.equal(h.writes.length, 1, "a second write started while one was in flight");
   await h.settle(); await h.run(h.now + 1000); await h.settle(); await h.run(h.now + 1000);
   assert.deepEqual(h.S.allowedNames, ["ashcombe", "kim"]);
+});
+
+test("a fight is counted even when the other tab's write lands before this tab looks again", async () => {
+  // the older tab answers every write of ours at once, before this tab's next look
+  const h = harness([{ id: "c1", name: "Dr Jane Kim" }], { afterRelease: (S) => { S.allowedNames = ["other"]; } });
+  for (let i = 0; i < 6; i++) { h.sync(); await h.run(h.now + 1000); }
+  assert.equal(h.ui._allowed.held, true, "the fight was never noticed");
+  assert.ok(h.writes.length <= 4, `${h.writes.length} writes`);
 });
