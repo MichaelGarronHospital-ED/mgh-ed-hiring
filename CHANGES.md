@@ -24,6 +24,13 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## Tests run on GitHub for every push (Oct 17 2026)
+
+- `.github/workflows/tests.yml` runs the rules and unit tests and the full round simulations on
+  every push and pull request. No page, rule or test changed.
+
+---
+
 ## R1: foundations (members by id, questions in the database, history, backup file) (Oct 16 2026)
 
 Needs rules v2 (R0) published first: every leadership save now writes a history entry,
