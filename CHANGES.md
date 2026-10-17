@@ -24,6 +24,13 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## Tests run on GitHub for every push (Oct 17 2026)
+
+- `.github/workflows/tests.yml` runs the rules and unit tests and the full round simulations on
+  every push and pull request. No page, rule or test changed.
+
+---
+
 ## R7: sign in without data.js, and change the passwords in Setup (Oct 16 2026)
 
 - **The gate finds the role by signing in (design 5.2).** `app.js` no longer imports
