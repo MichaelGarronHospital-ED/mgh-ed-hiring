@@ -24,6 +24,13 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## Tests run on GitHub for every push (Oct 17 2026)
+
+- `.github/workflows/tests.yml` runs the rules and unit tests and the full round simulations on
+  every push and pull request. No page, rule or test changed.
+
+---
+
 ## R8: remove what R7 stopped using (Oct 16 2026)
 
 - **Deleted `js/data.js`**, the old encrypted copy of the interview questions. Since R7 the page

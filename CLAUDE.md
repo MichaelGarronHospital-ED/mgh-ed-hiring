@@ -39,6 +39,9 @@ Full design and reference data (committee, candidates, questions, rules) live in
   interview dates come from `daysAhead()` in `sim/drive.mjs`: never hard-code a
   date, because once it passes the tool adds a "date is in the past" dialog and the
   time-edit scenarios fail (that, not macOS, was the old 13/15).
+- **GitHub Actions:** `.github/workflows/tests.yml` runs `tests/` (emulator) and the full
+  `sim/` `npm test` (the runner's Google Chrome) on every push to any branch and every pull
+  request. Free on a public repo. Actions are pinned by commit hash; runner image `ubuntu-24.04`.
 - **Deploy the site:** push to `main`; GitHub Pages is live about a minute later.
   Firestore rules are separate: see README (run `scripts/sync-allowed.mjs --apply` first).
 - **Accounts:** repo owned by the `MichaelGarronHospital-ED` org (department login
