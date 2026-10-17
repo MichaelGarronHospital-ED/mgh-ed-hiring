@@ -4,7 +4,7 @@
 // must still change all five accounts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validateNew, preflight, applyChange, converge, verify, accountsFor, ACCOUNTS, halfDoneText, makeFirebaseAdapter } from "../js/passwords.js";
+import { validateNew, validateCurrent, preflight, applyChange, converge, verify, accountsFor, ACCOUNTS, halfDoneText, makeFirebaseAdapter } from "../js/passwords.js";
 
 const CUR = { leadership: "lead-old-pass-1", ed: "ed-old-pass-22", guest: "guest-old-pass-3" };
 const NEXT = { leadership: { value: "lead-new-pass-1", repeat: "lead-new-pass-1" }, ed: { value: "ed-new-pass-22", repeat: "ed-new-pass-22" },
@@ -177,4 +177,13 @@ test("a check after the change that couldn't connect is not a mismatch; Try agai
   const again = await applyChange(auth, ["ed"], CUR, { ed: NEXT.ed }, { progress: { done: ["voting:ed"], unsure: ["hiring:committee"] } });
   assert.equal(again.failedAt, null, again.error && again.error.message);
   assert.equal(passwords["hiring:committee"], NEXT.ed.value);
+});
+
+// The page asks for the current values first (Check), and the new ones only
+// after Check passed (Alvin's phone check: Check showed nothing because it
+// wanted the new values too).
+test("Check needs only the current values", () => {
+  assert.deepEqual(validateCurrent(["ed"], CUR), []);
+  assert.deepEqual(validateCurrent(["ed"], { ...CUR, guest: "" }), ["Type the current Guest password."]);
+  assert.deepEqual(validateCurrent([], CUR), ["Tick at least one password to change."]);
 });

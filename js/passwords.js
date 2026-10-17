@@ -24,7 +24,7 @@
 //    auth.close(session)            -> void
 // ============================================================================
 
-import { AUTH, PARTNERS } from "./config.js?v=R7";
+import { AUTH, PARTNERS } from "./config.js?v=R7b";
 
 export const ROLES = Object.freeze(["leadership", "ed", "guest"]);
 export const ROLE_WORD = Object.freeze({ leadership: "Leadership", ed: "ED", guest: "Guest" });
@@ -39,6 +39,16 @@ export const ACCOUNTS = Object.freeze([
 export const accountsFor = (roles) => ACCOUNTS.filter((a) => roles.includes(a.role));
 
 // ---- validation (before anything is sent) -------------------------------------
+// Step 2, before Check: the three current values (and any per-tool value typed
+// under "The tools already have different passwords"). Nothing new yet: Check
+// proves these first, and the new values are asked for only after it passed.
+export function validateCurrent(roles, current) {
+  const errors = [];
+  if (!roles.length) errors.push("Tick at least one password to change.");
+  for (const r of ROLES) if (!String(current[r] || "")) errors.push(`Type the current ${ROLE_WORD[r]} password.`);
+  return errors;
+}
+
 // current:   { leadership, ed, guest } (the values in use now)
 // next:      { <role>: { value, repeat } } for each ticked role
 // overrides: { <account key>: value } where a tool already has another value

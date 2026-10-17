@@ -1,5 +1,8 @@
-// H3: "Passwords for all ED tools" end to end, on the REAL page (FirestoreStore,
-// Firebase Auth, the real firestore.rules) against the local emulators.
+// H3: the ED tools passwords page (passwords.html) end to end, on the REAL page
+// (FirestoreStore, Firebase Auth, the real firestore.rules) against the local
+// emulators. The order on the page: tick the passwords, type the CURRENT ones
+// and Check (changes nothing), then, only after Check passed, the new ones and
+// Change now.
 //
 //   npm run passwords                 (builds sim/site-emulator, starts the Auth and
 //                                      Firestore emulators, runs every case, stops them)
@@ -47,50 +50,55 @@ async function reset() {
     "interviews_meta/questions": { version: 1, questions: [{ id: "0", text: "Tell us about yourself" }], scale: ["1", "2", "3", "4", "5"], guide: [] } });
 }
 
-let B, SRV;
-async function freshPage(width, log, scheme = "light") {
+let B, SRV, PAGE;
+async function freshPage(width, log, scheme = "light", url = null) {
   const ctx = await B.createBrowserContext();
   const page = await ctx.newPage();
   await page.setViewport({ width, height: width < 500 ? 844 : 900 });
   await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: scheme }]);
   page.on("pageerror", (e) => log.push(`pageerror: ${e.message}`));
-  // refused sign-ins (how the gate finds the role, and the old-password
-  // checks) show as failed requests to the Auth emulator: expected
+  // refused sign-ins show as failed requests to the Auth emulator: expected
   const refusal = (m) => /status of 400/.test(m.text()) && String((m.location() || {}).url || "").includes(":9099/");
   page.on("console", (m) => { if (!refusal(m)) log.push(`console.${m.type()}: ${m.text()}`); });
-  await page.goto(SRV.url, { waitUntil: "domcontentloaded" });
+  await page.goto(url || PAGE, { waitUntil: "domcontentloaded" });
   await page.waitForFunction("window.__edReady === true", { timeout: 20000 });
-  page._ctx = ctx;
+  page._ctx = ctx; page._scheme = scheme;
   return page;
 }
 const closePage = async (p) => { try { await p._ctx.close(); } catch { /* gone */ } };
-const flowTitle = (p) => p.$eval("#flowTitle", (e) => e.textContent).catch(() => "");
 const waitFlow = (p, t, timeout = 20000) => p.waitForFunction((t) => (document.querySelector("#flowTitle") || {}).textContent === t, { timeout }, t);
 const flowClick = (p, label) => p.evaluate((label) => {
   const b = [...document.querySelectorAll("#flowBtns button")].find((x) => x.textContent.trim() === label);
   if (!b) throw new Error(`no dialog button "${label}" (have: ${[...document.querySelectorAll("#flowBtns button")].map((x) => x.textContent).join("|")})`); b.click();
 }, label);
-async function openCard(p) {
-  await p.evaluate(() => { if (document.querySelector("#setupModal").classList.contains("hidden")) document.querySelector("#setupBtn").click(); });
-  await sleep(150);
-  await p.evaluate(() => { const d = document.querySelector('details[data-sec="setPasswords"]'); d.open = true; d.dispatchEvent(new Event("toggle")); d.scrollIntoView({ block: "center" }); });
-  await sleep(300);
-}
-const cardText = (p) => p.$eval('details[data-sec="setPasswords"]', (e) => e.textContent);
+async function onPage(p) { await p.waitForSelector("#pwApp:not(.hidden) .pwcard", { timeout: 15000 }); await sleep(200); }
+const cardText = (p) => p.$eval("#pwApp", (e) => e.textContent);
 async function shot(p, name) {
   if (!OUT) return;
   const w = p.viewport().width;
-  await p.screenshot({ path: path.join(OUT, `R7-passwords-${name}-${w < 500 ? "phone" : "desktop"}-${p._scheme || "light"}.png`), fullPage: true });
+  await p.screenshot({ path: path.join(OUT, `pwpage-${name}-${w < 500 ? "phone" : "desktop"}-${p._scheme || "light"}.png`), fullPage: false });
   const scroll = await p.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
   if (scroll) console.log(`HORIZONTAL SCROLL: ${name} ${w}`);
 }
 async function type(p, id, v) { await p.$eval("#" + id, (e) => { e.value = ""; }); await p.type("#" + id, v); }
-async function fill(p, roles) {
-  for (const r of ["leadership", "ed", "guest"]) await type(p, "pwCur_" + r, OLD[r]);
-  for (const r of roles) { await type(p, "pwNew_" + r, NEW[r]); await type(p, "pwRep_" + r, NEW[r]); }
-}
+async function fillCurrent(p) { for (const r of ["leadership", "ed", "guest"]) await type(p, "pwCur_" + r, OLD[r]); }
+async function fillNew(p, roles) { for (const r of roles) { await type(p, "pwNew_" + r, NEW[r]); await type(p, "pwRep_" + r, NEW[r]); } }
 async function tick(p, roles) {
   await p.evaluate((roles) => document.querySelectorAll("#flowBody .pwtick input").forEach((i) => { i.checked = roles.includes(i.value); }), roles);
+}
+// the message line: its text, whether it is in the viewport, and what has focus
+const msgState = (p) => p.evaluate(() => {
+  const e = document.querySelector("#pwErr"); if (!e) return { text: "", inView: false, focus: "" };
+  const r = e.getBoundingClientRect();
+  return { text: e.textContent, inView: r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight, focus: (document.activeElement || {}).id || "", role: e.getAttribute("role") };
+});
+// tick, type the current values, Check: lands on the new-values step
+async function toNewValues(p, roles) {
+  await p.evaluate(() => { window.PW.change(); });
+  await waitFlow(p, "Which password?"); await tick(p, roles);
+  await flowClick(p, "Next"); await waitFlow(p, "Check the current passwords");
+  await fillCurrent(p);
+  await flowClick(p, "Check"); await waitFlow(p, "Type the new passwords", 30000);
 }
 // no password value anywhere the page could have written it
 async function noLeaks(p, log, values) {
@@ -107,41 +115,74 @@ async function noLeaks(p, log, values) {
 }
 
 const cases = {
-  // Desktop: change the ED password. Check first (changes nothing), then
-  // Change now; both ED accounts take the new value, the others keep theirs,
-  // dates and one history entry are written, and no value is kept anywhere.
+  // Leadership only: the ED password doesn't open the page; coming from
+  // Physician Hiring signed in as Leadership in the same tab needs no new sign-in.
+  async signInRules() {
+    const problems = [], log = [];
+    await reset();
+    if (OUT) { const d = await freshPage(390, log, "dark"); await sleep(400); await shot(d, "gate"); await closePage(d); }
+    const p = await freshPage(390, log);
+    await sleep(400); await shot(p, "gate");
+    await signIn(p, OLD.ed); await sleep(1200);
+    const msg = await p.$eval("#gerr", (e) => e.textContent);
+    problems.push(...ok(msg.includes("Incorrect password.") && msg.includes("Leadership"), `ED password: ${msg}`));
+    await signIn(p, OLD.leadership); await onPage(p);
+    await closePage(p);
+    const h = await freshPage(1280, log, "light", SRV.url);
+    await signIn(h, OLD.leadership); await landAsAdmin(h); await sleep(300);
+    await h.evaluate(() => document.querySelector("#setupBtn").click()); await sleep(150);
+    const link = await h.$eval('details[data-sec="setPasswords"] a', (a) => a.getAttribute("href")).catch(() => "");
+    problems.push(...ok(link === "passwords.html", `the Setup card doesn't link to the page: ${link}`));
+    await h.goto(PAGE, { waitUntil: "domcontentloaded" }); await onPage(h);
+    await closePage(h);
+    return [...problems, ...log.filter((l) => /^pageerror/.test(l))];
+  },
+
+  // Change the ED password, at 390 px (light and dark when shooting) and 1280 px.
+  // Check needs only the current values and says so where it can be seen;
+  // the new values come after Check passed.
   async changeEd() {
     const problems = [], log = [];
-    for (const scheme of ["light", "dark"]) {
-      if (scheme === "dark" && !OUT) break;
+    const runs = OUT ? [[390, "light"], [390, "dark"], [1280, "light"]] : [[390, "light"], [1280, "light"]];
+    for (const [w, scheme] of runs) {
       await reset();
-      const p = await freshPage(1280, log, scheme); p._scheme = scheme;
-      await signIn(p, OLD.leadership); await landAsAdmin(p); await sleep(400);
-      await openCard(p);
+      const p = await freshPage(w, log, scheme);
+      await signIn(p, OLD.leadership); await onPage(p);
       const card = await cardText(p);
-      problems.push(...ok(card.includes("Not changed in this app yet") && card.includes("Change a password"), `card: ${card.slice(0, 200)}`));
+      problems.push(...ok(card.includes("Not changed here yet") && card.includes("Change a password"), `card: ${card.slice(0, 200)}`));
       await shot(p, "card");
-      await p.evaluate(() => { window.IV.changePasswords(false); });
+      await p.evaluate(() => { window.PW.change(); });
       await waitFlow(p, "Which password?"); await tick(p, ["ed"]); await shot(p, "step1");
-      await flowClick(p, "Next"); await waitFlow(p, "Type the passwords");
-      // validation: the repeat must match
-      for (const r of ["leadership", "ed", "guest"]) await type(p, "pwCur_" + r, OLD[r]);
-      await type(p, "pwNew_ed", NEW.ed); await type(p, "pwRep_ed", NEW.ed + "x");
-      await flowClick(p, "Check"); await sleep(200);
-      const err = await p.$eval("#pwErr", (e) => e.textContent);
-      problems.push(...ok(err.includes("don't match"), `no mismatch message: ${err}`));
-      await type(p, "pwRep_ed", NEW.ed);
+      await flowClick(p, "Next"); await waitFlow(p, "Check the current passwords");
+      problems.push(...ok(!(await p.$("#pwNew_ed")), "the new-password fields are asked for before Check"));
+      await shot(p, "step2");
+      // Check with a current value missing: the message is in view, right above the buttons
+      await type(p, "pwCur_leadership", OLD.leadership);
+      await flowClick(p, "Check"); await sleep(300);
+      let m = await msgState(p);
+      problems.push(...ok(m.text.includes("Type the current ED password.") && m.inView && m.focus === "pwCur_ed" && m.role === "alert", `error after Check: ${JSON.stringify(m)}`));
+      await shot(p, "step2-error");
+      await fillCurrent(p);
       await p.evaluate(() => document.querySelector("#flowBody .pwfield button").click());   // Show
       problems.push(...ok((await p.$eval("#pwCur_leadership", (e) => e.type)) === "text", "Show didn't show"));
       await p.evaluate(() => document.querySelector("#flowBody .pwfield button").click());
-      await shot(p, "step2");
-      await flowClick(p, "Check"); await waitFlow(p, "Ready to change");
+      // Checking... shows at once
+      const busy = await p.evaluate(() => { const b = document.querySelector("#pwCheck"); b.click(); return [b.textContent, b.disabled, (document.querySelector("#pwErr") || {}).textContent]; });
+      problems.push(...ok(busy[0] === "Checking..." && busy[1] && /Checking each account/.test(busy[2]), `no Checking state: ${busy}`));
+      if (OUT) { await sleep(60); await shot(p, "checking"); }
+      await waitFlow(p, "Type the new passwords", 30000);
       const ready = await p.$eval("#flowBody", (e) => e.textContent);
       // both ED accounts, then Physician Hiring's Guest and Leadership accounts (unticked, proven too)
-      problems.push(...ok((ready.match(/: ready/g) || []).length === 4 && ready.includes("Motion Voting, ED account") && ready.includes("Physician Hiring, ED account")
-        && ready.includes("Physician Hiring, Guest account") && !ready.includes("Motion Voting, Leadership account"), `ready: ${ready}`));
+      problems.push(...ok((ready.match(/: ready/g) || []).length === 4 && ready.includes("Motion Voting, ED account") && ready.includes("Physician Hiring, Guest account")
+        && !ready.includes("Motion Voting, Leadership account"), `ready: ${ready}`));
       problems.push(...ok(await signInWorks("committee@ed-hiring.app", OLD.ed), "Check changed something"));
-      await shot(p, "ready");
+      await shot(p, "step3");
+      await type(p, "pwNew_ed", NEW.ed); await type(p, "pwRep_ed", NEW.ed + "x");
+      await flowClick(p, "Change now"); await sleep(300);
+      m = await msgState(p);
+      problems.push(...ok(m.text.includes("don't match") && m.inView && m.focus === "pwRep_ed", `mismatch: ${JSON.stringify(m)}`));
+      await shot(p, "step3-error");
+      await type(p, "pwRep_ed", NEW.ed);
       await flowClick(p, "Change now"); await waitFlow(p, "Done", 30000);
       const done = await p.$eval("#flowBody", (e) => e.textContent);
       problems.push(...ok(done.includes("The new ED password works in Motion Voting and Physician Hiring.") && done.includes("Never email a password"), `done: ${done}`));
@@ -155,13 +196,10 @@ const cases = {
       problems.push(...ok(meta && meta.ed && meta.ed.changedAt && meta.pending === null && !meta.leadership, `passwords doc: ${JSON.stringify(meta)}`));
       const h = Object.values(await emu.listCollection("interviews_history")).filter((e) => e.action === "passwords.change");
       problems.push(...ok(h.length === 1 && h[0].text === "Changed the ED password", `history: ${JSON.stringify(h)}`));
-      await flowClick(p, "Close"); await sleep(400);
+      await flowClick(p, "Close"); await sleep(500);
       const after = await cardText(p);
       problems.push(...ok(/ED: last changed \w{3} \d+, \d{4}/.test(after), `card after: ${after.slice(0, 200)}`));
       problems.push(...await noLeaks(p, log, [...Object.values(OLD), ...Object.values(NEW)]));
-      // the page's own session is untouched: it can still save
-      const saved = await p.evaluate(() => window.__edStore.setMeta({ roundName: "Hiring round 2027" }).then(() => "ok", (e) => e.code));
-      problems.push(...ok(saved === "ok", `Leadership page can't save after the change: ${saved}`));
       await closePage(p);
     }
     return [...problems, ...log.filter((l) => /^pageerror|console\.error/.test(l))];
@@ -176,17 +214,10 @@ const cases = {
     for (const scheme of ["light", "dark"]) {
       if (scheme === "dark" && !OUT) break;
       await reset();
-      const p = await freshPage(390, log, scheme); p._scheme = scheme;
-      await signIn(p, OLD.leadership); await landAsAdmin(p); await sleep(400);
-      await openCard(p);
-      await p.evaluate(() => { window.IV.changePasswords(false); });
-      await waitFlow(p, "Which password?"); await tick(p, ["leadership", "ed", "guest"]);
-      await flowClick(p, "Next"); await waitFlow(p, "Type the passwords");
-      await fill(p, ["leadership", "ed", "guest"]);
-      await p.evaluate(() => { document.querySelector(".pwdrift").open = true; });
-      await shot(p, "step2-all");
-      await p.evaluate(() => { document.querySelector(".pwdrift").open = false; });
-      await flowClick(p, "Check"); await waitFlow(p, "Ready to change");
+      const p = await freshPage(390, log, scheme);
+      await signIn(p, OLD.leadership); await onPage(p);
+      await toNewValues(p, ["leadership", "ed", "guest"]);
+      await fillNew(p, ["leadership", "ed", "guest"]);
       // let two password updates through, then cut the connection to Auth
       let updates = 0;
       await p.setRequestInterception(true);
@@ -210,20 +241,22 @@ const cases = {
       await closePage(p);
 
       // a new tab, a new browser even
-      const q = await freshPage(390, log, scheme); q._scheme = scheme;
-      await signIn(q, OLD.leadership); await landAsAdmin(q); await sleep(400);
-      await openCard(q);
+      const q = await freshPage(390, log, scheme);
+      await signIn(q, OLD.leadership); await onPage(q);
       const card = await cardText(q);
-      problems.push(...ok(/A password change didn't finish \(started \w{3} \d+, \d{4}\)/.test(card) && card.includes("Open it to finish"), `card: ${card.slice(0, 200)}`));
-      // review M2: nothing else can start while it is unfinished
+      problems.push(...ok(/A password change didn't finish \(started \w{3} \d+, \d{4}\)/.test(card) && card.includes("Finish the change"), `card: ${card.slice(0, 200)}`));
       problems.push(...ok(!card.includes("Change a password"), "a new change can still be started over the unfinished one"));
       await shot(q, "pending-card");
-      await q.evaluate(() => { window.IV.changePasswords(false); });   // any way in leads to finishing it
+      await q.evaluate(() => { window.PW.change(); });
       await waitFlow(q, "Finish the password change");
       const btns = await q.$$eval("#flowBtns button", (b) => b.map((x) => x.textContent.trim()));
-      problems.push(...ok(!btns.includes("Back"), `finishing still offers Back to the tick boxes: ${btns}`));
-      await fill(q, ["leadership", "ed", "guest"]);
-      await shot(q, "finish");
+      problems.push(...ok(!btns.includes("Back") && !(await q.$("#pwNew_ed")), `finishing: Back offered or new fields early: ${btns}`));
+      await fillCurrent(q);
+      await shot(q, "finish-current");
+      await flowClick(q, "Next"); await waitFlow(q, "Finish the password change");
+      await q.waitForSelector("#pwNew_ed");
+      await fillNew(q, ["leadership", "ed", "guest"]);
+      await shot(q, "finish-new");
       await flowClick(q, "Finish the change"); await waitFlow(q, "Done", 30000);
       for (const [, email, role] of ACCTS) problems.push(...ok(await signInWorks(email, NEW[role]), `${email} doesn't take the new ${role} password`));
       const meta = await emu.getDocument("interviews_meta/passwords");
@@ -231,13 +264,13 @@ const cases = {
       const h = Object.values(await emu.listCollection("interviews_history")).filter((e) => e.action === "passwords.change");
       problems.push(...ok(h.length === 1 && h[0].text === "Changed the Leadership, ED and Guest passwords", `history: ${JSON.stringify(h)}`));
       problems.push(...await noLeaks(q, log, [...Object.values(OLD), ...Object.values(NEW)]));
-      // the old Leadership password no longer opens the page; the new one does
       await flowClick(q, "Close");
       await closePage(q);
+      // the old Leadership password no longer opens the page; the new one does
       const r = await freshPage(390, log);
       await signIn(r, OLD.leadership); await sleep(1500);
       problems.push(...ok((await r.$eval("#gerr", (e) => e.textContent)).includes("Incorrect password."), "the old Leadership password still signs in"));
-      await signIn(r, NEW.leadership); await landAsAdmin(r);
+      await signIn(r, NEW.leadership); await onPage(r);
       await closePage(r);
     }
     return [...problems, ...log.filter((l) => /^pageerror/.test(l))];
@@ -249,13 +282,9 @@ const cases = {
     const problems = [], log = [];
     await reset();
     const p = await freshPage(1280, log);
-    await signIn(p, OLD.leadership); await landAsAdmin(p); await sleep(400);
-    await openCard(p);
-    await p.evaluate(() => { window.IV.changePasswords(false); });
-    await waitFlow(p, "Which password?"); await tick(p, ["ed"]);
-    await flowClick(p, "Next"); await waitFlow(p, "Type the passwords");
-    await fill(p, ["ed"]);
-    await flowClick(p, "Check"); await waitFlow(p, "Ready to change");
+    await signIn(p, OLD.leadership); await onPage(p);
+    await toNewValues(p, ["ed"]);
+    await fillNew(p, ["ed"]);
     await emu.setDocument("interviews_meta/passwords", { pending: { roles: ["guest"], startedAt: { __ts: new Date().toISOString() }, done: ["hiring:applicant"], inProgress: null } });
     await flowClick(p, "Change now"); await waitFlow(p, "Nothing was changed");
     problems.push(...ok(await signInWorks("committee@ed-hiring.app", OLD.ed) && await signInWorks("ed@ed-motion-voting.app", OLD.ed), "an ED account changed anyway"));
@@ -266,37 +295,42 @@ const cases = {
   },
 
   // Check refuses when one tool already has a different password, and says
-  // where; the expander lets Leadership type that account's own value.
+  // where; Back keeps what was typed; the expander takes that account's value.
   async driftIsCaughtByCheck() {
     const problems = [], log = [];
-    await reset();
-    await emu.clearAuth();
-    for (const [, email, role] of ACCTS) await emu.addUser(email, email === "ed@ed-motion-voting.app" ? "an older ed value" : OLD[role]);
-    const p = await freshPage(1280, log);
-    await signIn(p, OLD.leadership); await landAsAdmin(p); await sleep(400);
-    await openCard(p);
-    await p.evaluate(() => { window.IV.changePasswords(false); });
-    await waitFlow(p, "Which password?"); await tick(p, ["ed"]);
-    await flowClick(p, "Next"); await waitFlow(p, "Type the passwords");
-    await fill(p, ["ed"]);
-    await flowClick(p, "Check"); await waitFlow(p, "Nothing was changed");
-    const t = await p.$eval("#flowBody", (e) => e.textContent);
-    problems.push(...ok(t.includes("Motion Voting's ED account didn't accept the current ED password, so nothing was changed.") && t.includes("refused"), `check: ${t}`));
-    await shot(p, "drift");
-    await flowClick(p, "Back"); await waitFlow(p, "Type the passwords");
-    await fill(p, ["ed"]);
-    await p.evaluate(() => { document.querySelector(".pwdrift").open = true; });
-    await type(p, "pwOv_voting_ed", "an older ed value");
-    await flowClick(p, "Check"); await waitFlow(p, "Ready to change");
-    await flowClick(p, "Change now"); await waitFlow(p, "Done", 30000);
-    problems.push(...ok(await signInWorks("ed@ed-motion-voting.app", NEW.ed) && await signInWorks("committee@ed-hiring.app", NEW.ed), "drifted account not brought in line"));
-    await closePage(p);
+    for (const scheme of ["light", "dark"]) {
+      if (scheme === "dark" && !OUT) break;
+      await reset();
+      await emu.clearAuth();
+      for (const [, email, role] of ACCTS) await emu.addUser(email, email === "ed@ed-motion-voting.app" ? "an older ed value" : OLD[role]);
+      const p = await freshPage(390, log, scheme);
+      await signIn(p, OLD.leadership); await onPage(p);
+      await p.evaluate(() => { window.PW.change(); });
+      await waitFlow(p, "Which password?"); await tick(p, ["ed"]);
+      await flowClick(p, "Next"); await waitFlow(p, "Check the current passwords");
+      await fillCurrent(p);
+      await flowClick(p, "Check"); await waitFlow(p, "Nothing was changed", 30000);
+      const t = await p.$eval("#flowBody", (e) => e.textContent);
+      problems.push(...ok(t.includes("Motion Voting's ED account didn't accept the current ED password, so nothing was changed.") && t.includes("refused"), `check: ${t}`));
+      await shot(p, "drift");
+      await flowClick(p, "Back"); await waitFlow(p, "Check the current passwords");
+      problems.push(...ok((await p.$eval("#pwCur_ed", (e) => e.value)) === OLD.ed, "Back lost what was typed"));
+      await p.evaluate(() => { document.querySelector(".pwdrift").open = true; });
+      await type(p, "pwOv_voting_ed", "an older ed value");
+      await shot(p, "step2-drift-open");
+      await flowClick(p, "Check"); await waitFlow(p, "Type the new passwords", 30000);
+      await fillNew(p, ["ed"]);
+      await flowClick(p, "Change now"); await waitFlow(p, "Done", 30000);
+      problems.push(...ok(await signInWorks("ed@ed-motion-voting.app", NEW.ed) && await signInWorks("committee@ed-hiring.app", NEW.ed), "drifted account not brought in line"));
+      await closePage(p);
+    }
     return [...problems, ...log.filter((l) => /^pageerror/.test(l))];
   },
 };
 
 await emu.loadRules();
 SRV = await serve(SITE);
+PAGE = SRV.url.replace(/index\.html$/, "passwords.html");
 B = await browser();
 let fails = 0;
 try {

@@ -114,7 +114,9 @@ const scenarios = {
     problems.push(...ok(q.includes("Restore them from a backup file") && !q.includes("old locked file") && !q.includes("Locked because scoring"), `Questions card: ${q.slice(0, 200)}`));
     await openSetupCard(page, "setPasswords");
     const pw = await page.$eval('details[data-sec="setPasswords"]', (e) => e.textContent);
-    problems.push(...ok(pw.includes("opens once the interview questions are saved") && !pw.includes("Change a password"), `Passwords card: ${pw.slice(0, 200)}`));
+    // the change itself has its own page (passwords.html); the card only links there
+    const href = await page.$eval('details[data-sec="setPasswords"] a', (a) => a.getAttribute("href")).catch(() => "");
+    problems.push(...ok(href === "passwords.html" && !pw.includes("Change a password"), `Passwords card: ${pw.slice(0, 200)}`));
     // review: notes exist but the questions are missing: not locked, and the
     // ids the notes use can be rebuilt ("0", "1")
     await openSetupCard(page, "setQuestions");
