@@ -104,17 +104,26 @@ const scenarios = {
   // and the Passwords card waits for them (design 5.2).
   async noQuestionCopySinceR7(page, url) {
     const problems = [];
-    await load(page, url, base({ questions: null }), "adminpw");
+    await load(page, url, base({ questions: null, scores: { "Chen~c-1": { member: "Chen", candId: "c-1", overall: 3, notes: { 1: "about the case" } } } }), "adminpw");
     await landAsAdmin(page); await sleep(400);
     const st = await dumpState(page);
     problems.push(...ok(!st.questions, "a questions document appeared after the Leadership sign-in"));
     problems.push(...ok(!Object.values(st.history || {}).some((h) => h.action === "questions.migrate"), "a questions copy was recorded"));
     await openSetupCard(page, "setQuestions");
     const q = await page.$eval('details[data-sec="setQuestions"]', (e) => e.textContent);
-    problems.push(...ok(q.includes("restore them from a backup file") && !q.includes("old locked file"), `Questions card: ${q.slice(0, 200)}`));
+    problems.push(...ok(q.includes("Restore them from a backup file") && !q.includes("old locked file") && !q.includes("Locked because scoring"), `Questions card: ${q.slice(0, 200)}`));
     await openSetupCard(page, "setPasswords");
     const pw = await page.$eval('details[data-sec="setPasswords"]', (e) => e.textContent);
     problems.push(...ok(pw.includes("opens once the interview questions are saved") && !pw.includes("Change a password"), `Passwords card: ${pw.slice(0, 200)}`));
+    // review: notes exist but the questions are missing: not locked, and the
+    // ids the notes use can be rebuilt ("0", "1")
+    await openSetupCard(page, "setQuestions");
+    await page.evaluate(() => window.IV.qFromNotes()); await sleep(200);
+    await page.type("#qText-0", "Tell us about yourself"); await page.type("#qText-1", "A difficult case");
+    await page.evaluate(() => [...document.querySelectorAll("#settings button")].find((b) => b.textContent.trim() === "Save questions").click());
+    await sleep(500);
+    const sq = (await dumpState(page)).questions;
+    problems.push(...ok(sq && sq.questions.map((x) => x.id).join() === "0,1", `rebuilt ids: ${JSON.stringify(sq)}`));
     return problems;
   },
 

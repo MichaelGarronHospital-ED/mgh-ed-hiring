@@ -90,6 +90,10 @@ the three role-account sign-ins (see the console steps in README).
   - `scripts/diagnose-login.mjs` signs in with Firebase's REST call and the live site's
     Referer (the keys refuse anything else); a key that still refuses is "can't test from
     here", never "wrong password".
+  - With no questions document but notes already filed under question ids, the questions
+    editor is not locked (nothing could be added before) and offers "Start from the noted
+    questions", which rebuilds the ids the notes use ("0" to "n-1") for the wording to be typed
+    again, so the notes stay attached.
   - `AUTH.mode` is no longer read (removed in R8, since cached older pages still read it); the
     sim's anonymous sign-in stub and old comments about it are gone.
 

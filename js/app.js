@@ -2219,7 +2219,16 @@ function parseAddLines(text) {
 // ------------------------------------------------ Setup → Interview questions (H2)
 // Locked once scoring has started (any score with a number or a note): only
 // the wording may change then. The draft lives in ui.qDraft from the first edit.
-const qLocked = () => scoringStarted(S.scores);
+// Locked once scoring started, but only when there is a questions document to
+// keep: with none (lost, or never copied) nothing could be added at all, and
+// the notes would point at questions nobody can see (review)
+const qLocked = () => !!Q() && scoringStarted(S.scores);
+// "0".."n-1" for the highest numbered note, then any other id a note uses
+function idsFromNotes() {
+  const ids = idsWithNotes(S.scores);
+  const n = ids.filter((x) => /^\d+$/.test(x)).reduce((m, x) => Math.max(m, Number(x) + 1), 0);
+  return [...Array.from({ length: n }, (_, i) => String(i)), ...ids.filter((x) => !/^\d+$/.test(x))];
+}
 function qRows() {
   if (ui.qDraft) return ui.qDraft;
   const QQ = Q();
@@ -2240,7 +2249,10 @@ function questionsEditor() {
   const scale = d.scale.map((t, i) => `<label class="qscale"><span>${i + 1}</span>
       <input id="qScale-${i}" type="text" value="${escapeHtml(t)}" aria-label="Rating ${i + 1} means" oninput="IV.qScale(${i},this.value)"/></label>`).join("");
   return `${locked ? `<p class="note">Locked because scoring has started. You can fix spelling, but not add, remove or reorder questions.</p>` : ""}
-    ${none && !d.questions.length ? `<p class="note">No interview questions yet. Add them below, or restore them from a backup file (Restore from a backup file, below).</p>` : ""}
+    ${none && !d.questions.length && idsWithNotes(S.scores).length ? `<p class="note">Scores already have notes filed under ${idsFromNotes().length} question${idsFromNotes().length === 1 ? "" : "s"},
+        but the questions themselves are missing. Restore them from a backup file (below), or start from those questions and type
+        each one again, so the notes stay with them. <button class="linky" onclick="IV.qFromNotes()">Start from the noted questions</button></p>`
+      : none && !d.questions.length ? `<p class="note">No interview questions yet. Add them below, or restore them from a backup file (Restore from a backup file, below).</p>` : ""}
     <div class="qedlist">${rows}</div>
     ${locked ? "" : `<button type="button" class="btn ghost small" onclick="IV.qAdd()">Add a question</button>`}
     <div class="ed-label" style="margin-top:14px">Rating scale</div>
@@ -3859,6 +3871,12 @@ window.IV = {
     [q[i], q[j]] = [q[j], q[i]]; rerenderSettings();
   },
   qRemove: (i) => { if (qLocked()) return; qDraft().questions.splice(i, 1); rerenderSettings(); },
+  qFromNotes: () => {
+    if (Q()) return;
+    const d = qDraft();
+    d.questions = idsFromNotes().map((id) => ({ id, text: "" }));
+    rerenderSettings();
+  },
   qAdd: () => {
     if (qLocked()) return;
     const q = qDraft().questions; let id = newQuestionId();
