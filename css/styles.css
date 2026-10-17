@@ -762,6 +762,11 @@ body.closing-elsewhere #app, body.closing-elsewhere #settings { opacity:.6; }
 .pwdrift summary::before { content:""; width:6px; height:6px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(-45deg); transition:transform .15s; }
 .pwdrift[open] summary::before { transform:rotate(45deg); }
 #pwNote { width:100%; font:inherit; font-size:var(--ed-text-sm); resize:vertical; }
+/* the dialog's one message line: first in the step, under its title (the phone keyboard covers the bottom) */
+.pwmsg { margin:0 0 12px; scroll-margin-top:16px; }
+.pwfield input[aria-invalid="true"] { outline:2px solid var(--ed-red); outline-offset:1px; }
+.pwmsg:empty { display:none; }
+.h3size { font-size:var(--ed-h3); font-weight:700; }
 
 /* ---- mobile field sizing: MUST STAY LAST ---------------------------------
    iOS Safari zooms the whole page whenever a focused field's text is smaller

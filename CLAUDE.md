@@ -86,7 +86,8 @@ Full design and reference data (committee, candidates, questions, rules) live in
   questions live in `interviews_meta/questions` only (R1 to R6 copied them out of the old
   encrypted `js/data.js` with exactly those ids; since R7 nothing reads that file).
 - **Every module import carries `?v=<release>`** (same as `version.json` and `RELEASE` in
-  `app.js`, checked by `tests/versions.test.mjs`). Bump them all together each release. Never
+  `app.js`, and both pages' stylesheets and module tags, checked by `tests/versions.test.mjs`;
+  a release between two numbered ones is `R7b`). Bump them all together each release. Never
   remove a module or an export in the release that stops using it; remove it one release later.
 - **Backups read the server fresh (`store.snapshotRaw`); never build one from page state.**
   The leadership page mixes this browser's echo into its state and fills in defaults. The
@@ -240,7 +241,11 @@ Full design and reference data (committee, candidates, questions, rules) live in
   `#apply`, else the role that last worked on this browser, `ls` `ed_iv_lastrole`, else ED,
   Guest, Leadership); a refusal moves on, any other error stops with its own message
   (`signInError`), all refused is "Incorrect password." So a password can change with no
-  commit, from Setup, "Passwords for all ED tools" (`js/passwords.js`). Never bring back a
+  commit, from the ED tools passwords page (`passwords.html`, `js/pwpage.js`, Leadership only;
+  Setup and the ED dashboard link to it; the rules of the change in `js/passwords.js`): tick,
+  the CURRENT values and Check (proves every account, changes nothing), and only then the new
+  values and Change now. Every message sits at the top of its step (a phone's keyboard covers
+  the bottom), and on a touch screen the field to fix is marked, not focused. Never bring back a
   file, hash, wrap or check value made from a password (the old `js/data.js` wraps let anyone
   test guesses offline and forced a commit for every change), and never let a password reach
   the console, storage, Firestore or history: `tests/passwords.test.mjs` spies on all of them.

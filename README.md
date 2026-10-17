@@ -59,13 +59,16 @@ applicant link). The password itself is never saved: a reload in the same tab re
 from Firebase's own sign-in for that tab. Since release R7 nothing in the repo is
 derived from a password, so changing one needs no code change.
 
-**To change one: Physician Hiring, Setup, "Passwords for all ED tools".** Tick the
-passwords to change, type the three current ones and the new ones (at least 10
-characters; three or four words are easy to say and hard to guess; never a password in
-use now anywhere; and not containing the word "password" in any form, which is stricter
-than it needs to be on purpose), press **Check** (this signs in to every account of the
-ticked passwords, and to the Physician Hiring account of each other one, with its current
-password, and changes nothing), then **Change now**. It changes Motion Voting first and Physician Hiring's Leadership
+**To change one: the ED tools passwords page**,
+https://michaelgarronhospital-ed.github.io/mgh-ed-hiring/passwords.html (the ED dashboard
+has a tile for it; Physician Hiring's Setup links to it). Sign in with the Leadership
+password. Tick the passwords to change, type the three current ones and press **Check**
+(this signs in to every account of the ticked passwords, and to the Physician Hiring
+account of each other one, with its current password, and changes nothing; a message shows
+at the top of the step, above where a phone's keyboard opens). Only then type the new ones (at least 10 characters; three
+or four words are easy to say and hard to guess; never a password in use now anywhere; and
+not containing the word "password" in any form, which is stricter than it needs to be on
+purpose) and press **Change now**. It changes Motion Voting first and Physician Hiring's Leadership
 account last, signing each account in seconds before its own change, then checks every
 new password and shows "Done". Then tell people in person or by phone; never email a
 password. Notes:
@@ -105,8 +108,8 @@ No terminal needed:
    account's menu (the three dots at the end of its row), "Delete account", then "Add
    user" with the same email and the new password. Nothing else is lost: the rules
    recognise the account by its email, not by its internal id.
-4. Then sign in to Physician Hiring as Leadership and use Setup, "Passwords for all ED
-   tools" with the value you just set as the current one, so every tool ends up the same.
+4. Then open the ED tools passwords page, sign in as Leadership and change it there with the
+   value you just set as the current one, so every tool ends up the same.
 
 ## Run it now (local mode)
 With `firebaseConfig` left empty in [`js/config.js`](js/config.js), the page uses

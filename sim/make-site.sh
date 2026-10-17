@@ -10,8 +10,9 @@
 #                                    pointed at the local emulators; see emulator.mjs)
 #
 # The emulator copy is made by patching the COPY only: config.js gets the test
-# project id and app.js's loadFirestore() gets connectFirestoreEmulator and
-# connectAuthEmulator right after getFirestore/getAuth. The repo's own files never
+# project id and the loadFirestore() of app.js and pwpage.js (the passwords page)
+# get connectFirestoreEmulator and connectAuthEmulator right after
+# getFirestore/getAuth. The repo's own files never
 # mention an emulator, so the live page can never talk to one, and this script
 # fails if a patch target is missing, so a refactor can't silently turn the
 # harness into a run against the live project.
@@ -20,7 +21,7 @@ MODE="${1:-}"
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 if [ "$MODE" = "--emulator" ]; then DST="$(dirname "$0")/site-emulator"; else DST="$(dirname "$0")/site"; fi
 rm -rf "$DST"; mkdir -p "$DST"
-cp -r "$SRC"/index.html "$SRC"/book.html "$SRC"/version.json "$SRC"/css "$SRC"/js "$SRC"/icons "$DST"/
+cp -r "$SRC"/index.html "$SRC"/book.html "$SRC"/passwords.html "$SRC"/version.json "$SRC"/css "$SRC"/js "$SRC"/icons "$DST"/
 
 python3 - "$DST/js/config.js" "$MODE" <<'PY'
 import re, sys
@@ -58,25 +59,33 @@ open(p, "w").write(s)
 PY
 
 if [ "$MODE" = "--emulator" ]; then
-python3 - "$DST/js/app.js" <<'PY'
+python3 - "$DST/js/app.js" "$DST/js/pwpage.js" <<'PY'
 import sys
-p = sys.argv[1]
+p, pw = sys.argv[1], sys.argv[2]
 s = open(p).read()
-pairs = [
+CONNECT = [
   ('  const auth = au.getAuth(app);\n', '  const auth = au.getAuth(app);\n  au.connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });\n'),
   ('  const db = f.getFirestore(app);\n', '  const db = f.getFirestore(app);\n  f.connectFirestoreEmulator(db, "127.0.0.1", 8080);\n'),
+]
+pairs = CONNECT + [
   # the emulator cases reach the store directly, to make the writes an older
   # page (one without today's client-side guards) would make
   ('    store = new FirestoreStore(fb, { scopes, echo });\n', '    store = new FirestoreStore(fb, { scopes, echo });\n    window.__edStore = store;\n'),
-  # the Passwords card's helper apps (H3) talk to the same local Auth emulator
-  ('{ mainAuth: fb.auth, configs: { hiring: firebaseConfig, voting: PARTNERS.voting.firebaseConfig } });\n',
-   '{ mainAuth: fb.auth, configs: { hiring: firebaseConfig, voting: PARTNERS.voting.firebaseConfig },\n'
-   '      connect: (a) => fb.authFns.connectAuthEmulator(a, "http://127.0.0.1:9099", { disableWarnings: true }) });\n'),
 ]
 for old, new in pairs:
     if s.count(old) != 1: sys.exit("make-site --emulator: patch target not found in app.js: " + old.strip())
     s = s.replace(old, new)
 open(p, 'w').write(s)
+# the passwords page: its own Firebase, and its helper apps (H3), on the same emulators
+s = open(pw).read()
+for old, new in CONNECT + [
+  ('{ mainAuth: fb.auth, configs: { hiring: firebaseConfig, voting: PARTNERS.voting.firebaseConfig } });\n',
+   '{ mainAuth: fb.auth, configs: { hiring: firebaseConfig, voting: PARTNERS.voting.firebaseConfig },\n'
+   '      connect: (a) => fb.authFns.connectAuthEmulator(a, "http://127.0.0.1:9099", { disableWarnings: true }) });\n'),
+]:
+    if s.count(old) != 1: sys.exit("make-site --emulator: patch target not found in pwpage.js: " + old.strip())
+    s = s.replace(old, new)
+open(pw, 'w').write(s)
 PY
 fi
 
