@@ -37,7 +37,17 @@ const STUB = {
     export async function setDoc() {}
     export async function updateDoc() {}
     export function deleteField() { return { __delete: true }; }
-    export async function runTransaction(db, fn) { return fn({ get: async () => snap, set() {} }); }
+    export function serverTimestamp() { return { __ts: true }; }
+    export const Timestamp = { fromDate: (d) => d };
+    export function writeBatch() { return { set() {}, update() {}, delete() {}, async commit() {} }; }
+    export async function getDoc() { return snap; }
+    export async function getDocs() { return snap; }
+    export async function deleteDoc() {}
+    export function query(...a) { return a; }
+    export function orderBy() { return {}; }
+    export function limit() { return {}; }
+    export function startAfter() { return {}; }
+    export async function runTransaction(db, fn) { return fn({ get: async () => snap, set() {}, update() {}, delete() {} }); }
     export function onSnapshot(ref, next) { setTimeout(() => next(snap), 0); return () => {}; }`,
 };
 

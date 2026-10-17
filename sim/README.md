@@ -33,6 +33,8 @@ the usual system paths is used.
 | `npm run fuzz -- 100 1` | 100 random rounds (committee, times, availability, flags) from seed 1. A seed replays exactly. |
 | `npm run score` | The Score tab's typed score: 16 scripted cases (wrong-candidate filing, eaten taps, lost-on-lock, clearing). |
 | `npm run auth` | Sign-in and Log out against a stub Firebase (the other sims never reach Firebase): the sign-in is kept for one tab only, a reload signs back in, Log out signs out of Firebase, and a browser that blocks storage can still sign in. |
+| `npm run foundations` | The Oct 2026 foundations (in `npm test`): members keyed by id, the questions document and the one-time copy from the old locked file, change history with undo, the backup file and Excel from a fresh read, log out clearing this browser's copies, and the reload notice. |
+| `npm run emulator` | The REAL page (Firestore and Firebase Auth code, real `firestore.rules`) against the local emulators, project `mgh-ed-hiring-test-emu`. Needs `../tests` installed (it uses that `firebase-tools`) and Java. `make-site.sh --emulator` builds `site-emulator/` by patching the copy only. Not part of `npm test` (it starts emulators). |
 | `npm run stress` | Random panellist behaviour on the Score tab, checked against a model after every pause: plain, with write latency, and with 15% failed writes. `node score-stress.mjs 1 <seed>` replays one; `FULL=1` prints its whole trail. |
 
 `make-site.sh` builds `site/` — a copy of the tool with `config.js`'s

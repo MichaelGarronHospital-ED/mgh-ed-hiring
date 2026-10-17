@@ -632,6 +632,30 @@ td.adj { font-variant-numeric:tabular-nums; color:var(--ed-ink-2); }
   #printReport tr { break-inside:avoid; }
 }
 
+/* ---- page-level news line (new release, allowed-list fight) --------------- */
+.updline { max-width:var(--ed-maxw); margin:8px auto 0; padding:0 var(--ed-gutter); }
+.updline p { margin:0 0 6px; padding:10px 14px; border-radius:var(--ed-r-md); background:var(--ed-accent-tint);
+  color:var(--ed-accent-ink); font-size:var(--ed-text-sm); }
+.updline .linky { padding:0; min-height:0; font-weight:600; text-decoration:underline; }
+
+/* ---- toast with one action (Undo) takes taps ------------------------------ */
+.toast.toast-act { pointer-events:auto; }
+.toast-btn { font:600 var(--ed-text-sm)/1.2 var(--ed-font); color:inherit; background:none; border:0; cursor:pointer;
+  padding:6px 4px 6px 8px; margin:-6px -6px -6px 0; min-height:36px; text-decoration:underline; }
+
+/* ---- multi-step dialog ----------------------------------------------------- */
+#flowWrap .overlay-box { text-align:left; max-width:520px; box-shadow:var(--ed-shadow-lg); }
+#flowWrap h2 { font-size:20px; }
+#flowBody { margin-top:10px; }
+#flowBody p { margin:8px 0; }
+.flowbtns { justify-content:flex-end; gap:8px; margin-top:18px; flex-wrap:wrap; }
+.copybox { width:100%; font:inherit; font-size:var(--ed-text-sm); }
+
+/* ---- Setup: change history -------------------------------------------------- */
+.hlist .hrow { display:flex; align-items:flex-start; gap:10px; padding:9px 0; border-top:1px solid var(--ed-line-soft); }
+.hlist .hrow:first-child { border-top:none; }
+.hlist .hrow .linky { flex:none; }
+
 /* ---- mobile field sizing: MUST STAY LAST ---------------------------------
    iOS Safari zooms the whole page whenever a focused field's text is smaller
    than 16px. Several fields here are set smaller for density (the times form,

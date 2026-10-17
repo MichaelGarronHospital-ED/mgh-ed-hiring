@@ -30,6 +30,10 @@ Full design and reference data (committee, candidates, questions, rules) live in
   For a safe copy with Firebase switched off, use `sim/make-site.sh` (builds `sim/site/`).
 - **Rules tests:** `cd tests && npm install && npm test` (Firestore emulator; needs Java). 190 tests
   (109 from before rules v2, unchanged, plus `rules-v2.test.mjs`).
+- **Real page against the emulators:** `cd sim && npm run emulator` (needs `tests/` installed
+  and Java). Runs the real FirestoreStore and Firebase Auth against local emulators with the
+  real `firestore.rules` (`sim/emulator.mjs`); the patch that points the copy at the emulators
+  lives only in `make-site.sh --emulator`, never in the repo's own files.
 - **UI simulations:** `cd sim && npm install && npm test`. Any Chrome works; set `$CHROME`
   to pick one. All pass (15/15 scenarios, e2e, score, auth, fuzz; 2026-10-16). Fixture
   interview dates come from `daysAhead()` in `sim/drive.mjs`: never hard-code a
@@ -46,6 +50,23 @@ Full design and reference data (committee, candidates, questions, rules) live in
   public repo; they stay in Alvin's "ED Interviews" folder.
 
 ## Non-negotiables
+
+- **Members are keyed by `id`, never by display name. Legacy ids are the names; never re-key.**
+  Screening and score ids (`<member>~<candId>`), interviewer availability, the chair, hand-made
+  panel members and the per-device echo all hold member ids (`js/members.js`). The name is for
+  display only (`EFF().nameOf`), so a rename moves nothing.
+- **Score notes are keyed by question id. Legacy ids are `"0"`..`"9"`; never renumber.** The
+  questions live in `interviews_meta/questions`; the first Leadership sign-in copies them out
+  of the old encrypted `js/data.js` with exactly those ids (`js/questions.js`).
+- **Every module import carries `?v=<release>`** (same as `version.json` and `RELEASE` in
+  `app.js`, checked by `tests/versions.test.mjs`). Bump them all together each release. Never
+  remove a module or an export in the release that stops using it; remove it one release later.
+- **Backups read the server fresh (`store.snapshotRaw`); never build one from page state.**
+  The leadership page mixes this browser's echo into its state and fills in defaults. The
+  Excel workbook is built from the same fresh read (`toState` + `withState`).
+- **Every leadership change writes its history entry in the same batch or transaction**
+  (`store.*(…, history)`), with no applicant name in it. Undo is offered only for hand-made
+  panels, leadership on/off decisions and "make this a note" (`js/history.js`).
 
 - **Applicant PII never lives in this app.** CVs/cover letters stay in OneDrive;
   the app only links out. Store only names + committee input (flags/ratings/scores).

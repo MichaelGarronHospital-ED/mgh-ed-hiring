@@ -6,8 +6,8 @@
 <meta name="color-scheme" content="light dark" />
 <title>Physician Hiring</title>
 <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
-<link rel="stylesheet" href="css/ed-ui.css" />
-<link rel="stylesheet" href="css/styles.css" />
+<link rel="stylesheet" href="css/ed-ui.css?v=R1" />
+<link rel="stylesheet" href="css/styles.css?v=R1" />
 </head>
 <body>
 <!-- login gate: committee code (decrypts the questions) OR a candidate password -->
@@ -59,6 +59,7 @@
 </header>
 
 <div id="banner" class="banner hidden" aria-live="polite"></div>
+<div id="updateLine" class="updline hidden" role="status" aria-live="polite"></div>
 
 <nav id="tabs" class="tabs hidden" role="tablist" aria-label="Hiring stages"></nav>
 
@@ -97,6 +98,15 @@
   </div>
 </div>
 
+<!-- multi-step dialog (util.js flowDialog) -->
+<div id="flowWrap" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="flowTitle">
+  <div class="overlay-box flowbox">
+    <h2 id="flowTitle"></h2>
+    <div id="flowBody"></div>
+    <div id="flowBtns" class="row flowbtns"></div>
+  </div>
+</div>
+
 <div id="toast" class="toast hide" role="status" aria-live="polite"></div>
 
 <!-- Last-resort net, before the module so it is already listening.
@@ -130,6 +140,6 @@
   });
 })();
 </script>
-<script type="module" src="js/app.js"></script>
+<script type="module" src="js/app.js?v=R1"></script>
 </body>
 </html>

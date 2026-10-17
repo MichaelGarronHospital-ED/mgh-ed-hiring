@@ -245,6 +245,40 @@ never the rules alone while a page from Oct 2026 release R1 or later is live**: 
 pages write a change-history entry with every leadership save, and the v1 rules refuse
 it, so every leadership save would fail.
 
+## Backups and the change history (Oct 2026)
+
+- **Download a backup before every release of the tool and before any big change.**
+  Ranking tab, "Back up this hiring cycle", or Setup, Backup: **Download backup file (for
+  restoring)** saves the whole working round as one JSON file, read fresh from the database
+  (never from what the page happens to hold). It includes the interview questions, the input
+  of people who have left or were taken off the list, the applicants' replies and the change
+  history. A later release can load it back in. **Download Excel** is the same read, for
+  people to look at. Both have applicant names and the committee's comments: save them with
+  the CVs on OneDrive and don't email them.
+- **Setup, Change history** lists every change made with the Leadership password, newest
+  first, 50 at a time. It never stores an applicant's name (names are filled in when it is
+  shown). Hand-made panel changes can be undone there (and for 10 seconds from the message
+  after "Reset hand-made panels"); undo is refused if the panel changed since.
+- **Interview questions now live in the database.** The first Leadership sign-in on the Oct
+  2026 release copies them out of the old locked `js/data.js` automatically; Change history
+  then shows "Copied the interview questions". Notes stay attached to their question.
+- **Log out** first saves anything still pausing and waits up to 5 seconds for unsaved
+  changes (it asks before throwing any away), then clears this browser's copy of your scores.
+- **When a new version goes live**, an open page notices within 10 minutes and shows "This
+  page was updated. Reload to get the latest version." A Leadership page reloads itself
+  instead, but only when nothing typed could be lost.
+- **Known gaps while a page from before Oct 2026 is still open** (it never shows that line,
+  so reload every open tab on release day). Low risk, but known:
+  - An old page saving the committee from its text box drops each person's id, role, status
+    and email. Anyone added with the new editor (an id like `m-...`) would then lose the link
+    to what they entered until it is put back from the JSON backup; people from before keep
+    theirs (their id is their name).
+  - An old page editing interview times drops "2 rooms".
+  - An old page counts concerns with a fixed threshold of 2 and ignores Leadership's On or
+    Off decisions.
+  - An old page saving during a closed stage gets "Couldn't save. Check your connection"
+    (the server refuses it).
+
 ## After the interviews: offers and the backup
 
 On the **Ranking** tab (admin):

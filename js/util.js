@@ -50,16 +50,105 @@ export function escapeHtml(s) {
 }
 
 // toast(msg) or toast(msg, "ok"|"err"). Errors linger a little longer.
-export function toast(msg, kind) {
+// toast(msg, kind, { label, run }) adds one button (for example "Undo") and
+// stays up for 10 seconds; only then does the toast take taps.
+export function toast(msg, kind, action) {
   const el = document.getElementById("toast");
   if (!el) return;
   el.textContent = msg;
   // "toast-ok", not "ok": `.ok` and `.err` are utility classes (green text,
   // the red error line with its margin), and a modifier must never also be a
   // utility, or the toast silently picks up their styles.
-  el.className = "toast" + (kind ? " toast-" + kind : "");
+  el.className = "toast" + (kind ? " toast-" + kind : "") + (action ? " toast-act" : "");
+  if (action) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "toast-btn"; b.textContent = action.label;
+    b.onclick = () => { el.classList.add("hide"); clearTimeout(toast._t); action.run(); };
+    el.appendChild(b);
+  }
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => el.classList.add("hide"), kind === "err" ? 3500 : 2000);
+  toast._t = setTimeout(() => el.classList.add("hide"), action ? 10000 : kind === "err" ? 3500 : 2000);
+}
+
+// Is a dialog of ours open? (The self-reload after a new release waits for none.)
+export const dialogOpen = () => ["confirmWrap", "flowWrap"].some((id) => {
+  const el = document.getElementById(id); return el && !el.classList.contains("hidden");
+});
+
+// A small multi-step dialog, with the same focus trap and Escape handling as
+// confirmDialog. `show(ctl)` paints the first step; ctl has:
+//   ctl.step({ title, html, buttons: [{ label, kind: "filled"|"ghost"|"danger"|"tinted", run, disabled, id }] })
+//   ctl.body  (the body element, to wire inputs after a step is painted)
+//   ctl.close(value)  resolves the promise
+// Escape or a click outside closes with null unless opts.sticky.
+export function flowDialog(show, opts = {}) {
+  const wrap = document.getElementById("flowWrap");
+  if (!wrap) return Promise.resolve(null);
+  const title = document.getElementById("flowTitle"), body = document.getElementById("flowBody"),
+    btns = document.getElementById("flowBtns");
+  const prevFocus = document.activeElement;
+  return new Promise((resolve) => {
+    let closed = false;
+    const ctl = {
+      body,
+      close: (v = null) => {
+        if (closed) return; closed = true;
+        wrap.classList.add("hidden"); body.innerHTML = ""; btns.innerHTML = "";
+        document.removeEventListener("keydown", onKey, true);
+        wrap.onclick = null;
+        if (prevFocus && prevFocus.focus) { try { prevFocus.focus(); } catch { /* gone */ } }
+        if (opts.onClose) try { opts.onClose(v); } catch { /* ignore */ }
+        resolve(v);
+      },
+      step: ({ title: t, html, buttons = [] }) => {
+        title.textContent = t || "";
+        body.innerHTML = html || "";
+        btns.innerHTML = "";
+        buttons.forEach((b) => {
+          const el = document.createElement("button");
+          el.type = "button"; el.className = "btn " + (b.kind || "ghost"); el.textContent = b.label;
+          if (b.id) el.id = b.id;
+          if (b.disabled) el.disabled = true;
+          el.onclick = () => b.run(ctl, el);
+          btns.appendChild(el);
+        });
+        const first = body.querySelector("input:not([type=hidden]):not([disabled]), select, textarea")
+          || btns.querySelector("button:not([disabled]):last-child") || btns.querySelector("button");
+        if (first) first.focus();
+      },
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape" && !opts.sticky) { e.preventDefault(); e.stopPropagation(); ctl.close(null); }
+      else if (e.key === "Tab") {
+        const f = [...wrap.querySelectorAll("button:not([disabled]), input:not([disabled]), select, textarea, a[href]")]
+          .filter((x) => x.offsetParent !== null);
+        if (!f.length) return;
+        const i = f.indexOf(document.activeElement);
+        if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); }
+        else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
+      }
+    };
+    wrap.classList.remove("hidden");
+    document.addEventListener("keydown", onKey, true);
+    wrap.onclick = (e) => { if (e.target === wrap && !opts.sticky) ctl.close(null); };
+    show(ctl);
+  });
+}
+
+// Copy text to the clipboard. A browser that blocks the clipboard gets a dialog
+// with the text selected and a "Select all" button. Resolves "copied" or "shown".
+export async function copyText(text, { title = "Copy this text" } = {}) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(text); return "copied"; }
+  } catch { /* blocked: fall through to the dialog */ }
+  await flowDialog((ctl) => {
+    ctl.step({ title, html: `<p class="muted small">Your browser didn't let us copy it. Select it and copy it yourself.</p>
+      <textarea id="copyBox" rows="8" readonly class="copybox">${escapeHtml(text)}</textarea>`,
+      buttons: [{ label: "Close", kind: "ghost", run: (c) => c.close("shown") },
+        { label: "Select all", kind: "filled", run: () => { const t = document.getElementById("copyBox"); t.focus(); t.select(); } }] });
+    const t = document.getElementById("copyBox"); if (t) { t.focus(); t.select(); }
+  });
+  return "shown";
 }
 
 // Styled confirm dialog → Promise<boolean>. Falls back to window.confirm if the

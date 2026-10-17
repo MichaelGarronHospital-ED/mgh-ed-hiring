@@ -6,13 +6,15 @@
   "description": "Dev-only simulation of a whole hiring round through the real UI. Never shipped; the tool itself still has no build step and no dependencies.",
   "scripts": {
     "pretest": "bash make-site.sh",
-    "test": "node scenarios.mjs && node e2e.mjs && node score.mjs && node auth.mjs && node fuzz.mjs 40",
+    "test": "node scenarios.mjs && node foundations.mjs && node e2e.mjs && node score.mjs && node auth.mjs && node fuzz.mjs 40",
     "auth": "bash make-site.sh && node auth.mjs",
     "e2e": "bash make-site.sh && node e2e.mjs",
     "scenarios": "bash make-site.sh && node scenarios.mjs",
     "fuzz": "bash make-site.sh && node fuzz.mjs",
     "score": "bash make-site.sh && node score.mjs",
-    "stress": "bash make-site.sh && node score-stress.mjs 60 1 && node score-stress.mjs 30 1000 --latency && node score-stress.mjs 30 2000 --flaky"
+    "stress": "bash make-site.sh && node score-stress.mjs 60 1 && node score-stress.mjs 30 1000 --latency && node score-stress.mjs 30 2000 --flaky",
+    "foundations": "bash make-site.sh && node foundations.mjs",
+    "emulator": "bash make-site.sh --emulator && ../tests/node_modules/.bin/firebase emulators:exec --config firebase.json --only auth,firestore --project mgh-ed-hiring-test-emu \"node emulator.mjs\""
   },
   "devDependencies": {
     "puppeteer-core": "^23.0.0"
