@@ -221,3 +221,22 @@ test("a helper sign-in that lands on another uid than the role account's is a re
   const ad = makeFirebaseAdapter(sdk, { mainAuth: null, configs: { hiring: {}, voting: {} } });
   await assert.rejects(() => ad.open(ACCOUNTS[0], "x"), (e) => e.code === "auth/invalid-credential");
 });
+
+test("the flow's helper sign-ins (hiring AND voting accounts) use the one .invalid email, one call each (R7d: no fallback)", async () => {
+  const tried = [];
+  const sdk = {
+    initializeApp: (c, name) => ({ name }), deleteApp: async () => {}, inMemoryPersistence: { type: "NONE" },
+    initializeAuth: (app) => ({ app }), signOut: async () => {}, updatePassword: async () => {},
+    reauthenticateWithCredential: async () => {}, EmailAuthProvider: { credential: () => ({}) },
+    signInWithEmailAndPassword: async (auth, email) => {
+      tried.push(email);
+      const a = ACCOUNTS.find((x) => x.email === email);
+      if (!a) throw Object.assign(new Error("no"), { code: "auth/invalid-credential" });
+      return { user: { email, uid: a.uid } };
+    },
+  };
+  const ad = makeFirebaseAdapter(sdk, { mainAuth: null, configs: { hiring: {}, voting: {} } });
+  for (const a of ACCOUNTS) await ad.close(await ad.open(a, "x"));
+  assert.deepEqual(tried, ACCOUNTS.map((a) => a.email));
+  assert.ok(tried.every((e) => e.endsWith(".invalid")), tried.join());
+});

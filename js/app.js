@@ -25,6 +25,7 @@ import { entry as hEntry, newHistoryId, panelUndo, shortlistUndo, screeningUndo,
          hashOf, toDate } from "./history.js?v=R7d";
 import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R7d";
 import { createRounds, pageId } from "./rounds.js?v=R7d";
+import { signInPinned } from "./signin.js?v=R7d";
 import { icsEvent, icsCalendar } from "./ics.js?v=R7d";
 import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R7d";
 import { STAGES, STAGE_WORD, stageOpen, stageClosedAt, roundOpen, bookingFor, thresholdOf, isOnList, closePlan, reopenPlan,
@@ -111,12 +112,11 @@ const planState = () => ({ ...S, availRaw: S.availRaw || Object.fromEntries(Obje
 // reload in the same tab resumes from Firebase's own tab-only sign-in.
 // The emails are only for signing in. "Who is this" is always the account's
 // UID (R7c), the same uids as firestore.rules: a role account keeps its uid
-// when its email changes, so a signed-in page stays signed in through the move
-// of the emails to .invalid addresses, in either order.
+// when its email changes (R7d signs in with the .invalid ones only).
 const ROLE_EMAIL = { admin: AUTH.adminEmail, committee: AUTH.committeeEmail, candidate: AUTH.candidateEmail };
 const roleOfUser = (u) => (u && Object.keys(AUTH.uids).find((r) => AUTH.uids[r] === u.uid)) || null;
 const isRefusal = (e) => /wrong-password|invalid-credential|user-not-found|invalid-login-credentials/.test(String((e && e.code) || ""));
-const SIGNED_OUT_MSG = "You were signed out, probably because a password changed. Enter the current password.";
+const SIGNED_OUT_MSG = "You were signed out. Please sign in again.";
 // Guest first on an applicant link (every applicant-facing link is
 // index.html#apply); else the role that last worked on this browser (not
 // secret); else ED, then Guest, then Leadership. So nearly every sign-in costs
@@ -141,13 +141,11 @@ async function unlock(typed) {
   let disabled = null;
   for (const role of roleOrder()) {
     try {
-      const cred = await fb.authFns.signInWithEmailAndPassword(fb.auth, ROLE_EMAIL[role], typed);
-      // only the pinned account counts: an account somebody made with a freed
-      // old email has another uid, and is treated as a refusal
-      if (roleOfUser(cred.user) !== role) {
-        try { await fb.authFns.signOut(fb.auth); } catch { /* local anyway */ }
-        const e = new Error("not the role account"); e.code = "auth/invalid-credential"; throw e;
-      }
+      await signInPinned((email, pw) => fb.authFns.signInWithEmailAndPassword(fb.auth, email, pw),
+        { email: ROLE_EMAIL[role], uid: AUTH.uids[role] }, typed,
+        // only the pinned account counts: an account with another uid behind
+        // the email is treated as a refusal
+        { onWrongUid: async () => { try { await fb.authFns.signOut(fb.auth); } catch { /* local anyway */ } } });
     }
     catch (e) {
       if (isRefusal(e)) continue;
@@ -171,7 +169,8 @@ async function unlock(typed) {
     + (paused ? " To protect the accounts, wait 30 seconds before trying again." : ""));
 }
 
-// Each wrong password costs a refused sign-in on all three accounts, and
+// Each wrong password costs a refused sign-in on all three accounts, but
+// counts as ONE wrong try here, and
 // Firebase pauses a device that keeps failing. After 3 wrong passwords on this
 // device, the page itself waits 30 seconds first (review). Not secret: only a
 // count and a time, in this browser.

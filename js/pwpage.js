@@ -20,6 +20,7 @@ import { ROLES, ROLE_WORD, ACCOUNTS, accountsFor, validateCurrent, validateNew, 
 import { FirestoreStore } from "./store.js?v=R7d";
 import { entry as hEntry, toDate } from "./history.js?v=R7d";
 import { escapeHtml, flowDialog, ss, ls, storageWorks } from "./util.js?v=R7d";
+import { signInPinned } from "./signin.js?v=R7d";
 
 const $ = (s) => document.querySelector(s);
 const isConfigured = () => !!(firebaseConfig && firebaseConfig.apiKey);
@@ -94,12 +95,10 @@ async function unlock(typed) {
   try {
     const keep = storageWorks("sessionStorage") ? fb.authFns.browserSessionPersistence : fb.authFns.inMemoryPersistence;
     await fb.authFns.setPersistence(fb.auth, keep);
-    const cred = await fb.authFns.signInWithEmailAndPassword(fb.auth, AUTH.adminEmail, typed);
-    // only the pinned Leadership account (by uid, R7c) opens the page
-    if (cred.user.uid !== AUTH.uids.admin) {
-      try { await fb.authFns.signOut(fb.auth); } catch { /* local anyway */ }
-      const e = new Error("not the Leadership account"); e.code = "auth/invalid-credential"; throw e;
-    }
+    // only the pinned Leadership account (by uid) opens it
+    await signInPinned((email, pw) => fb.authFns.signInWithEmailAndPassword(fb.auth, email, pw),
+      { email: AUTH.adminEmail, uid: AUTH.uids.admin }, typed,
+      { onWrongUid: async () => { try { await fb.authFns.signOut(fb.auth); } catch { /* local anyway */ } } });
   } catch (e) {
     if (isRefusal(e)) {
       const paused = gateWrong();
@@ -115,7 +114,7 @@ async function unlock(typed) {
 // A reload in the same tab (or coming from Physician Hiring in this tab):
 // Firebase kept the tab's sign-in. Only the Leadership account opens the page.
 async function resume() {
-  if (ss.get("ed_iv_signedout")) { ss.del("ed_iv_signedout"); gateMsg("You were signed out, probably because a password changed. Enter the current Leadership password."); }
+  if (ss.get("ed_iv_signedout")) { ss.del("ed_iv_signedout"); gateMsg("You were signed out. Please sign in again."); }
   if (!isConfigured()) { gateMsg("Passwords can only be changed on the live site."); return; }
   if (!ss.get("ed_iv_signedin")) return;
   let fb;

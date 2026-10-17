@@ -113,7 +113,7 @@ Full design and reference data (committee, candidates, questions, rules) live in
   `browserSessionPersistence` (memory only if sessionStorage is blocked) before the first
   attempt; a reload in the same tab resumes from it (`resume()`, `auth.authStateReady()`),
   and a sign-in that ends while the page is open returns to the gate with "You were signed
-  out, probably because a password changed." Both Log out buttons call `logOut()`, which
+  out. Please sign in again." Both Log out buttons call `logOut()`, which
   signs out before reloading. Firebase's default kept the sign-in in the browser for good and
   let a second tab switch the first tab's account. Pinned by `sim/auth.mjs`.
 - **Admin signs in with no name; `ui.member` can be `null`.** The admin code
@@ -240,6 +240,8 @@ Full design and reference data (committee, candidates, questions, rules) live in
   it first). A branch made before them (`hiring-r8` at 689b3f8 was one) signs in with the old
   `ed-hiring.app` emails and decides roles by email; merged after the email switch, it locks
   everyone out. R7d adds `tests/emails.test.mjs`, which fails on any old address in `js/` or a page.
+  Every sign-in goes through `js/signin.js`: the account's one `.invalid` email, accepted only for
+  the pinned uid (R7c tried both emails while they moved; R7d, weeks after the switch, dropped that).
 - **A role is known by its account's uid, never by its email (R7c, rules v3).** `firestore.rules`
   checks `request.auth.uid` and the `password` sign-in provider (`signedIn(uid)`); every page and
   script decides "who is this" by `uid` against `AUTH.uids` (and `PARTNERS.voting.uids`), and uses

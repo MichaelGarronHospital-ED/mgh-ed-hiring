@@ -193,6 +193,7 @@ try {
     const after = (await authLog(p)).filter((x) => x.startsWith("refused:")).length;
     const msg = await p.$eval("#gerr", (e) => e.textContent);
     R("three wrong passwords: the page waits 30 seconds before another try",
+      // each wrong password counts ONCE toward the wait, though it costs 3 refusals
       btn[0] === true && /^Wait \d+ s$/.test(btn[1]) && before === 9 && after === 9 && msg.includes("wait 30 seconds"), `${btn} ${before} ${after} ${msg}`);
     await p.close(); }
 
@@ -223,7 +224,7 @@ try {
     await reloaded(p, () => p.evaluate(() => window.__stubRevoke()));
     const msg = await p.$eval("#gerr", (e) => e.textContent);
     R("a revoked sign-in returns to the gate and says why",
-      (await gateShown(p)) && msg.includes("You were signed out, probably because a password changed."), msg);
+      (await gateShown(p)) && msg.includes("You were signed out. Please sign in again."), msg);
     await p.close(); }
 
   // ---- storage blocked ----------------------------------------------------

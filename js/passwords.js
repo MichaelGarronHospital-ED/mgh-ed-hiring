@@ -25,15 +25,21 @@
 // ============================================================================
 
 import { AUTH, PARTNERS } from "./config.js?v=R7d";
+import { signInPinned } from "./signin.js?v=R7d";
 
 export const ROLES = Object.freeze(["leadership", "ed", "guest"]);
 export const ROLE_WORD = Object.freeze({ leadership: "Leadership", ed: "ED", guest: "Guest" });
 export const ACCOUNTS = Object.freeze([
-  { key: "voting:ed", project: "voting", role: "ed", email: PARTNERS.voting.edEmail, uid: PARTNERS.voting.uids.ed, label: "Motion Voting, ED account" },
-  { key: "voting:leadership", project: "voting", role: "leadership", email: PARTNERS.voting.leadershipEmail, uid: PARTNERS.voting.uids.leadership, label: "Motion Voting, Leadership account" },
-  { key: "hiring:committee", project: "hiring", role: "ed", email: AUTH.committeeEmail, uid: AUTH.uids.committee, label: "Physician Hiring, ED account" },
-  { key: "hiring:applicant", project: "hiring", role: "guest", email: AUTH.candidateEmail, uid: AUTH.uids.candidate, label: "Physician Hiring, Guest account" },
-  { key: "hiring:admin", project: "hiring", role: "leadership", email: AUTH.adminEmail, uid: AUTH.uids.admin, label: "Physician Hiring, Leadership account", main: true },
+  { key: "voting:ed", project: "voting", role: "ed", email: PARTNERS.voting.edEmail,
+    uid: PARTNERS.voting.uids.ed, label: "Motion Voting, ED account" },
+  { key: "voting:leadership", project: "voting", role: "leadership", email: PARTNERS.voting.leadershipEmail,
+    uid: PARTNERS.voting.uids.leadership, label: "Motion Voting, Leadership account" },
+  { key: "hiring:committee", project: "hiring", role: "ed", email: AUTH.committeeEmail,
+    uid: AUTH.uids.committee, label: "Physician Hiring, ED account" },
+  { key: "hiring:applicant", project: "hiring", role: "guest", email: AUTH.candidateEmail,
+    uid: AUTH.uids.candidate, label: "Physician Hiring, Guest account" },
+  { key: "hiring:admin", project: "hiring", role: "leadership", email: AUTH.adminEmail,
+    uid: AUTH.uids.admin, label: "Physician Hiring, Leadership account", main: true },
 ]);
 // in the order they are changed
 export const accountsFor = (roles) => ACCOUNTS.filter((a) => roles.includes(a.role));
@@ -207,9 +213,10 @@ export function makeFirebaseAdapter(sdk, { mainAuth, configs, connect = null }) 
       const auth = sdk.initializeAuth(app, { persistence: sdk.inMemoryPersistence });
       if (connect) connect(auth, a.project);
       try {
-        const cred = await sdk.signInWithEmailAndPassword(auth, a.email, password);
-        // only the pinned account: another uid behind the email is a refusal
-        if (a.uid && cred.user.uid !== a.uid) { const e = new Error("not the role account"); e.code = "auth/invalid-credential"; throw e; }
+        // only the pinned account (by uid) counts
+        const { cred } = await signInPinned((email, pw) => sdk.signInWithEmailAndPassword(auth, email, pw),
+          { email: a.email, uid: a.uid }, password,
+          { onWrongUid: async () => { try { await sdk.signOut(auth); } catch { /* none */ } } });
         return { app, auth, user: cred.user };
       } catch (e) { try { await sdk.signOut(auth); } catch { /* none */ } try { await sdk.deleteApp(app); } catch { /* gone */ } throw e; }
     },

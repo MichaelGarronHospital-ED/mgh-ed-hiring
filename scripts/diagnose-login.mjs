@@ -67,9 +67,11 @@ console.log(`Password length: ${PW.length} characters` +
   (PW.length < 6 ? " (under 6: Firebase refuses to set a password this short, so no account can have it)" : ""));
 
 const accounts = [
-  ["ED", "hiring", AUTH.committeeEmail, AUTH.uids.committee], ["Guest", "hiring", AUTH.candidateEmail, AUTH.uids.candidate],
+  ["ED", "hiring", AUTH.committeeEmail, AUTH.uids.committee],
+  ["Guest", "hiring", AUTH.candidateEmail, AUTH.uids.candidate],
   ["Leadership", "hiring", AUTH.adminEmail, AUTH.uids.admin],
-  ...(VOTING ? [["ED", "voting", PARTNERS.voting.edEmail, PARTNERS.voting.uids.ed], ["Leadership", "voting", PARTNERS.voting.leadershipEmail, PARTNERS.voting.uids.leadership]] : []),
+  ...(VOTING ? [["ED", "voting", PARTNERS.voting.edEmail, PARTNERS.voting.uids.ed],
+    ["Leadership", "voting", PARTNERS.voting.leadershipEmail, PARTNERS.voting.uids.leadership]] : []),
 ];
 const configs = { hiring: firebaseConfig, voting: PARTNERS.voting.firebaseConfig };
 const results = [];

@@ -67,7 +67,6 @@ export const nextDownload = (page, act) => page.evaluate((act) => new Promise((r
 }), act);
 const history = async () => Object.values(await emu.listCollection("interviews_history"));
 
-// R7c: the emails the accounts move FROM and TO in emailChangeKeepsSessions (R7d swaps them: a rollback)
 // R7d: the accounts have the new emails; the change here goes back (what --undo would do in a rollback)
 const FROM = { admin: "admin@mgh-ed-hiring.invalid", committee: "committee@mgh-ed-hiring.invalid", applicant: "applicant@mgh-ed-hiring.invalid" };
 const TO = { admin: "admin@ed-hiring.app", committee: "committee@ed-hiring.app", applicant: "applicant@ed-hiring.app" };
@@ -83,8 +82,7 @@ export const cases = {
   //     in its config while the session is the account under its NEW email (signed
   //     in again in the same tab after the change). Reload: still in, same role.
   //     A page that decided the role by email would put each one at the sign-in box.
-  // (3) A fresh sign-in with the old emails is refused and says Incorrect password
-  //     (the minute between the change and R7d going live).
+  // (A fresh sign-in: signInWithInvalidEmailsOnly, below.)
   async emailChangeKeepsSessions() {
     const problems = [], log = [];
     const roles = [
@@ -125,12 +123,37 @@ export const cases = {
       problems.push(...ok(still, `${role}: an old page signed in as the account under its new email doesn't recognise the role after a reload`));
     }
     for (const p of pages) await closePage(p);
-    // (3) the old emails no longer sign in
-    const fresh = await freshPage({ log });
-    await signIn(fresh, "adminpw"); await sleep(1500);
-    const msg = await fresh.$eval("#gerr", (e) => e.textContent);
-    problems.push(...ok(msg.includes("Incorrect password."), `a fresh sign-in with an email the accounts no longer have: ${msg}`));
-    await closePage(fresh);
+    return [...problems, ...log.filter((l) => !/console\.error/.test(l) || !/400/.test(l))];
+  },
+
+  // R7d: the pages sign in with the one .invalid email of each account (R7c's
+  // fallback to the old email is gone, and so is its note of which worked). An
+  // account with another uid behind the Leadership email is refused. And the
+  // reason R7d ships weeks after the switch, not in it: once the accounts are
+  // back on the old emails (an --undo), this page refuses the right password.
+  async signInWithInvalidEmailsOnly() {
+    const problems = [], log = [];
+    const roles = [["admin", "adminpw", "#app:not(.hidden)"], ["committee", "staffpw", "#memberpick:not(.hidden)"], ["applicant", "guestpw", "#candview:not(.hidden)"]];
+    for (const [role, pw, landed] of roles) {
+      const p = await freshPage({ log });
+      await signIn(p, pw);
+      let in1 = true; try { await p.waitForSelector(landed, { timeout: 15000 }); } catch { in1 = false; }
+      const kind = await p.evaluate(() => localStorage.getItem("ed_iv_emailkind"));
+      problems.push(...ok(in1 && kind === null, `${role}: didn't sign in with the .invalid email (or kept an email kind: ${kind})`));
+      await closePage(p);
+    }
+    // another uid behind admin@...invalid: refused
+    await emu.setEmail(emu.UIDS.admin, TO.admin);
+    await emu.addUser(FROM.admin, "squatter pass 1", emu.PROJECT, "squatteruid000000000000001");
+    const q = await freshPage({ log });
+    await signIn(q, "squatter pass 1"); await sleep(2000);
+    let msg = await q.$eval("#gerr", (e) => e.textContent);
+    problems.push(...ok(msg.includes("Incorrect password.") && (await q.$eval("#gate", (e) => !e.classList.contains("hidden"))), `another uid got in: ${msg}`));
+    // the Leadership account on its old email (after an --undo): this page refuses it
+    await signIn(q, "adminpw"); await sleep(2000);
+    msg = await q.$eval("#gerr", (e) => e.textContent);
+    problems.push(...ok(msg.includes("Incorrect password."), `after --undo an R7d page should refuse (it has no fallback): ${msg}`));
+    await closePage(q);
     return [...problems, ...log.filter((l) => !/console\.error/.test(l) || !/400/.test(l))];
   },
 

@@ -37,7 +37,6 @@ const ACCTS = [
   ["hiring:admin", "admin@mgh-ed-hiring.invalid", "leadership"],
 ];
 const ok = (cond, msg) => (cond ? [] : [msg]);
-// R7c: the Leadership account's email moves FROM, TO (R7d swaps them: a rollback)
 // R7d: the accounts have the new emails; the change here goes back (what --undo would do)
 const EMAIL_FROM = "admin@mgh-ed-hiring.invalid", EMAIL_TO = "admin@ed-hiring.app";
 
