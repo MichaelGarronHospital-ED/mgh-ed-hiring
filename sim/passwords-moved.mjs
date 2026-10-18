@@ -3,8 +3,9 @@
 // js/pwpage.js a stub that sends cached older pages on, and Setup's Passwords
 // card only says where the passwords are and links there. Checked here on the
 // LocalStore copy (sim/site), in `npm test`:
-//   - the redirect works with scripts on (js/pwmoved.js) and off (meta refresh),
-//     loads no module and reaches nothing but this copy and the new page
+//   - the redirect works with scripts on, with the script alone (meta refresh
+//     removed) and with scripts off (meta refresh alone), loads no module and
+//     reaches nothing but this copy and the new page
 //   - when the redirect can't happen, the page shows "The passwords page has
 //     moved. Open it." in the ED look, light and dark, at 390 and 1280 px,
 //     and the link works
@@ -47,9 +48,9 @@ function stayingPage() {
 
 // A page whose requests are watched: the new page answers with a stand-in, an
 // "old cached page" address answers with OLD_PAGE, anything else not on this
-// copy is refused and noted. With `stay`, passwords.html is the staying page and
-// its script is blocked.
-async function watched(b, { width = 1280, scheme = "light", js = true, stay = false } = {}) {
+// copy is refused and noted. With `noRefresh`, passwords.html comes without its
+// meta refresh; with `stay`, its script is blocked as well.
+async function watched(b, { width = 1280, scheme = "light", js = true, stay = false, noRefresh = stay } = {}) {
   const ctx = await b.createBrowserContext();
   const page = await ctx.newPage();
   await page.setViewport({ width, height: width < 500 ? 844 : 900 });
@@ -66,7 +67,7 @@ async function watched(b, { width = 1280, scheme = "light", js = true, stay = fa
     // the new page's site: the page itself gets the stand-in, anything else (its favicon) nothing
     if (u.startsWith("https://michaelgarronhospital-ed.github.io/") && !u.startsWith(NEW_PAGE)) { req.respond({ status: 204, body: "" }); return; }
     if (u.startsWith(NEW_PAGE)) { req.respond({ status: 200, contentType: "text/html", body: "<!DOCTYPE html><title>new passwords page</title><p>stand-in</p>" }); return; }
-    if (stay && new URL(u).pathname === "/passwords.html") { req.respond({ status: 200, contentType: "text/html", body: stayingPage() }); return; }
+    if (noRefresh && new URL(u).pathname === "/passwords.html") { req.respond({ status: 200, contentType: "text/html", body: stayingPage() }); return; }
     if (stay && new URL(u).pathname === "/js/pwmoved.js") { req.respond({ status: 200, contentType: "text/javascript", body: "// blocked" }); return; }
     if (new URL(u).pathname === "/old-cached-passwords.html") { req.respond({ status: 200, contentType: "text/html", body: OLD_PAGE }); return; }
     if (u.startsWith("http://127.0.0.1:")) { req.continue(); return; }
@@ -91,6 +92,20 @@ const cases = {
       await arrived(w.page);
       problems.push(...ok(w.seen.some((u) => /\/js\/pwmoved\.js\?v=R\d+[a-z]?$/.test(u)), `js/pwmoved.js was not loaded: ${w.seen.join(" ")}`));
       problems.push(...ok(!w.seen.some((u) => /pwpage\.js|app\.js|config\.js|gstatic|googleapis/.test(u)), `the redirect loaded a module or Firebase: ${w.seen.join(" ")}`));
+      problems.push(...ok(!w.outside.length, `requests outside this copy: ${w.outside.join(" ")}`));
+      problems.push(...w.log);
+    } finally { await w.ctx.close(); }
+    return problems;
+  },
+
+  // the meta refresh switched off: js/pwmoved.js alone gets there
+  async redirectByScriptAlone(b, url) {
+    const problems = [];
+    const w = await watched(b, { noRefresh: true });
+    try {
+      await goto(w.page, pageOf(url, "passwords.html"));
+      await arrived(w.page).catch(() => problems.push(`with the refresh off, the script didn't move the page (${w.page.url()})`));
+      problems.push(...ok(w.seen.some((u) => /\/js\/pwmoved\.js\?v=R\d+[a-z]?$/.test(u)), `js/pwmoved.js was not loaded: ${w.seen.join(" ")}`));
       problems.push(...ok(!w.outside.length, `requests outside this copy: ${w.outside.join(" ")}`));
       problems.push(...w.log);
     } finally { await w.ctx.close(); }

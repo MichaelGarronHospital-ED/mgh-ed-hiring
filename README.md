@@ -93,6 +93,9 @@ dashboard repo's README. Then tell people in person or by phone; never email a p
   password change started here didn't finish. Open the passwords page; it finds which tools
   still have the old password." (It reads `interviews_meta/passwords`, which holds only dates
   and which accounts were done, never a password; that document stays in backups and restore.)
+  Once the new passwords page shows every tool agrees, a leftover `pending` field in
+  `interviews_meta/passwords` can be removed in the Firebase console (project `mgh-ed-hiring`,
+  Firestore): it only drives that "didn't finish" line.
 - Everyone signed in with an old ED or Leadership password is asked for the new one within
   about an hour, phones on Motion Voting included: don't change one on a voting day. Applicants
   with the old Guest password can't sign in until they get the new one.

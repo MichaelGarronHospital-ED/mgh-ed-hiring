@@ -49,7 +49,8 @@ changes a password any more.
 - **Kept one more release** (never remove a module in the release that stops using it):
   `js/passwords.js`, `store.updatePasswords` and `tests/passwords.test.mjs`, unused from R9 and
   deleted in R10 (with the `.pw*` styles and the sim's `playwright-core`, used only by the old
-  page and its WebKit check). `interviews_meta/passwords` stays in backups and restore. No rules
+  page and its WebKit check; R10 also brings the comment in `scripts/diagnose-login.mjs` up to
+  date, left alone here because R8b edits that file). `interviews_meta/passwords` stays in backups and restore. No rules
   change.
 - **Sims:** `sim/passwords.mjs` and `sim/passwords-webkit.mjs` (the old page against the
   emulators) are replaced by `sim/passwords-moved.mjs`, in `npm test` on LocalStore: the redirect
@@ -62,12 +63,25 @@ changes a password any more.
   derived from a password" is the encrypted copy in `mgh-ed-admin`, outside any repo), CLAUDE.md.
 - Version `R9`.
 
-**Before deploying:** the new passwords page is live and checked on Alvin's phone (dashboard PR B,
-the gear links to it), and R8 is live. R9 ships the day after R8 at the earliest. R9 branches
-from `hiring-r8`; whichever of R8b and R9 lands second merges `main` first. The `?v=` pins,
-`version.json` and `RELEASE` conflict: give the merged result a release name after the one that
-is live (R9 lands second: `R9`; R8b lands second: `R9b`), every pin the same. On
-`passwords.html`, `js/pwpage.js` and the two deleted sims, keep R9's.
+**Before deploying:**
+- The dashboard passwords page (PR A, the page; PR B, the gear links to it) is live and checked
+  on Alvin's phone, and R8 is live. R9 ships the day after R8 at the earliest.
+- On the day, read `interviews_meta/passwords` again (design B.5.7, department login,
+  read-only); if it has a pending change, finish it on the old page before merging R9.
+
+**Merging with R8b.** R9 branches from `hiring-r8`; whichever of R8b and R9 lands second merges
+`main` first. Expected conflicts:
+- The `?v=` pins, `version.json` and `RELEASE`: give the merged result a release name after the
+  one that is live (R9 lands second: `R9`; R8b lands second: `R9b`), every pin the same.
+- `js/app.js`, the `config.js` import: it must carry `PASSWORDS_PAGE`. Taking R8b's side drops
+  it and the Leadership Setup tab throws a ReferenceError (the sims catch it).
+- `js/passwords.js` and `js/signin.js`: keep R8b's code and only set the new pin (R8b still
+  exports `emailOrder` and `rememberKind`).
+- `passwords.html`, `js/pwpage.js` and the two deleted sims: keep R9's.
+- `CHANGES.md` itself: keep both sections.
+
+**Rollback.** Before the merge, revert the R9 commit. After the merge, a revert of R9 also needs
+its `?v=` pins, `version.json` and `RELEASE` fixed by hand (every pin the same).
 
 Tests: see the release commit message.
 
