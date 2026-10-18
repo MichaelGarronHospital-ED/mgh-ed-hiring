@@ -456,7 +456,11 @@ const scenarios = {
     // R11: the tabs follow the order of the work
     problems.push(...ok(t0.join() === "screen,availability,panels,questions,ranking", `plain admin's tab order: ${t0}`));
     const screen = await page.$eval("#screen", (el) => el.innerHTML);
-    problems.push(...ok(!/Your review/.test(screen) && !/IV\.toggleFlag/.test(screen),
+    // R11: each applicant row has one "More", and Remove lives inside it
+    const rows = await page.$$eval("#screen .collrow", (rs) => rs.map((r) => ({ loose: r.querySelectorAll(".collhead > button").length,
+      more: r.querySelectorAll("details.more").length, inMore: !!r.querySelector("details.more button[onclick^=\"IV.removeCand(\"]") })));
+    problems.push(...ok(rows.length && rows.every((r) => !r.loose && r.more === 1 && r.inMore), `Screen rows should have one More holding Remove: ${JSON.stringify(rows)}`));
+    problems.push(...ok(!/IV\.toggleFlag/.test(screen) && !/Your review/.test(screen),
       "plain admin is shown a personal screening list to file flags under"));
     await tab(page, "availability");
     const av = await page.$eval("#availability", (el) => el.innerHTML);

@@ -37,6 +37,14 @@ gate, confirm, stage lock, history entry, privacy rule and saved value is as it 
 - **The interview questions moved from Setup to a new Questions tab** (Admin only). They still
   lock once scoring starts; only the wording can change then.
 - **Screen tab:** "+ Add applicants" is the first thing on the tab, opening the form in place.
+  The cards are now called **Shortlist** (was "Collation & shortlist") and **Who has screened**
+  (was "Coordinator dashboard"); the sort button "Avg priority" is now "Rating". Each applicant
+  row has one quiet "More" holding Remove (same confirm) or Restore, Rename, Merge and Delete,
+  and what Auto/On/Off means is on the Shortlist card's (i) once instead of on every row.
+- **Shorter lines:** the reviewer's Screen and Score hints are one sentence each (the rest is on
+  the (i)); the applicant grid's shortfall lines are shorter; the committee editor's F/M (i)
+  is on the card once instead of on every person; the Panels More menu says "Not locked yet:
+  may still change." while the schedule is not locked.
 - **Panels tab:** one main button (Lock the schedule, then Send times to applicants); Export
   CSV, Print, Reset hand-made panels, the calendar file for all interviews and Copy all
   applicant emails are in one More menu. Each panel has two small groups, Email (applicant,

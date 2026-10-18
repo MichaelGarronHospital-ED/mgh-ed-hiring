@@ -59,8 +59,9 @@ Full design and reference data (committee, candidates, questions, rules) live in
   interviews). Members who interview: Screen, Availability, Score. Screens only: Screen.
   Availability must stay before Panels: panels are built from it.
 - **Screen** (Admin): "+ Add applicants" at the top (a `<details data-sec="adder">`, open by
-  itself only while there are no applicants), then Collation & shortlist, then the Coordinator
-  dashboard.
+  itself only while there are no applicants), then Shortlist (`data-sec="collation"`; each row
+  has one "More" holding Remove or Restore, Rename, Merge and Delete; what Auto/On/Off means is
+  on the card's (i), once), then Who has screened (`data-sec="dash"`).
 - **Availability** (Admin): the **Interview times** card first (`data-sec="times"`, the same
   `timesEditor()` and `store.updateTimes` that were in Setup, closed to a one-line summary once
   times exist), then both grids. The tab redraws on every live update, so `render()` holds it

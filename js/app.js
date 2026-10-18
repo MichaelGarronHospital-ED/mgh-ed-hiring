@@ -873,7 +873,7 @@ function renderScreen() {
   const me = ui.member;
   const { pickable: committee, oneDrive } = EFF();   // waiting on = active people only
   const scrOpen = isOpen("screening");
-  let html = me ? hint(scrOpen ? "Raise a concern if you feel someone isn't qualified. A note never counts against them. Priority is optional."
+  let html = me ? hint(scrOpen ? `Rate each applicant 1 to 5 if you like. Raise a concern only if someone isn't qualified.${infoIcon("A concern counts against the applicant; a note never does. Admin sees both, nobody else does.")}`
     : roundOpen(S.meta) ? "Screening is closed. Your answers are saved." : "Admin is closing this round. Changes are paused.") : "";
 
   if (ui.isAdmin) {
@@ -888,7 +888,7 @@ function renderScreen() {
     //   rating — highest average priority first; unrated last, because "no
     //            rating" is not a low rating and must not sort as one
     //   flags  — most-flagged first, for working through the exclusions
-    const SORTS = { name: "Name", rating: "Avg priority", flags: "Concerns" };
+    const SORTS = { name: "Name", rating: "Rating", flags: "Concerns" };
     const sortKey = SORTS[collSort()] ? collSort() : "name";
     const byName = (a, b) => a.name.localeCompare(b.name);
     const cmp = {
@@ -904,6 +904,7 @@ function renderScreen() {
     }[sortKey];
     const ordered = [...S.candidates].sort((a, b) =>
       (isIn(a) === isIn(b) ? 0 : isIn(a) ? -1 : 1) || cmp(a, b));
+    const thNow = EFF().threshold;
     const sortBar = `<div class="sortbar"><span class="muted small">Sort by</span>
       <span class="seg" role="group" aria-label="Sort candidates">${Object.entries(SORTS).map(([k, label]) =>
         `<button type="button" class="${k === sortKey ? "on" : ""}" aria-pressed="${k === sortKey}"
@@ -924,18 +925,16 @@ function renderScreen() {
       const listVal = byLead && (c.shortlist === "in" || c.shortlist === "out") ? c.shortlist : "auto";
       const listSeg = c.removed ? "" : `<div class="listseg"><span class="muted small">Interview list</span>
         <span class="seg" role="group" aria-label="Interview list for ${escapeHtml(c.name)}">${[["auto", "Auto"], ["in", "On"], ["out", "Off"]].map(([v, l]) =>
-          `<button type="button" class="${listVal === v ? "on" : ""}" aria-pressed="${listVal === v}" onclick="IV.setShortlist('${c.id}','${v}')">${l}</button>`).join("")}</span>
-        ${infoIcon(th ? `Auto follows your rule: off the list at ${th} concern${th === 1 ? "" : "s"}. On or Off is your decision and overrides the rule.`
-          : "Auto keeps everyone on (your rule is set to 0). On or Off is your decision.")}</div>`;
-      const action = (c.removed
-        ? `<button class="linky" onclick="IV.removeCand('${c.id}',false)">Restore</button>`
-        : `<button class="linky danger" onclick="IV.removeCand('${c.id}',true)">Remove</button>`)
-        // H5: rename, merge and permanent delete live behind "More"
-        + `<details class="more"><summary class="linky">More</summary><div class="moremenu">
+          `<button type="button" class="${listVal === v ? "on" : ""}" aria-pressed="${listVal === v}" onclick="IV.setShortlist('${c.id}','${v}')">${l}</button>`).join("")}</span></div>`;   // what Auto means is on the card's (i), once (R11)
+      // H5, R11: one quiet "More" per row. Remove (with its confirm) or
+      // Restore, rename, merge and permanent delete all live in it.
+      const action = `<details class="more"><summary class="linky" aria-label="More for ${escapeHtml(c.name)}">More</summary><div class="moremenu">
+            ${c.removed ? `<button class="linky" onclick="IV.removeCand('${c.id}',false)">Restore</button>`
+              : `<button class="linky danger" onclick="IV.removeCand('${c.id}',true)">Remove</button>`}
             <button class="linky" onclick="IV.renameCand('${c.id}')">Rename</button>
             <button class="linky" onclick="IV.mergeCand('${c.id}')">Merge into another entry</button>
             ${c.removed ? `<button class="linky danger" onclick="IV.deleteCand('${c.id}')">Delete permanently</button>`
-              : `<span class="muted small">Delete permanently: remove them from the list first</span>`}</div></details>`;
+              : `<span class="muted small">To delete for good, remove first</span>`}</div></details>`;
       // One line per flagger, attributed and quoted in full. Several people
       // flagging one applicant is the normal case, and each sentence is the
       // thing leadership actually has to weigh.
@@ -1000,8 +999,8 @@ function renderScreen() {
       }).join("")}
     </div>`;
     const nSub = committee.filter((m) => submitted.has(m.id)).length;
-    const dash = `<p><b>${nSub}/${committee.length}</b> members have submitted screening.</p>
-      ${notYet.length ? `<p class="muted small">Waiting on:</p><div>${notYet.map((n) => `<span class="chip">${escapeHtml(n)}</span>`).join("")}</div>` : ""}
+    const dash = `${notYet.length ? `<p class="muted small" style="margin-top:0">Waiting on</p><div>${notYet.map((n) => `<span class="chip">${escapeHtml(n)}</span>`).join("")}</div>`
+        : `<p class="muted small" style="margin:0">Everyone has sent their screening.</p>`}
       ${hiddenBlock}`;
 
     // R11: adding applicants is the first job of a round, so it sits at the top
@@ -1018,10 +1017,12 @@ function renderScreen() {
         </div></details>`;
 
     html += adder
-      + section("collation", "Collation & shortlist", `${activeCands().length} of ${S.candidates.length} still in`, collation,
-        { open: !me, info: "Everyone's concerns, notes and priority ratings, collated. An applicant drops off the interview list at the number of concerns set in Setup, Screening rule, unless you set them On or Off. Concerns and notes are visible to Admin only. Export the shortlist as a CSV here." })
-      + section("dash", "Coordinator dashboard", `${nSub}/${committee.length} submitted`, dash,
-        { open: false, info: "Track who has and hasn't submitted their screening, so you can chase people before the deadline.", count: hidden.entries.length ? ICON.warn : null })
+      + section("collation", "Shortlist", `${activeCands().length} of ${S.candidates.length} on the list`, collation,
+        { open: !me, info: "Everyone's concerns, notes and priority ratings, together. Concerns and notes are visible to Admin only. "
+          + (thNow ? `Interview list: Auto follows your rule (off the list at ${thNow} concern${thNow === 1 ? "" : "s"}, set in Setup, Screening rule). ` : "Interview list: Auto keeps everyone on (your rule is set to 0). ")
+          + "On or Off is your decision and always wins." })
+      + section("dash", "Who has screened", `${nSub} of ${committee.length}`, dash,
+        { open: false, info: "Which committee members have sent their screening, so you can chase the rest before the deadline.", count: hidden.entries.length ? ICON.warn : null })
       + (me ? `<h3>Your review</h3>` : "");
   }
   // Signed in as plain admin: there is no "your" review to show or file.
@@ -1231,9 +1232,9 @@ function candGrid() {
   const count = (r) => missed.filter((c) => (why[c.id] || {}).reason === r).length;
   const nAnswer = count("no-answer"), nPanel = count("no-panel"), nTaken = count("contested");
   const causes = [
-    nAnswer && `<li><b>${nAnswer}</b> ${nAnswer === 1 ? "hasn't" : "haven't"} sent any availability yet. Chase ${nAnswer === 1 ? "them" : "those"} first (they're the dashes below).</li>`,
-    nPanel && `<li><b>${nPanel}</b> offered only times where no balanced panel can run (the ✗ rows). More interviewers free at those hours is what fixes it.</li>`,
-    nTaken && `<li><b>${nTaken}</b> want times that are already taken. <b>This is the one more interview times would fix.</b></li>`,
+    nAnswer && `<li><b>${nAnswer}</b> ${nAnswer === 1 ? "hasn't" : "haven't"} sent any availability yet (the dashes below).</li>`,
+    nPanel && `<li><b>${nPanel}</b> offered only times no balanced panel can run (the ✗ rows): more interviewers free then fixes it.</li>`,
+    nTaken && `<li><b>${nTaken}</b> want times already taken: <b>more interview times would fix this.</b></li>`,
   ].filter(Boolean).join("");
   const capacity = missed.length && causes     // no causes at all = panel building failed; say nothing
     ? `<div class="note warnbox"><b class="warn">${ICON.warn} ${scheduled} of ${people.length} applicants can be
@@ -1329,7 +1330,7 @@ function renderScore() {
   const scOpen = isOpen("scoring");
   const toggle = lockedNow ? `<p class="toolline scoretoggle"><button class="linky" onclick="IV.scoreShowAll(${ui.scoreAll ? "false" : "true"})">${ui.scoreAll ? "Show only my interviews" : "Show all applicants"}</button></p>` : "";
   const head = hint(!scOpen ? (roundOpen(S.meta) ? "Scoring is closed. Your answers are saved." : "Admin is closing this round. Changes are paused.")
-    : lockedNow ? "Notes per question, then one overall rating." : "Notes per question, then one overall rating. The schedule isn't final yet, so everyone is listed.");
+    : lockedNow ? "Notes per question, then one overall rating." : `Notes per question, then one overall rating.${infoIcon("The schedule isn't final yet, so everyone on the interview list is shown.")}`);
   const dis = scOpen ? "" : ' disabled aria-disabled="true"';
   // Questions by id, in the saved order (H2). Notes are keyed by question id;
   // legacy ids are "0".."9", exactly the keys every older note already has.
@@ -1729,14 +1730,14 @@ function renderPanels() {
   const modPill = (m) => `<span class="pill ${m === "ip" ? "ip" : "zoom"}">${m === "ip" ? "In-person" : "Zoom"}</span>`;
   const res = computePanels();
 
-  let html = hint(locked() ? "The locked schedule. Edit any panel by hand." : "Suggested panels, one applicant per time. Edit any of them by hand.");
+  let html = hint(locked() ? "The locked schedule. Edit any panel by hand." : "Suggested panels, one applicant per time. Edit any by hand.");
   if (!EFF().slots.length) { $("#panels").innerHTML = html + empty(ICON.calendar, "No interview times yet", "Add interview times on the Availability tab, then collect answers."); return; }
 
   // H4: lock the schedule (one filled button), or the one grey line saying it
   // is. R11: once locked, sending the times is the one filled button. Every
   // other action (exports, print, reset, the all-at-once calendar and emails)
   // sits in one More menu, so the bar is one job and a menu.
-  const notYet = locked() ? "" : `<p class="small muted menunote">These follow the suggested panels, which can still change. Lock the schedule first.</p>`;
+  const notYet = locked() ? "" : `<p class="small muted menunote">Not locked yet: may still change.</p>`;
   const more = `<details class="more panelmore"><summary class="btn ghost small" aria-label="More actions" title="More actions">${ICON.more}More</summary>
     <div class="moremenu">
       <button class="linky" onclick="IV.exportSchedule()">Export CSV</button>
@@ -2203,7 +2204,7 @@ function renderSettings() {
   // own tab. Every data-sec id is unchanged (sims and code open cards by it).
   const group = (title) => `<h3 class="setgroup">${title}</h3>`;
   $("#settings").innerHTML = `${group("People")}
-    ${section("setCommittee", "Committee and screeners", `${committee.filter((m) => m.active).length} people`, committeeBody, { open: false, info: "Everyone who screens applicants, and which of them also interview. Renaming someone keeps everything they entered. Someone who has left keeps their input, which still counts, but leaves every list of people." })}
+    ${section("setCommittee", "Committee and screeners", `${committee.filter((m) => m.active).length} people`, committeeBody, { open: false, info: "Everyone who screens applicants, and which of them also interview. Renaming someone keeps everything they entered. Someone who has left keeps their input, which still counts, but leaves every list of people. F or M is self-identified, used only to build balanced panels, and never shown as a label." })}
     ${section("setChair", "Panel chair", nameOf(chair), chairBody, { open: false, info: "The chair is on every interview panel. Pick from your committee list." })}
     ${group("This round")}
     ${section("setStages", "Round stages", STAGES.filter((n) => !isOpen(n)).map((n) => STAGE_WORD[n] + " closed").join(", "), stagesBody, { open: false, info: "Close each stage when its deadline passes. A closed stage can't be changed with the ED password (the server refuses it). You can reopen a stage." })}
@@ -2248,7 +2249,7 @@ function committeeEditor() {
       <span class="msum small muted">${escapeHtml(sum)}</span>
       <div class="mopts">
         ${seg(i, "role", [["interviewer", "Interviews and screens"], ["screener", "Screens only"]], m.role, "Does")}
-        ${m.role === "interviewer" ? `<span class="mg">${seg(i, "gender", [["F", "F"], ["M", "M"]], m.gender, "Gender")}${infoIcon("Self-identified. Used only to build balanced panels. Never shown as a label.")}</span>` : ""}
+        ${m.role === "interviewer" ? `<span class="mg">${seg(i, "gender", [["F", "F"], ["M", "M"]], m.gender, "Gender")}</span>` : ""}
         ${seg(i, "active", [["true", "Active"], ["false", "Left the committee"]], String(m.active), "Status")}
       </div>
       <input id="mEmail-${i}" type="email" value="${escapeHtml(m.email || "")}" placeholder="Work email (optional, for reminders)"
