@@ -633,7 +633,7 @@ function section(id, title, sub, bodyHtml, opts = {}) {
   // (the subtitle moves to its own line whole if it must; sims read .sec-sub)
   const t = String(title), i = t.lastIndexOf(" ");
   const titleHtml = sub
-    ? `${escapeHtml(t)} <span class="nobr"><span class="sec-sub">· ${escapeHtml(sub)}</span>${infoIcon(opts.info)}</span>`
+    ? `${escapeHtml(t)} <span class="nobr subline"><span class="sec-sub"><span class="dot">· </span>${escapeHtml(sub)}</span>${infoIcon(opts.info)}</span>`
     : `${i < 0 ? "" : escapeHtml(t.slice(0, i + 1))}<span class="nobr">${escapeHtml(i < 0 ? t : t.slice(i + 1))}${infoIcon(opts.info)}</span>`;
   return `<details class="section" data-sec="${id}" ${open ? "open" : ""}>
     <summary>${chev}<span class="sec-title">${titleHtml}</span>${count}${act}</summary>

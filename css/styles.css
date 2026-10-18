@@ -786,6 +786,11 @@ details.adder[open] > summary { background:var(--ed-fill); color:var(--ed-ink); 
 .adderbox { margin-top:10px; }
 .adderbox textarea { margin-top:6px; }
 .nobr { white-space:nowrap; }
+/* on a phone a card's grey subtitle is its own line under the title */
+@media (max-width:640px) {
+  details.section > summary .subline { display:block; margin-top:1px; }
+  details.section > summary .subline .dot { display:none; }
+}
 /* a field heading with its (i) beside it, not under it */
 div.ed-label { flex-direction:row; align-items:center; flex-wrap:wrap; }
 .ed-label .info { margin-left:0; }
