@@ -9,7 +9,7 @@
 //  store.applyPlan writes copies before deleting their sources.
 // ============================================================================
 
-import { lastKey, firstKey, givenKey, candKey, dupKey } from "./util.js?v=R9";
+import { lastKey, firstKey, givenKey, candKey, dupKey } from "./util.js?v=R10";
 
 const picks = (doc) => Object.keys((doc && doc.slots) || doc || {}).filter((k) => !["reply", "replyAt"].includes(k)).length;
 const realScreening = (r) => !!r && !!(r.flag || r.rating || String(r.reason || "").trim() || String(r.note || "").trim());
@@ -69,7 +69,7 @@ export function sharedSurnameText(cands, key) {
 }
 
 // Surname-only documents that might belong to any of several applicants
-// (review m7): Leadership is asked whose they are; the page never guesses.
+// (review m7): Admin is asked whose they are; the page never guesses.
 export function sharedDocs(state, kept = []) {
   const out = [];
   const active = (state.candidates || []).filter((c) => !c.removed);
@@ -84,7 +84,7 @@ export function sharedDocs(state, kept = []) {
   return out;
 }
 
-// Move the surname-only document to the applicant Leadership chose: copy the
+// Move the surname-only document to the applicant Admin chose: copy the
 // whole document, then delete it; never over answers already given (picks guard).
 export function claimPlan(state, key, toId) {
   const c = (state.candidates || []).find((x) => x.id === toId);

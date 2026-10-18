@@ -128,7 +128,7 @@ export const cases = {
 
   // R7d: the pages sign in with the one .invalid email of each account (R7c's
   // fallback to the old email is gone, and so is its note of which worked). An
-  // account with another uid behind the Leadership email is refused. And the
+  // account with another uid behind the Admin email is refused. And the
   // reason R7d ships weeks after the switch, not in it: once the accounts are
   // back on the old emails (an --undo), this page refuses the right password.
   async signInWithInvalidEmailsOnly() {
@@ -149,7 +149,7 @@ export const cases = {
     await signIn(q, "squatter pass 1"); await sleep(2000);
     let msg = await q.$eval("#gerr", (e) => e.textContent);
     problems.push(...ok(msg.includes("Incorrect password.") && (await q.$eval("#gate", (e) => !e.classList.contains("hidden"))), `another uid got in: ${msg}`));
-    // the Leadership account on its old email (after an --undo): this page refuses it
+    // the Admin account on its old email (after an --undo): this page refuses it
     await signIn(q, "adminpw"); await sleep(2000);
     msg = await q.$eval("#gerr", (e) => e.textContent);
     problems.push(...ok(msg.includes("Incorrect password."), `after --undo an R7d page should refuse (it has no fallback): ${msg}`));
@@ -158,7 +158,7 @@ export const cases = {
   },
 
   // R1: adding an applicant writes the roster and its history in one commit
-  // the rules accept. R7: the Leadership sign-in found by order (ED and Guest
+  // the rules accept. R7: the Admin sign-in found by order (ED and Guest
   // refuse first on a new browser), and nothing is copied into a questions
   // document any more (the page no longer reads js/data.js).
   async leadershipAddsApplicant() {
@@ -288,7 +288,7 @@ export const cases = {
     return [...problems, ...log];
   },
 
-  // R4 (H14): leadership adds a second Kim; both get their own key, the allowed
+  // R4 (H14): Admin adds a second Kim; both get their own key, the allowed
   // list follows, and each Kim books under their own document through the real
   // rules (plain "kim" is refused).
   async sameSurnameBooking() {
@@ -316,7 +316,7 @@ export const cases = {
     return [...problems, ...log.filter((l) => !l.includes("permission"))];
   },
 
-  // R5 (H11): leadership locks the schedule and sends the times; the applicant
+  // R5 (H11): Admin locks the schedule and sends the times; the applicant
   // sees their time, confirms and withdraws through the real rules; with
   // availability closed a reply still saves.
   async applicantNotice() {
@@ -491,7 +491,7 @@ export const cases = {
     await a.evaluate(() => window.__release());
     await sleep(2500);
     const t = await a.$eval("#flowBody", (e) => e.textContent).catch(() => "");
-    problems.push(...ok(t.includes("Another Leadership page took over closing."), `page A says: ${t}`));
+    problems.push(...ok(t.includes("Another Admin page took over closing."), `page A says: ${t}`));
     const copy = JSON.parse(copyText).data;
     problems.push(...ok(JSON.stringify(sorted(await emu.listCollection("interviews_screening"))) === JSON.stringify(sorted(copy.interviews_screening)), "the frozen chunk deleted something"));
     problems.push(...ok((await emu.getDocument("interviews_meta/state")).roundStatus === "open", "round not open"));
@@ -521,7 +521,7 @@ export const cases = {
     // (1) the wake check: A's heartbeat and idle auto-stop (idleMs 1 ms) stand down
     await a.evaluate(() => window.__edRounds.tick());
     const t1 = await a.$eval("#flowBody", (e) => e.textContent).catch(() => "");
-    problems.push(...ok(t1.includes("Another Leadership page took over closing."), `A after waking: ${t1}`));
+    problems.push(...ok(t1.includes("Another Admin page took over closing."), `A after waking: ${t1}`));
     // (2) closeTx's own check, without the wake check: A's "Stop closing" write
     const r2 = await a.evaluate(() => window.__edRounds._tx(["saved", "clearing"], (w) => w.attempt({ status: "abandoned" })).then(() => "wrote", (e) => e.code));
     problems.push(...ok(r2 === "took-over", `closeTx let a stale page write: ${r2}`));
@@ -592,14 +592,14 @@ export const cases = {
     await asLeadership(v);
     await sleep(6000);
     const t = await v.$eval("#roundLine", (e) => e.textContent);
-    problems.push(...ok(t.includes("Leadership (another page) is closing the round now.") && !t.includes("Finish closing"), `viewer: ${t}`));
+    problems.push(...ok(t.includes("Admin (another page) is closing the round now.") && !t.includes("Finish closing"), `viewer: ${t}`));
     await a.evaluate(() => [...document.querySelectorAll("#flowBtns button")].find((x) => x.textContent === "Stop closing").click());
     await waitFlow(a, "Closing stopped", 15000);
     await closePage(a); await closePage(v);
     return [...problems, ...log];
   },
 
-  // A write from an older (pre-R6) leadership page during clearing is kept,
+  // A write from an older (pre-R6) Admin page during clearing is kept,
   // listed, quarantined, and removable only by "Delete them" with the name typed.
   async keptItemDuringClear() {
     const problems = [], log = [];

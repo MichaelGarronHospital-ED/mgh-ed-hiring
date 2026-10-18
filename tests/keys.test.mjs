@@ -46,7 +46,7 @@ test("assignKeys: never re-keys someone who has a key; a removed Kim doesn't cou
   assert.deepEqual(gone.patches, {});
 });
 
-test("sharedDocs: answers under the plain surname are a question for leadership, not a guess", () => {
+test("sharedDocs: answers under the plain surname are a question for Admin, not a guess", () => {
   const st = { candidates: [{ id: "a", name: "Dr Jane Kim", availKey: "kim-jane" }, { id: "b", name: "Dr Min Kim", availKey: "kim-min" }],
     availCand: { kim: { t1: "ip" } } };
   assert.deepEqual(sharedDocs(st).map((d) => [d.key, d.ids]), [["kim", ["a", "b"]]]);
@@ -77,7 +77,7 @@ test("Jane B Kim is found as herself, never as Jane Kim", () => {
   assert.equal(find("Jane", "Kim"), "kim-jane");
 });
 
-test("Jane B Kim beside Jane Kim must type \"Jane B\"; Leadership is told so", () => {
+test("Jane B Kim beside Jane Kim must type \"Jane B\"; Admin is told so", () => {
   const g = [{ id: "a", name: "Dr Jane Kim" }, { id: "b", name: "Dr Jane B Kim" }, { id: "c", name: "Dr Min Kim" }];
   assert.equal(typeExactly(g, g[1]), "Jane B");
   assert.equal(typeExactly(g, g[0]), null);

@@ -101,7 +101,7 @@ const scenarios = {
     return problems;
   },
 
-  // H11: the applicant sees the published time and confirms; leadership sees no badge.
+  // H11: the applicant sees the published time and confirms; Admin sees no badge.
   async applicantConfirms(page, url) {
     const problems = [];
     await load(page, url, base(), "adminpw"); await landAsAdmin(page);
@@ -127,7 +127,7 @@ const scenarios = {
     return problems;
   },
 
-  // H11: withdraw, then Undo; leadership sees "Withdrew" and Needs attention meanwhile.
+  // H11: withdraw, then Undo; Admin sees "Withdrew" and Needs attention meanwhile.
   async withdrawThenUndo(page, url) {
     const problems = [];
     await load(page, url, base(), "adminpw"); await landAsAdmin(page);
@@ -145,7 +145,7 @@ const scenarios = {
     const saved = st;
     await reloadAs(page, url, "adminpw"); await landAsAdmin(page); await tab(page, "panels");
     let p = await page.$eval("#panels", (e) => e.textContent);
-    problems.push(...ok(/Withdrew \w+ \d+/.test(p) && p.includes("has withdrawn"), "leadership doesn't see the withdrawal"));
+    problems.push(...ok(/Withdrew \w+ \d+/.test(p) && p.includes("has withdrawn"), "Admin doesn't see the withdrawal"));
     await asApplicant(page, url, "Ben", "Carter");
     await page.waitForSelector(".noticecard");
     await clickText(page, "#candview", "Undo"); await sleep(300);
@@ -190,7 +190,7 @@ const scenarios = {
     return problems;
   },
 
-  // H11: after the reply date, "No reply yet" shows for leadership only, and the
+  // H11: after the reply date, "No reply yet" shows for Admin only, and the
   // applicant is told the date has passed (buttons stay).
   async lateReplyLeadershipOnly(page, url) {
     const problems = [];
@@ -198,7 +198,7 @@ const scenarios = {
     await load(page, url, st0, "adminpw"); await landAsAdmin(page);
     await lockAndPublish(page);
     const p = await page.$eval("#panels", (e) => e.textContent);
-    problems.push(...ok(p.includes("No reply yet") && p.includes("the date to confirm has passed"), "no late line for leadership"));
+    problems.push(...ok(p.includes("No reply yet") && p.includes("the date to confirm has passed"), "no late line for Admin"));
     await asApplicant(page, url, "Rosalind", "Ashcombe");
     await page.waitForSelector(".noticecard");
     const t = await candText(page);

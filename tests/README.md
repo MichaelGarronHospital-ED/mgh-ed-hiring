@@ -70,13 +70,13 @@ Each group maps to a promise the tool makes to a real person:
 | Group | Guarantee |
 |---|---|
 | The ranking stays private to the admin | Reviewers can submit scores but cannot read anyone's — including their own collection. This is the anti-bias guarantee in DESIGN.md. |
-| Screening: reviewers get their own back, the collation stays admin-only | A reviewer can `get` a screening document by id — that is what makes their own flags and ratings follow them to a new device — but cannot `list` the collection, so nobody but leadership can sweep up everyone's. Also asserts that scores are **not** loosened the same way. |
+| Screening: reviewers get their own back, the collation stays admin-only | A reviewer can `get` a screening document by id (that is what makes their own flags and ratings follow them to a new device) but cannot `list` the collection, so nobody but Admin can sweep up everyone's. Also asserts that scores are **not** loosened the same way. |
 | An applicant cannot reach any committee data | No roster, no other applicants, no scores, no interviewer availability, no setup. |
 | An applicant can do their own scheduling | Reads the PII-free time list, writes their own availability — and *cannot read it back*. |
 | Only a real availability map can be saved (`applicant-availability.test.mjs`) | An availability document may hold only `slots`, each value in person / Zoom / either, at most 200 times. The `{}` name-check probe still passes. |
 | Only the admin can change setup | Roster, chair and times drive panel building; reviewers must not rewrite them. |
 | Reviewers can do their own job | Guards against over-tightening: every write a reviewer makes in the app (flag, un-flag, rate, clear a rating, score, clear a score, notes, tick and untick a time) must keep working. |
-| The ED password can save but never delete | Every ED physician holds it, so it cannot delete a document anywhere and cannot add, rename or remove a candidate. Leadership still can. |
+| The ED password can save but never delete | Every ED physician holds it, so it cannot delete a document anywhere and cannot add, rename or remove a candidate. Admin still can. |
 | Accounts the rules do not know | Signed-out, Anonymous sign-in (no email in the token), and any other valid Firebase account all get nothing, including from collections the rules never mention. |
 
 The role emails in the test file must match `AUTH` in [`../js/config.js`](../js/config.js)

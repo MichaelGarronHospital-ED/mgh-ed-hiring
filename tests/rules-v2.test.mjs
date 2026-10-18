@@ -78,7 +78,7 @@ describe("stage gates (H4)", () => {
   });
 
   for (const stage of ["screening", "scoring", "availability"]) {
-    it(`ED is refused once ${stage} is closed; the other stages still save; Leadership still can`, async () => {
+    it(`ED is refused once ${stage} is closed; the other stages still save; Admin still can`, async () => {
       await seed(STATE, { stages: { [stage]: { closed: true, at: ago(1) } } });
       await assertFails(writes[stage](committee()));
       for (const [other, w] of Object.entries(writes)) if (other !== stage) await assertSucceeds(w(committee()));
@@ -95,7 +95,7 @@ describe("stage gates (H4)", () => {
 
 // ============================================================================
 describe("round closing (H1)", () => {
-  it("ED and Guest writes are refused while the round is closing; Leadership is not", async () => {
+  it("ED and Guest writes are refused while the round is closing; Admin is not", async () => {
     await seed(ALLOWED, { keys: ["kim"] });
     await seed(STATE, { roundStatus: "closing", closingTab: "p-A", lease: { tab: "p-A", at: ago(1) } });
     await assertFails(setDoc(doc(committee(), "interviews_screening/Marrocco~c-1"), { rating: 3 }, { merge: true }));
@@ -177,7 +177,7 @@ describe("interviews_applicant: one confirmed time per applicant (H11)", () => {
     await assertFails(setDoc(doc(committee(), N), { date: "2027-03-04" }));
   });
 
-  it("Leadership can do everything; strangers nothing", async () => {
+  it("Admin can do everything; strangers nothing", async () => {
     await assertSucceeds(getDoc(doc(admin(), N)));
     await assertSucceeds(getDocs(collection(admin(), "interviews_applicant")));
     await assertSucceeds(setDoc(doc(admin(), N), { date: "2027-03-04" }));
@@ -191,7 +191,7 @@ describe("interviews_history: append-only, server time (H12)", () => {
   const H = "interviews_history/h1";
   const entry = (over = {}) => ({ at: serverTimestamp(), by: "leadership", action: "schedule.lock", text: "Locked the schedule", ...over });
 
-  it("Leadership can create an entry stamped with the server time", async () => {
+  it("Admin can create an entry stamped with the server time", async () => {
     await assertSucceeds(setDoc(doc(admin(), H), entry()));
     await assertSucceeds(setDoc(doc(admin(), "interviews_history/h2"),
       entry({ cand: "c-1", member: "Marrocco", undo: { kind: "panelOverrides", before: { "c-1": { slot: "t1" } }, afterHash: "ab" } })));
@@ -258,7 +258,7 @@ describe("public booking flag (H11, review M6)", () => {
 
 // ============================================================================
 describe("close lease on interviews_meta/state: everyday writes (review 3 M1)", () => {
-  it("with no close running or starting, every Leadership write passes (reveal, stages, questions)", async () => {
+  it("with no close running or starting, every Admin write passes (reveal, stages, questions)", async () => {
     await assertSucceeds(setDoc(doc(admin(), STATE), { interviewsComplete: true }, { merge: true }));
     await assertSucceeds(setDoc(doc(admin(), STATE), { stages: { screening: { closed: true, at: serverTimestamp() } } }, { merge: true }));
     await assertSucceeds(setDoc(doc(admin(), "interviews_meta/questions"), { version: 1, questions: [] }));
@@ -321,7 +321,7 @@ describe("close lease: expired, missing and malformed stored claims (reviews 4 a
   for (const [label, lease] of [["missing", undefined], ["null", null], ["a string", "p-A"], ["a number", 7],
     ["a map without at", { tab: "p-A", load: "l" }], ["a map whose at is a string", { tab: "p-A", at: "2026-10-16" }],
     ["a map whose at is null", { tab: "p-A", at: null }]]) {
-    it(`stored lease ${label}: no close running, an ordinary Leadership write passes`, async () => {
+    it(`stored lease ${label}: no close running, an ordinary Admin write passes`, async () => {
       await seed(STATE, { interviewsComplete: false, ...(lease === undefined ? {} : { lease }) });
       await assertSucceeds(setDoc(doc(admin(), STATE), { interviewsComplete: true }, { merge: true }));
     });

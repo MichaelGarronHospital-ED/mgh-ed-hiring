@@ -100,14 +100,14 @@ const scenarios = {
   },
 
   // R7: nothing is decrypted or copied any more. With no questions document the
-  // Leadership sign-in writes nothing, the Questions card says how to add them,
+  // Admin sign-in writes nothing, the Questions card says how to add them,
   // and the Passwords card waits for them (design 5.2).
   async noQuestionCopySinceR7(page, url) {
     const problems = [];
     await load(page, url, base({ questions: null, scores: { "Chen~c-1": { member: "Chen", candId: "c-1", overall: 3, notes: { 1: "about the case" } } } }), "adminpw");
     await landAsAdmin(page); await sleep(400);
     const st = await dumpState(page);
-    problems.push(...ok(!st.questions, "a questions document appeared after the Leadership sign-in"));
+    problems.push(...ok(!st.questions, "a questions document appeared after the Admin sign-in"));
     problems.push(...ok(!Object.values(st.history || {}).some((h) => h.action === "questions.migrate"), "a questions copy was recorded"));
     await openSetupCard(page, "setQuestions");
     const q = await page.$eval('details[data-sec="setQuestions"]', (e) => e.textContent);
@@ -225,7 +225,7 @@ const scenarios = {
     return problems;
   },
 
-  // Section 2.3: a new version.json shows ED one line; a Leadership page that
+  // Section 2.3: a new version.json shows ED one line; an Admin page that
   // has nothing to lose reloads itself, once per version.
   async reloadNotice(page, url) {
     const problems = [];
@@ -242,7 +242,7 @@ const scenarios = {
       await page.evaluate(() => { document.querySelector("#logout").click(); });
       await page.waitForFunction("window.__edReady === true", { timeout: 15000 }); await sleep(300);
       await signIn(page, "adminpw"); await landAsAdmin(page); await sleep(200);
-      await Promise.all([page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 8000 }).catch(() => problems.push("Leadership page didn't reload itself")),
+      await Promise.all([page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 8000 }).catch(() => problems.push("Admin page didn't reload itself")),
         page.evaluate(() => { document.activeElement && document.activeElement.blur(); window.__edCheckVersion(); })]);
       await page.waitForFunction("window.__edReady === true", { timeout: 15000 }); await sleep(800);
       const flag = await page.evaluate(() => sessionStorage.getItem("ed_iv_reloaded_for"));

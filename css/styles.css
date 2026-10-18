@@ -733,7 +733,7 @@ details.more > summary::-webkit-details-marker { display:none; }
 /* ---- close the round, past rounds, restore (H1) ------------------------------ */
 .roundline p { background:var(--ed-amber-tint); color:var(--ed-amber); }
 .roundline .linky { color:inherit; }
-/* another Leadership page is closing the round: this one is read-only */
+/* another Admin page is closing the round: this one is read-only */
 /* read-only while another page closes the round: the page sets `inert` on both */
 body.closing-elsewhere #app, body.closing-elsewhere #settings { opacity:.6; }
 .filepick { display:inline-flex; align-items:center; cursor:pointer; }
@@ -744,28 +744,6 @@ body.closing-elsewhere #app, body.closing-elsewhere #settings { opacity:.6; }
 .rstable th:first-child { text-align:left; font-weight:600; }
 .rstable thead th { color:var(--ed-ink-2); font-weight:600; font-size:var(--ed-text-xs); vertical-align:bottom; }
 
-/* ---- Setup: passwords for all ED tools (H3) -------------------------------- */
-.pwfield { display:flex; gap:8px; align-items:center; }
-.pwfield input { flex:1; min-width:0; }
-.pwfield .btn { flex:none; min-width:64px; }
-.pwgroup { padding:6px 0 10px; border-top:1px solid var(--ed-line-soft); }
-.pwgroup .ed-label, .pwdrift .ed-label { display:block; margin-top:10px; }
-.pwgroup:first-child { border-top:none; }
-.pwticks { display:flex; flex-direction:column; gap:4px; }
-.pwtick { display:flex; align-items:center; gap:10px; min-height:44px; font-weight:600; }
-.pwtick input { width:20px; height:20px; min-height:0; margin:0; }
-.pwlist { margin:8px 0; padding-left:20px; font-size:var(--ed-text-sm); }
-.pwlist li { margin:4px 0; }
-.pwdrift { margin:8px 0; }
-.pwdrift summary { cursor:pointer; min-height:36px; display:flex; align-items:center; gap:6px; color:var(--ed-accent-ink); font-weight:500; list-style:none; }
-.pwdrift summary::-webkit-details-marker { display:none; }
-.pwdrift summary::before { content:""; width:6px; height:6px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(-45deg); transition:transform .15s; }
-.pwdrift[open] summary::before { transform:rotate(45deg); }
-#pwNote { width:100%; font:inherit; font-size:var(--ed-text-sm); resize:vertical; }
-/* the dialog's one message line: first in the step, under its title (the phone keyboard covers the bottom) */
-.pwmsg { margin:0 0 12px; scroll-margin-top:16px; }
-.pwfield input[aria-invalid="true"] { outline:2px solid var(--ed-red); outline-offset:1px; }
-.pwmsg:empty { display:none; }
 .h3size { font-size:var(--ed-h3); font-weight:700; }
 
 /* the tab row's landmark wrapper adds no box of its own (the sticky row keeps working) */

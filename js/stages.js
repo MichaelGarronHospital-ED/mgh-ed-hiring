@@ -6,7 +6,7 @@
 //  state.roundStatus "closing" pauses every stage (H1).
 //
 //  The interview list (H7): an applicant is on it unless removed, or taken off
-//  by leadership (shortlist "out"), or, with no decision, has reached the
+//  by Admin (shortlist "out"), or, with no decision, has reached the
 //  concern threshold. shortlistBy says who decided: "leadership", or "auto"
 //  when closing screening froze the rule's answer. 0 = never take anyone off
 //  automatically.
@@ -47,7 +47,7 @@ export function isOnList(c, concerns, threshold) {
 }
 
 // Closing screening freezes the rule's answer for every applicant without a
-// leadership decision. Returns { patches: { id: { shortlist, shortlistBy } }, on, off }.
+// Admin decision. Returns { patches: { id: { shortlist, shortlistBy } }, on, off }.
 export function closePlan(cands, concernsOf, threshold) {
   const patches = {}; let on = 0, off = 0;
   (cands || []).filter((c) => !c.removed).forEach((c) => {
@@ -58,7 +58,7 @@ export function closePlan(cands, concernsOf, threshold) {
   });
   return { patches, on, off };
 }
-// Reopening screening clears the frozen answers; leadership decisions stay.
+// Reopening screening clears the frozen answers; Admin decisions stay.
 export function reopenPlan(cands) {
   return (cands || []).filter((c) => c.shortlistBy === "auto").map((c) => c.id);
 }

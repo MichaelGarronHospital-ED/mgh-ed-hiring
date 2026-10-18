@@ -187,7 +187,7 @@ const cases = {
   // the "didn't finish" line only with a pending change (both ways round)
   async setupCard(b, url) {
     const problems = [];
-    const LINE = "The Leadership, ED and Guest passwords are seen and changed on the ED tools passwords page (the gear on the ED tools front page).";
+    const LINE = "The Admin, ED and Guest passwords are seen and changed on the ED tools passwords page (the gear on the ED tools front page).";
     const PENDING = "An older password change started here didn't finish. Open the passwords page; it finds which tools still have the old password.";
     const runs = [
       ["no record", null, false],
@@ -216,7 +216,7 @@ const cases = {
         problems.push(...ok(c.links.length === 1 && c.links[0][0] === NEW_PAGE, `${label}: the card's link: ${JSON.stringify(c.links)}`));
         problems.push(...ok(c.controls === 0 && !/Change a password|Change now|Check/.test(c.body), `${label}: the card still offers a change: ${c.body}`));
         problems.push(...ok(c.body.includes(PENDING) === pending, `${label}: the didn't-finish line ${pending ? "is missing" : "shows"}: ${c.body}`));
-        problems.push(...ok(c.sub === (pending ? "· An older change didn't finish" : "· Leadership, ED and Guest"), `${label}: the card's summary: ${c.sub}`));
+        problems.push(...ok(c.sub === (pending ? "· An older change didn't finish" : "· Admin, ED and Guest"), `${label}: the card's summary: ${c.sub}`));
         problems.push(...ok(!c.sideways, `${label}: Setup scrolls sideways at 390 px`));
         // the link reaches the new page (intercepted)
         await p.click('details[data-sec="setPasswords"] .sec-body a');

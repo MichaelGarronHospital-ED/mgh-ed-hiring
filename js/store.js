@@ -20,15 +20,15 @@
 //    passwordsMeta : interviews_meta/passwords (dates only), or null (H3)
 //  "<member>" is a member ID (members.js). Legacy ids are the names.
 //
-//  History (H12): every leadership mutation takes an optional `history` entry
+//  History (H12): every Admin change takes an optional `history` entry
 //  (history.js entry(), or a function of the saved document before the change
 //  that returns one) and writes it in the SAME batch or transaction, stamped
 //  with the server time. There is no "saved but not logged".
 // ============================================================================
 
-import { effectiveSlots, toStored } from "./slots.js?v=R9";
-import { lastKey, candKey, ls } from "./util.js?v=R9";
-import { ROUND_COLLECTIONS, quarantineSet, isQuarantined } from "./backup.js?v=R9";
+import { effectiveSlots, toStored } from "./slots.js?v=R10";
+import { lastKey, candKey, ls } from "./util.js?v=R10";
+import { ROUND_COLLECTIONS, quarantineSet, isQuarantined } from "./backup.js?v=R10";
 
 // R6 (review 3 m2): documents kept by a close because they changed after the
 // copy belong to no round until leadership decides. Every view leaves them out.
@@ -53,7 +53,7 @@ function quarantineRaw(raw) {
   return out;
 }
 // Thrown when this page no longer holds the close (review 3 M1).
-export class TookOver extends Error { constructor() { super("Another Leadership page took over closing. Nothing more was changed from this page."); this.code = "took-over"; } }
+export class TookOver extends Error { constructor() { super("Another Admin page took over closing. Nothing more was changed from this page."); this.code = "took-over"; } }
 
 export const key = (member, candId) => `${member}~${candId}`;
 
@@ -275,16 +275,6 @@ export class LocalStore extends BaseStore {
     const next = mutate(before);
     this.state.questions = { ...next, updatedAt: new Date().toISOString() };
     this._hist(histOf(history, before, next));
-    this._save();
-  }
-  // H3: interviews_meta/passwords (dates and account keys only, never a value).
-  // mutate(before) returns the whole document; `history` optional.
-  async updatePasswords(mutate, history = null) {
-    this._load();
-    const before = this.state.passwordsMeta ? JSON.parse(JSON.stringify(this.state.passwordsMeta)) : null;
-    const next = mutate(before);
-    this.state.passwordsMeta = next;
-    if (history) this._hist(histOf(history, before, next));
     this._save();
   }
   now() { return new Date().toISOString(); }
@@ -537,7 +527,7 @@ export class FirestoreStore extends BaseStore {
     super();
     this._fb = fb; // { db, ...firestore fns }
     // A cached app.js from before R1 hands over fewer SDK functions than this
-    // store needs (no writeBatch, serverTimestamp, getDocs...), so a Leadership
+    // store needs (no writeBatch, serverTimestamp, getDocs...), so an Admin
     // save would fail in the minutes before that page reloads. Take the missing
     // ones from the same SDK module it loaded: already in memory, so at once.
     const NEED = ["writeBatch", "serverTimestamp", "getDoc", "getDocs", "deleteDoc", "Timestamp", "query", "orderBy", "limit", "startAfter",
@@ -934,18 +924,6 @@ export class FirestoreStore extends BaseStore {
       if (h) tx.set(...this._histDoc(h));
     });
   }
-  async updatePasswords(mutate, history = null) {
-    const { db, runTransaction } = this._fb;
-    const ref = this._doc("interviews_meta", "passwords");
-    await runTransaction(db, async (tx) => {
-      const snap = await tx.get(ref);
-      const before = snap.exists() ? snap.data() : null;
-      const next = mutate(before);
-      tx.set(ref, next);
-      const h = history ? histOf(history, before, next) : null;
-      if (h) tx.set(...this._histDoc(h));
-    });
-  }
   now() { return this._fb.serverTimestamp(); }
   tsFromMillis(ms) { return this._fb.Timestamp.fromMillis(ms); }
   decode(v) {
@@ -1162,7 +1140,7 @@ export class FirestoreStore extends BaseStore {
     if (b !== was) this._emit();
     return b;
   }
-  // Leadership: write the notices that changed, delete the ones nobody should
+  // Admin: write the notices that changed, delete the ones nobody should
   // see any more, stamp schedule.publishedAt, and log it, in one batch.
   async publishNotices(desired, history) {
     const { db, collection, getDocs, writeBatch, serverTimestamp } = this._fb;

@@ -11,7 +11,7 @@ read -rsp "Admin password: " ED_IV_ADMIN_PASSWORD; echo; export ED_IV_ADMIN_PASS
 ```
 
 `read -rsp` keeps the password out of your shell history and out of `ps`. It is
-the password for `admin@ed-hiring.app` (the Leadership account; the script checks its uid, R7c) from the Firebase console, the same
+the password for `admin@ed-hiring.app` (the Admin account; the script checks its uid, R7c) from the Firebase console, the same
 admin code typed into the app. Admin is required to *read* `interviews_scores`
 and `interviews_screening` at all, so the committee code will not work here.
 
@@ -37,7 +37,7 @@ Rename, merge and permanent delete are in the app: Screen tab, the applicant's r
 permanently, for an entry already removed, after typing their last name). Applicants who
 share a surname get their own keys there too. **Use the app.** The scripts below stay as a
 fallback for someone with a terminal; `allowed-list.mjs` uses the same key rule as the app
-(`availKey` when set), so a script run can't fight an open leadership page.
+(`availKey` when set), so a script run can't fight an open Admin page.
 
 ## Fixing a misspelled name
 

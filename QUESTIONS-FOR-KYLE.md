@@ -28,7 +28,7 @@ real working version takes me about **a day** to build.
    applicant, reads their CV and cover letter (linked from the OneDrive folder) and
    flags anyone they don't think is qualified. If **2 or more** people flag the same
    person, they come off the interview list (same rule as last year). You can also give
-   a quick **1–5 priority** score. Your input is private — only leadership sees the totals.
+   a quick **1–5 priority** score. Your input is private: only Admin sees the totals.
 
 2. **Collect availability.** Interviewers tick which interview times they can do, and
    whether they can be **in person, on Zoom, or either**. Applicants get **one link**,

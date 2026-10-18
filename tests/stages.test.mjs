@@ -41,7 +41,7 @@ test("isOnList truth table", () => {
   for (const [c, n, t, want] of rows) assert.equal(isOnList(c, n, t), want, `${JSON.stringify(c)} ${n} ${t}`);
 });
 
-test("closing screening freezes every applicant without a leadership decision; reopening clears only those", () => {
+test("closing screening freezes every applicant without an Admin decision; reopening clears only those", () => {
   const cands = [
     { id: "a" }, { id: "b" }, { id: "c", shortlist: "in", shortlistBy: "leadership" },
     { id: "d", shortlist: "out", shortlistBy: "leadership" }, { id: "e", removed: true },

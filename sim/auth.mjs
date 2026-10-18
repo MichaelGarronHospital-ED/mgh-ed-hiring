@@ -7,7 +7,7 @@
 // What it pins (Oct 2026 security pass; R7 sign-in by order):
 //   - the sign-in is kept for this tab only (browserSessionPersistence), set
 //     BEFORE signing in;
-//   - the role is found by signing in, in order: ED, Guest, Leadership; the
+//   - the role is found by signing in, in order: ED, Guest, Admin; the
 //     role that last worked on this browser first; Guest first on #apply;
 //     all refused is "Incorrect password.";
 //   - the password is never kept in sessionStorage (an older page's
@@ -146,21 +146,21 @@ try {
       a[a.length - 1] === "signOut" && (await gateShown(p)), a.join());
     await p.close(); }
 
-  // ---- Leadership password -------------------------------------------------
+  // ---- Admin password ------------------------------------------------------
   { const p = await page();
     await signIn(p, "adminpw");
     await landAsAdmin(p);
     let a = await authLog(p);
-    R("Leadership on a new browser: ED and Guest refuse, then Leadership",
+    R("Admin on a new browser: ED and Guest refuse, then Admin",
       a.join() === "persist:SESSION,refused:committee@mgh-ed-hiring.invalid,refused:applicant@mgh-ed-hiring.invalid,signIn:admin@mgh-ed-hiring.invalid", a.join());
     await reloaded(p, () => p.click("#logout"));
     a = await authLog(p);
-    R("Leadership: signs out on Log out", a[a.length - 1] === "signOut" && (await gateShown(p)), a.join());
+    R("Admin: signs out on Log out", a[a.length - 1] === "signOut" && (await gateShown(p)), a.join());
     await p.evaluate(() => localStorage.setItem("__authlog", "[]"));
     await signIn(p, "adminpw");
     await landAsAdmin(p);
     a = await authLog(p);
-    R("Leadership again on the same browser: the remembered role first, nothing refused",
+    R("Admin again on the same browser: the remembered role first, nothing refused",
       a.join() === "persist:SESSION,signIn:admin@mgh-ed-hiring.invalid", a.join());
     await p.close(); }
 

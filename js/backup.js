@@ -3,7 +3,7 @@
 //
 //  One file format serves the backup download, the copy a close saves into
 //  interviews_archive, and every restore. It is ALWAYS built from a fresh server
-//  read (store.snapshotRaw), never from page state: the leadership page mixes
+//  read (store.snapshotRaw), never from page state: the Admin page mixes
 //  this browser's own echo of screening and scores into its state, keeps only
 //  the slots of availability documents and fills in defaults, so a file built
 //  from it would hold things the server never had and miss things it does.
@@ -20,7 +20,7 @@
 //  every older version (upgrading in memory) and refuses newer ones.
 // ============================================================================
 
-import { canonicalJson, hashOf } from "./history.js?v=R9";
+import { canonicalJson, hashOf } from "./history.js?v=R10";
 
 export const FORMAT = "mgh-ed-hiring-backup";
 export const VERSION = 1;

@@ -23,7 +23,6 @@
     "passwords": "bash make-site.sh && node passwords-moved.mjs"
   },
   "devDependencies": {
-    "playwright-core": "1.60.0",
     "puppeteer-core": "^23.0.0"
   }
 }

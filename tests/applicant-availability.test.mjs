@@ -227,13 +227,13 @@ describe("only a real availability map can be saved", () => {
     assert.deepEqual(await slotsOf(), { t1: "ip" });
   });
 
-  test("the same shape applies to the committee and leadership", async () => {
+  test("the same shape applies to the committee and Admin", async () => {
     await assertFails(setDoc(doc(committeeDb(), AV), { slots: { t1: "banana" } }, { merge: true }));
     await assertFails(setDoc(doc(adminDb(), AV), { slots: { t1: "ip" }, extra: 1 }));
     await assertSucceeds(setDoc(doc(adminDb(), AV), { slots: { t1: "ip" } }, { merge: true }));
   });
 
-  test("the committee cannot delete an applicant's availability; leadership can", async () => {
+  test("the committee cannot delete an applicant's availability; Admin can", async () => {
     await applicantStore().setAvail("cand", "ashcombe", "t1", "ip");
     await assertFails(deleteDoc(doc(committeeDb(), AV)));
     await assertFails(deleteDoc(doc(applicantDb(), AV)));
@@ -243,7 +243,7 @@ describe("only a real availability map can be saved", () => {
 
 // ============================================================================
 describe("applicants who share a surname (H14)", () => {
-  // Once leadership has two Kims, each has their own key (kim-jane, kim-min) and
+  // Once Admin has two Kims, each has their own key (kim-jane, kim-min) and
   // the allowed list holds those, not plain "kim". Each writes their own
   // document, and nobody can write under the plain surname any more.
   test("two Kims each write their own document; neither can write under plain kim", async () => {

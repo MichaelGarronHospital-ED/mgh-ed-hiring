@@ -149,8 +149,8 @@ const scenarios = {
   },
 
   // Two applicants with the same surname and NO keys yet (live data from before
-  // Oct 2026, or a pair leadership hasn't separated) still share one document.
-  // Since H14 leadership is prompted ("Give them separate answers"), and new
+  // Oct 2026, or a pair Admin hasn't separated) still share one document.
+  // Since H14 Admin is prompted ("Give them separate answers"), and new
   // pairs get their own keys when added; that path is pinned in applicants.mjs.
   // This pins that an unseparated pair behaves exactly as before, so a change
   // to it is deliberate.
@@ -447,7 +447,7 @@ const scenarios = {
     const tabs = () => page.$$eval("#tabs button", (bs) => bs.map((b) => b.dataset.tab));
     const t0 = await tabs();
     problems.push(...ok(!t0.includes("score"), `plain admin has a Score tab: ${t0}`));
-    problems.push(...ok(t0.includes("panels") && t0.includes("ranking"), `plain admin is missing leadership tabs: ${t0}`));
+    problems.push(...ok(t0.includes("panels") && t0.includes("ranking"), `plain admin is missing Admin tabs: ${t0}`));
     const screen = await page.$eval("#screen", (el) => el.innerHTML);
     problems.push(...ok(!/Your review/.test(screen) && !/IV\.toggleFlag/.test(screen),
       "plain admin is shown a personal screening list to file flags under"));

@@ -24,6 +24,52 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## R10: "Leadership" is now "Admin" in every visible word (built Oct 18 2026; ships after R9)
+
+Alvin's decision (Oct 18 2026): the shared password and access level called "Leadership" is
+called "Admin" everywhere people see it. Nothing else changes: same password, same accounts,
+nobody is signed out.
+
+- **The page:** the sign-in help ("the Admin password"), the role line ("Admin access.", "Those
+  need the Admin password"), "Only Admin sees everyone's together", the "(Admin only)" concern and
+  note boxes, "Taken off by Admin" / "Kept on by Admin" and the exports' "(Admin decision)",
+  "Admin is closing this round", "Another Admin page took over closing", Past rounds "which only
+  Admin can see", Setup's Passwords card ("Admin, ED and Guest") and Change history ("Admin",
+  "Admin (name)").
+- **Kept as "leadership"** where it means the department's leaders as people: "Not on the list?
+  Ask leadership to add you.", "Check with leadership before changing." (how long closed rounds
+  are kept) and the two lines that send a disabled account or a wrong-looking password to
+  leadership for the Firebase console (the Admin password gives no console access).
+- **Unchanged on purpose:** account emails (`admin@`, voting's `leadership@`), uids, every stored
+  value (`by: "leadership"`, `shortlistBy: "leadership"`, a backup's `exportedBy`), role keys in
+  code, browser storage keys, addresses and `firestore.rules` (not even its comments, so the file
+  still matches the published rules). Old history entries show as "Admin" because the page names
+  them; nothing is rewritten.
+- `scripts/diagnose-login.mjs` and `scripts/report-data.mjs` print "Admin"; tests and sims that
+  read the words follow (`tests/history.test.mjs`, `sim/stages.mjs`, `sim/rounds.mjs`,
+  `sim/passwords-moved.mjs`, `sim/emulator.mjs`). Code comments, README, CLAUDE.md, DESIGN.md
+  and the sim, tests and scripts READMEs use "Admin" too; older entries here stay as written.
+- **Cleanup planned for the release after R9, done here** (Alvin asked to finish all remaining
+  work; R11 has nothing left). Each was unused since R9 or kept "one more release" by R8b, so
+  the rule "never remove a module in the release that stops using it" is met:
+  - deleted `js/passwords.js` (the old page's rules of a change) and `tests/passwords.test.mjs`;
+  - removed `store.updatePasswords` (both stores), the Firebase `appFns` the old page's helper
+    apps used (`loadFirestore` in `js/app.js`), and the unused `.pw*` and `#pwNote` styles;
+  - removed R8b's leftovers for older cached pages: `emailOrder` and `rememberKind` in
+    `js/signin.js`, `AUTH.newEmails` and `PARTNERS.voting.newEmails` in `js/config.js`, and the
+    `{ emails: { old, new } }` account shape (`signInPinned` takes `{ email, uid }` only; an
+    account with no email is refused, `tests/signin.test.mjs`). The page stopped using them
+    in R8b (R8 was the last that imported them). An R8 page still open or cached that fetches
+    `js/signin.js` afresh now fails to start; a reload fixes it (R8b went live on Oct 18);
+  - removed the sim's `playwright-core` dev dependency (used only by the old WebKit check);
+  - `scripts/diagnose-login.mjs`: its header now says the ED tools passwords page keeps voting
+    on the same values (it said Setup).
+  `interviews_meta/passwords` stays in backups and restore, and the Setup card still reads its
+  `pending` field. No rules change.
+- Version `R10`.
+
+---
+
 ## R9: the passwords page moved to the ED dashboard (built Oct 17 2026; ships after R8)
 
 Phase B of the passwords design (section B.7.1). The Leadership, ED and Guest passwords are now

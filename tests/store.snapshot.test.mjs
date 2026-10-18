@@ -1,5 +1,5 @@
 // store.snapshotRaw() reads the server fresh (review M1): never page state. The
-// leadership store mixes this browser's echo into its state; the backup must
+// Admin store mixes this browser's echo into its state; the backup must
 // not. Stub Firestore, no emulator.
 import { test } from "node:test";
 import assert from "node:assert/strict";

@@ -33,8 +33,8 @@ beforeEach(async () => {
 const as = (uid, opts) => env.authenticatedContext(uid, opts).firestore();
 // what each role, and only that role, can do
 const CAN = {
-  admin: (db) => getDoc(doc(db, "interviews_scores/Abara~c-1")),                            // Leadership only
-  committee: (db) => getDoc(doc(db, "interviews_meta/config")),                             // ED (and Leadership)
+  admin: (db) => getDoc(doc(db, "interviews_scores/Abara~c-1")),                            // Admin only
+  committee: (db) => getDoc(doc(db, "interviews_meta/config")),                             // ED (and Admin)
   applicant: (db) => setDoc(doc(db, "interviews_availCand/ashcombe"), { slots: { t0: "ip" } }, { merge: true }),   // Guest
 };
 
@@ -63,7 +63,7 @@ describe("no role's uid acts as another", () => {
     await assertFails(CAN.admin(as(UID.committee, pw(OLD_EMAIL.committee))));
     await assertFails(CAN.admin(as(UID.applicant, pw(OLD_EMAIL.applicant))));
   });
-  it("ED's uid with the Leadership email is still only ED", async () => {
+  it("ED's uid with the Admin email is still only ED", async () => {
     await assertFails(CAN.admin(as(UID.committee, pw(OLD_EMAIL.admin))));
     await assertSucceeds(CAN.committee(as(UID.committee, pw(OLD_EMAIL.admin))));
   });
