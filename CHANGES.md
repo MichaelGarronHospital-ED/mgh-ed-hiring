@@ -49,10 +49,23 @@ nobody is signed out.
   read the words follow (`tests/history.test.mjs`, `sim/stages.mjs`, `sim/rounds.mjs`,
   `sim/passwords-moved.mjs`, `sim/emulator.mjs`). Code comments, README, CLAUDE.md, DESIGN.md
   and the sim, tests and scripts READMEs use "Admin" too; older entries here stay as written.
-- **Moved to R11, untouched:** deleting `js/passwords.js`, `store.updatePasswords` and
-  `tests/passwords.test.mjs` (with the `.pw*` styles and the sim's `playwright-core`), and the
-  comment in `scripts/diagnose-login.mjs`, all planned for R10 in the R9 entry below.
-  `js/passwords.js` keeps its old words (only its `?v=` pins move), since nothing loads it.
+- **Cleanup planned for the release after R9, done here** (Alvin asked to finish all remaining
+  work; R11 has nothing left). Each was unused since R9 or kept "one more release" by R8b, so
+  the rule "never remove a module in the release that stops using it" is met:
+  - deleted `js/passwords.js` (the old page's rules of a change) and `tests/passwords.test.mjs`;
+  - removed `store.updatePasswords` (both stores), the Firebase `appFns` the old page's helper
+    apps used (`loadFirestore` in `js/app.js`), and the unused `.pw*` and `#pwNote` styles;
+  - removed R8b's leftovers for older cached pages: `emailOrder` and `rememberKind` in
+    `js/signin.js`, `AUTH.newEmails` and `PARTNERS.voting.newEmails` in `js/config.js`, and the
+    `{ emails: { old, new } }` account shape (`signInPinned` takes `{ email, uid }` only; an
+    account with no email is refused, `tests/signin.test.mjs`). The page stopped using them
+    in R8b (R8 was the last that imported them). An R8 page still open or cached that fetches
+    `js/signin.js` afresh now fails to start; a reload fixes it (R8b went live on Oct 18);
+  - removed the sim's `playwright-core` dev dependency (used only by the old WebKit check);
+  - `scripts/diagnose-login.mjs`: its header now says the ED tools passwords page keeps voting
+    on the same values (it said Setup).
+  `interviews_meta/passwords` stays in backups and restore, and the Setup card still reads its
+  `pending` field. No rules change.
 - Version `R10`.
 
 ---

@@ -277,16 +277,6 @@ export class LocalStore extends BaseStore {
     this._hist(histOf(history, before, next));
     this._save();
   }
-  // H3: interviews_meta/passwords (dates and account keys only, never a value).
-  // mutate(before) returns the whole document; `history` optional.
-  async updatePasswords(mutate, history = null) {
-    this._load();
-    const before = this.state.passwordsMeta ? JSON.parse(JSON.stringify(this.state.passwordsMeta)) : null;
-    const next = mutate(before);
-    this.state.passwordsMeta = next;
-    if (history) this._hist(histOf(history, before, next));
-    this._save();
-  }
   now() { return new Date().toISOString(); }
   tsFromMillis(ms) { return new Date(ms).toISOString(); }
   // a backup value back into what this store keeps ({ __ts } becomes an ISO string)
@@ -931,18 +921,6 @@ export class FirestoreStore extends BaseStore {
       const next = mutate(before);
       tx.set(ref, { ...next, updatedAt: serverTimestamp() });
       const h = histOf(history, before, next);
-      if (h) tx.set(...this._histDoc(h));
-    });
-  }
-  async updatePasswords(mutate, history = null) {
-    const { db, runTransaction } = this._fb;
-    const ref = this._doc("interviews_meta", "passwords");
-    await runTransaction(db, async (tx) => {
-      const snap = await tx.get(ref);
-      const before = snap.exists() ? snap.data() : null;
-      const next = mutate(before);
-      tx.set(ref, next);
-      const h = history ? histOf(history, before, next) : null;
       if (h) tx.set(...this._histDoc(h));
     });
   }

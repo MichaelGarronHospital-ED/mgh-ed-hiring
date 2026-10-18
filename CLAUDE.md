@@ -282,9 +282,10 @@ Full design and reference data (committee, candidates, questions, rules) live in
   passwords are and links there, plus "An older password change started here didn't finish..."
   while `interviews_meta/passwords.pending` exists (left by the old page; the new page finds
   which tools still have the old password). `interviews_meta/passwords` stays in backups and
-  restore. `js/passwords.js` and `store.updatePasswords` are unused from R9 and are deleted in
-  R11 with `tests/passwords.test.mjs` (never remove a module in the release that stops using
-  it). Pinned by `tests/versions.test.mjs` and `sim/passwords-moved.mjs`.
+  restore (nothing writes it any more). `js/passwords.js`, `store.updatePasswords` and
+  `tests/passwords.test.mjs`, unused from R9, were deleted in R10, with R8b's leftovers for
+  older cached pages (`emailOrder`, `rememberKind`, `newEmails`, the `{ emails: { old, new } }`
+  account shape): `signInPinned` takes `{ email, uid }` only. Pinned by `tests/versions.test.mjs` and `sim/passwords-moved.mjs`.
 - **Storage must never be touched directly — use `ss`/`ls` from `util.js`.**
   iOS Safari with "Block All Cookies", Private Browsing and some in-app browsers
   make `localStorage`/`sessionStorage` throw, *including the property getter*,

@@ -102,8 +102,8 @@ dashboard repo's README. Then tell people in person or by phone; never email a p
 - Everyone signed in with an old ED or Admin password is asked for the new one within
   about an hour, phones on Motion Voting included: don't change one on a voting day. Applicants
   with the old Guest password can't sign in until they get the new one.
-- `js/passwords.js` (the old page's rules of a change) and `store.updatePasswords` are unused
-  from R9 and are deleted in R11 with `tests/passwords.test.mjs`.
+- `js/passwords.js` (the old page's rules of a change), `store.updatePasswords` and
+  `tests/passwords.test.mjs`, unused from R9, were deleted in R10.
 - `set-passwords.py` in the `MGH-ED-Tools` folder stays as a break-glass tool for someone
   with the Firebase CLI; the normal way is the passwords page.
 - `scripts/diagnose-login.mjs` says which account accepts a given password (read-only).

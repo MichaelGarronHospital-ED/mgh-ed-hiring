@@ -447,9 +447,7 @@ async function loadFirestore() {
   const auth = au.getAuth(app);
   const db = f.getFirestore(app);
   return {
-    // the Firebase app functions too (initializeApp, deleteApp), for the helper
-    // apps of js/passwords.js; unused from R9, removed with it in R11
-    app, auth, authFns: au, appFns: { initializeApp: a.initializeApp, deleteApp: a.deleteApp },
+    app, auth, authFns: au,
     db, collection: f.collection, doc: f.doc,
     setDoc: f.setDoc, updateDoc: f.updateDoc, onSnapshot: f.onSnapshot, runTransaction: f.runTransaction,
     deleteField: f.deleteField, writeBatch: f.writeBatch, serverTimestamp: f.serverTimestamp,

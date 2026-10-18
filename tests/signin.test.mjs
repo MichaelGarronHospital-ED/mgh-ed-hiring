@@ -30,19 +30,16 @@ test("R7c's remembered email kinds are deleted on load; nothing else is touched"
   assert.equal(store.get("ed_iv_lastrole"), "admin");
 });
 
-// kept one more release (CLAUDE.md: never remove an export in the release that
-// stops using it): an older page, still open or cached, imports these and
-// passes { emails: { old, new } }. It now signs in with the new email only.
-test("an older page's imports still work and reach the new email only", async () => {
-  assert.deepEqual(signin.emailOrder("hiring"), ["new"]);
-  assert.deepEqual(signin.emailOrder("voting"), ["new"]);
-  signin.rememberKind("hiring", "old");
-  assert.equal(store.has("ed_iv_emailkind"), false);
+// R10: R7c's two-email helpers (emailOrder, rememberKind) and the
+// { emails: { old, new } } account shape, kept for older cached pages through
+// R9, are gone. An account without its one email is refused, never guessed.
+test("the R7c two-email helpers are gone; an account with no email is refused", async () => {
+  assert.equal(signin.emailOrder, undefined);
+  assert.equal(signin.rememberKind, undefined);
   const s = server({ "admin@mgh-ed-hiring.invalid": { password: "lead pw 1", uid: "UID-ADMIN" } });
-  const old = { emails: { old: "admin@old-domain.example", new: "admin@mgh-ed-hiring.invalid" }, uid: "UID-ADMIN", project: "hiring" };
-  const r = await signInPinned(s.signIn, old, "lead pw 1", { order: signin.emailOrder("hiring") });
-  assert.equal(r.kind, "new");
-  assert.deepEqual(s.calls, ["admin@mgh-ed-hiring.invalid"]);
+  const old = { emails: { old: "admin@old-domain.example", new: "admin@mgh-ed-hiring.invalid" }, uid: "UID-ADMIN" };
+  await assert.rejects(() => signInPinned(s.signIn, old, "lead pw 1"), (e) => e.code === "auth/invalid-credential");
+  assert.deepEqual(s.calls, []);
 });
 
 test("the right password: one sign-in with the .invalid email", async () => {

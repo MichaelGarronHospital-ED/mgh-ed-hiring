@@ -86,3 +86,15 @@ test("js/data.js is gone and nothing imports it", () => {
     }
   }
 });
+
+// R10: the old passwords page's module is gone (unused since R9), and nothing
+// imports it or calls the store write it used.
+test("js/passwords.js is gone and nothing imports it", () => {
+  assert.equal(existsSync(new URL("js/passwords.js", root)), false, "js/passwords.js is back");
+  for (const d of ["js/", "tests/", "sim/", "scripts/"]) {
+    for (const f of readdirSync(new URL(d, root)).filter((n) => /\.(m?js|sh)$/.test(n) && n !== "versions.test.mjs")) {
+      const src = readFileSync(new URL(d + f, root), "utf8");
+      assert.ok(!/from\s*["'][^"']*passwords\.js|import\(\s*["'][^"']*passwords\.js|updatePasswords/.test(src), `${d}${f} uses the old passwords module`);
+    }
+  }
+});

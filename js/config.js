@@ -53,9 +53,6 @@ export const PARTNERS = {
     },
     leadershipEmail: "leadership@mgh-ed-voting.invalid",
     edEmail: "ed@mgh-ed-voting.invalid",
-    // the same emails under R7c's name: kept one release for an older page
-    // still open or cached (it reads them); removed in the release after R8b
-    newEmails: { leadership: "leadership@mgh-ed-voting.invalid", ed: "ed@mgh-ed-voting.invalid" },
     // the same accounts by uid (Motion Voting's rules know them by these)
     uids: { leadership: "3eigCLaK0RQ5PmVhxfDgI0qoYzQ2", ed: "CXyo7yciWpc78J1TQYRzrPpu77C3" },
   },
@@ -76,9 +73,6 @@ export const AUTH = {
   adminEmail: "admin@mgh-ed-hiring.invalid",
   committeeEmail: "committee@mgh-ed-hiring.invalid",
   candidateEmail: "applicant@mgh-ed-hiring.invalid",
-  // the same emails under R7c's name: kept one release for an older page
-  // still open or cached (it reads them); removed in the release after R8b
-  newEmails: { admin: "admin@mgh-ed-hiring.invalid", committee: "committee@mgh-ed-hiring.invalid", candidate: "applicant@mgh-ed-hiring.invalid" },
   uids: { admin: "ULgtfRrkAVPS2aT69Tc4CjMqbsx1", committee: "36FXvbR8ExgU7p4cmwuCNfkgFgD2", candidate: "jvmQYhgYlRMf3f2J3uw8XXos8yD3" },
 };
 

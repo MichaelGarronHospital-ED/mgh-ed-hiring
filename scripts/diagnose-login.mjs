@@ -6,8 +6,8 @@
 //  accepts the password? The page tries ED (committee@), Guest (applicant@) and
 //  Admin (admin@mgh-ed-hiring.invalid); this script tries all three and says which
 //  accepted it, or why none did. With --voting it also tries Motion Voting's
-//  two accounts (ed@ and leadership@mgh-ed-voting.invalid), which Setup,
-//  the ED tools passwords page (passwords.html) keeps on the same values.
+//  two accounts (ed@ and leadership@mgh-ed-voting.invalid), which the ED tools
+//  passwords page (the gear on the ED tools front page) keeps on the same values.
 //
 //  READ ONLY. It reads no documents and writes nothing; it only attempts
 //  sign-ins, with Firebase's REST sign-in call (nothing is kept). The web API
