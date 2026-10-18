@@ -8,33 +8,33 @@
 //  enforced by the Firestore rules (see config.js and firestore.rules).
 // ============================================================================
 import { firebaseConfig, ORG_NAME, CHAIR, COMMITTEE, SLOTS, ONEDRIVE,
-         LOCAL_CODES, AUTH, SCREENING_DEADLINE } from "./config.js?v=R8b";
-import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R8b";
-import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R8b";
-import { autoPanels, buildPanel } from "./panels.js?v=R8b";
+         LOCAL_CODES, AUTH, SCREENING_DEADLINE, PASSWORDS_PAGE } from "./config.js?v=R9";
+import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R9";
+import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R9";
+import { autoPanels, buildPanel } from "./panels.js?v=R9";
 import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell, lastKey,
-         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R8b";
-import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R8b";
+         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R9";
+import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R9";
 import { effectiveSlots, slotLabel, slotTimeLabel, groupByDate, checkSlot, splitRange, responseCounts,
-         newSlotId, isStructured, fmtDate } from "./slots.js?v=R8b";
+         newSlotId, isStructured, fmtDate } from "./slots.js?v=R9";
 import { normalizeCommittee, interviewers as interviewersOf, pickable as pickableOf, memberName, memberStatus,
-         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R8b";
+         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R9";
 import { fromLegacy, normalizeQuestions, liveQuestions, idsWithNotes, scoringStarted, checkEdit, newQuestionId,
-         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R8b";
+         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R9";
 import { entry as hEntry, newHistoryId, panelUndo, shortlistUndo, screeningUndo, canUndo, undoneIds, textFor, whoFor, whenFor,
-         hashOf, toDate } from "./history.js?v=R8b";
-import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R8b";
-import { createRounds, pageId } from "./rounds.js?v=R8b";
-import { signInPinned } from "./signin.js?v=R8b";
-import { icsEvent, icsCalendar } from "./ics.js?v=R8b";
-import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R8b";
+         hashOf, toDate } from "./history.js?v=R9";
+import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R9";
+import { createRounds, pageId } from "./rounds.js?v=R9";
+import { signInPinned } from "./signin.js?v=R9";
+import { icsEvent, icsCalendar } from "./ics.js?v=R9";
+import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R9";
 import { STAGES, STAGE_WORD, stageOpen, stageClosedAt, roundOpen, bookingFor, thresholdOf, isOnList, closePlan, reopenPlan,
-         lockEntry } from "./stages.js?v=R8b";
+         lockEntry } from "./stages.js?v=R9";
 
 // The release this page is. Must equal version.json and every "?v=" in every
 // import (tests/versions.test.mjs). A page that sees a different version.json
 // was updated underneath it (section "Reload notice" below).
-const RELEASE = "R8b";
+const RELEASE = "R9";
 
 // Interview questions (H2): the saved document (interviews_meta/questions), the
 // only copy since R7 (the old encrypted js/data.js was deleted in R8).
@@ -447,8 +447,8 @@ async function loadFirestore() {
   const auth = au.getAuth(app);
   const db = f.getFirestore(app);
   return {
-    // the Firebase app functions too: the Passwords card (H3) opens short-lived
-    // helper apps (initializeApp, deleteApp) for the other accounts
+    // the Firebase app functions too (initializeApp, deleteApp), for the helper
+    // apps of js/passwords.js; unused from R9, removed with it in R10
     app, auth, authFns: au, appFns: { initializeApp: a.initializeApp, deleteApp: a.deleteApp },
     db, collection: f.collection, doc: f.doc,
     setDoc: f.setDoc, updateDoc: f.updateDoc, onSnapshot: f.onSnapshot, runTransaction: f.runTransaction,
@@ -2180,7 +2180,7 @@ function renderSettings() {
     ${section("setRetention", "Keep closed rounds for", retentionLabel(), retentionBody(), { open: false, info: "Set by the department. Check with leadership before changing." })}
     ${section("setRestore", "Restore from a backup file", "", restoreBody(), { open: false, info: "Load a backup file back in. You see exactly what would be added before anything is written." })}
     ${section("setBackup", "Backup", "", backupBody, { open: false, info: "Download everything in the working round. Do this before every release of the tool and before any big change." })}
-    ${section("setPasswords", "Passwords for all ED tools", "Leadership, ED and Guest", passwordsBody(), { open: false, info: "The three shared passwords. Changing one here changes it in Physician Hiring and Motion Voting together; the Patient Hub statistics page follows the Leadership password." })}
+    ${section("setPasswords", "Passwords for all ED tools", S.passwordsMeta && S.passwordsMeta.pending ? "An older change didn't finish" : "Leadership, ED and Guest", passwordsBody(), { open: false, info: "The three shared passwords. They are seen and changed on the ED tools passwords page, which changes them in Physician Hiring and Motion Voting together; the Patient Hub statistics page follows the Leadership password." })}
     ${section("setHistory", "Change history", "", historyBody(), { open: false, info: "Changes made with the Leadership password, newest first. Undo is offered where the change can still be undone." })}
     ${hint("Applicants are added on the Screen tab, under “Add candidates”.")}`;
 }
@@ -2375,11 +2375,18 @@ async function applyRestore(plan, backup, label) {
 }
 
 // ------------------------------------- Setup → Passwords for all ED tools (H3)
-// The change itself has its own page (passwords.html, js/pwpage.js), which the
-// ED dashboard also links to; this card only points there.
+// R9: the passwords are seen and changed on the ED dashboard's passwords page
+// (PASSWORDS_PAGE), not in this tool; this card only points there. A change
+// started on this tool's old page and never finished left
+// interviews_meta/passwords.pending; the new page finds which tools still have
+// the old password, so the card only says to open it.
 function passwordsBody() {
-  return `<p class="small" style="margin-top:0">The Leadership, ED and Guest passwords are changed on their own page:
-    <a href="passwords.html">ED tools passwords</a>.</p>`;
+  const pending = !!(S.passwordsMeta && S.passwordsMeta.pending);
+  return `<p class="small" style="margin-top:0">The Leadership, ED and Guest passwords are seen and changed on the ED tools
+    passwords page (the gear on the ED tools front page).</p>
+    ${pending ? `<p class="small" id="pwPending"><b class="warn">${ICON.warn} An older password change started here didn't finish.</b>
+    Open the passwords page; it finds which tools still have the old password.</p>` : ""}
+    <p class="small"><a href="${escapeHtml(PASSWORDS_PAGE)}">Open the ED tools passwords page</a></p>`;
 }
 
 // ------------------------------------------------ Setup → Change history (H12)

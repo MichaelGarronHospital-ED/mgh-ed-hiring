@@ -30,7 +30,10 @@ Design + decisions live in [`DESIGN.md`](DESIGN.md); the paneling algorithm is i
   `main` is live about a minute later.
 - **Secrets:** none in the repo and none in GitHub Actions. The ED, Leadership and
   Guest passwords are shared by word of mouth and are only the passwords of Firebase
-  accounts (see "Passwords" below). No file in the repo is derived from them.
+  accounts (see "Passwords" below). No file in the repo is derived from them. The one
+  deliberate exception is outside any repo: the ED tools passwords page keeps the three
+  passwords encrypted (with a key made from the Leadership password) in the separate
+  Firebase project `mgh-ed-admin`.
 - **Old address:** this tool used to live at
   `https://dralvinyang.github.io/ED-motion-voting/tools/interviews/`. That old
   repo now only redirects here, keeping the path, query string and #hash, so
@@ -75,34 +78,31 @@ makes with a freed email gets another uid and nothing else.
 until both are updated (`firestore.rules` and `AUTH.uids` in `js/config.js`;
 `tests/uids.test.mjs` keeps them equal). Uids are public identifiers, not secrets.
 
-**To change one: the ED tools passwords page**,
-https://michaelgarronhospital-ed.github.io/mgh-ed-hiring/passwords.html (the ED dashboard
-has a tile for it; Physician Hiring's Setup links to it). Sign in with the Leadership
-password. Tick the passwords to change, type the three current ones and press **Check**
-(this signs in to every account of the ticked passwords, and to the Physician Hiring
-account of each other one, with its current password, and changes nothing; a message shows
-at the top of the step, above where a phone's keyboard opens). Only then type the new ones (at least 10 characters; three
-or four words are easy to say and hard to guess; never a password in use now anywhere; and
-not containing the word "password" in any form, which is stricter than it needs to be on
-purpose) and press **Change now**. It changes Motion Voting first and Physician Hiring's Leadership
-account last, signing each account in seconds before its own change, then checks every
-new password and shows "Done". Then tell people in person or by phone; never email a
-password. Notes:
-- Everyone signed in with an old ED or Leadership password is asked for the new one
-  within about an hour, phones on Motion Voting included: don't do it on a voting day.
-  Applicants with the old Guest password can't sign in until they get the new one.
-- If it stops part way (lost connection, closed tab), it says exactly which tool has the
-  new password and which the old; "Try again" finishes it, and if the tab was closed,
-  Setup shows "A password change didn't finish" with "Open it to finish" (and nothing
-  else can be started until it is finished). Running it again is always safe. While it
-  runs, the browser asks before leaving the page.
-- If the tools already disagree (one account has another password), Check says which
-  account refused; "The tools already have different passwords" takes that account's own
-  current value.
-- Only the dates are stored (`interviews_meta/passwords`, and one Change history line);
-  never a password.
+**To see or change one: the ED tools passwords page**,
+https://michaelgarronhospital-ed.github.io/passwords.html (the gear on the ED tools front page).
+Since R9 it lives in the ED dashboard repo, not here: sign in with the Leadership password, and
+each of the three passwords has Show, Copy and Change; Change asks only for the new password
+twice and changes it in Physician Hiring and Motion Voting together (the Patient Hub statistics
+page follows the Leadership password). How it works, and its honest limits, are in the
+dashboard repo's README. Then tell people in person or by phone; never email a password.
+- This tool's old page, `passwords.html`, is now only a redirect there ("The passwords page has
+  moved. Open it."), so old links and bookmarks keep working; `js/pwpage.js` sends a cached
+  older copy of that page there too. The address is `PASSWORDS_PAGE` in `js/config.js`.
+- Setup, "Passwords for all ED tools", only says where the passwords are and links there. If a
+  change started on the old page (R7 to R8) never finished, the card also says "An older
+  password change started here didn't finish. Open the passwords page; it finds which tools
+  still have the old password." (It reads `interviews_meta/passwords`, which holds only dates
+  and which accounts were done, never a password; that document stays in backups and restore.)
+  Once the new passwords page shows every tool agrees, a leftover `pending` field in
+  `interviews_meta/passwords` can be removed in the Firebase console (project `mgh-ed-hiring`,
+  Firestore): it only drives that "didn't finish" line.
+- Everyone signed in with an old ED or Leadership password is asked for the new one within
+  about an hour, phones on Motion Voting included: don't change one on a voting day. Applicants
+  with the old Guest password can't sign in until they get the new one.
+- `js/passwords.js` (the old page's rules of a change) and `store.updatePasswords` are unused
+  from R9 and are deleted in R10 with `tests/passwords.test.mjs`.
 - `set-passwords.py` in the `MGH-ED-Tools` folder stays as a break-glass tool for someone
-  with the Firebase CLI; the normal way is the Setup card.
+  with the Firebase CLI; the normal way is the passwords page.
 - `scripts/diagnose-login.mjs` says which account accepts a given password (read-only).
 
 **Honest limit.** Anyone holding the ED password can change the ED accounts' password
@@ -125,8 +125,9 @@ No terminal needed:
    set by the break-glass script instead: on a Mac with the Firebase CLI signed in as the
    department account, `python3 set-passwords.py` in the `MGH-ED-Tools` folder (its own
    instructions), which changes the password of the same account (same uid).
-4. Then open the ED tools passwords page, sign in as Leadership and change it there with the
-   value you just set as the current one, so every tool ends up the same.
+4. Then open the ED tools passwords page (the gear on the ED tools front page) and sign in as
+   Leadership. If a tool no longer accepts the password the page has saved, it says which one
+   and asks for the one in use, so every tool ends up the same.
 
 ## Run it now (local mode)
 With `firebaseConfig` left empty in [`js/config.js`](js/config.js), the page uses

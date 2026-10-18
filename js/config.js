@@ -23,13 +23,20 @@ export const firebaseConfig = {
 // straight to their own scheduling; they never see the roster, questions, scores
 // or other applicants). Each is only the password of a Firebase role account
 // (AUTH below); the page finds the role by which account accepts it. Since R7 no
-// file is derived from a password, so changing one needs no commit: Setup,
-// "Passwords for all ED tools" (README, "Passwords").
+// file is derived from a password, so changing one needs no commit: the ED tools
+// passwords page, PASSWORDS_PAGE below (README, "Passwords").
 
 // The three passwords for LOCAL mode only (no Firebase; sim/make-site.sh fills
 // them in its own copy). Blank here, always: this repo is public, and in the
 // live model a password is only ever the password of a Firebase account.
 export const LOCAL_CODES = { admin: "", committee: "", candidate: "" };
+
+// ---- 2d. The ED tools passwords page (R9) --------------------------------
+// The three passwords are seen and changed on the ED dashboard's own page (the
+// gear on the ED tools front page), not in this tool. Setup links here, and
+// this tool's old passwords.html and js/pwpage.js send people here.
+// js/pwmoved.js and passwords.html carry the same address (tests/versions.test.mjs).
+export const PASSWORDS_PAGE = "https://michaelgarronhospital-ed.github.io/passwords.html";
 
 // ---- 2c. The other tools that share these passwords (H3) -----------------
 // Motion Voting's public web config and its two role accounts (public values,

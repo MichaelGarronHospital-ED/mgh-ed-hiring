@@ -24,8 +24,8 @@
 //    auth.close(session)            -> void
 // ============================================================================
 
-import { AUTH, PARTNERS } from "./config.js?v=R8b";
-import { signInPinned } from "./signin.js?v=R8b";
+import { AUTH, PARTNERS } from "./config.js?v=R9";
+import { signInPinned } from "./signin.js?v=R9";
 
 export const ROLES = Object.freeze(["leadership", "ed", "guest"]);
 export const ROLE_WORD = Object.freeze({ leadership: "Leadership", ed: "ED", guest: "Guest" });

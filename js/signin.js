@@ -8,7 +8,7 @@
 //  an email that ever pointed at another account is refused like a wrong
 //  password.
 // ============================================================================
-import { ls } from "./util.js?v=R8b";
+import { ls } from "./util.js?v=R9";
 
 // R7c kept which email kind worked last here; nothing reads it any more
 ls.del("ed_iv_emailkind"); ls.del("ed_iv_emailkind_voting");

@@ -86,7 +86,8 @@ Full design and reference data (committee, candidates, questions, rules) live in
   questions live in `interviews_meta/questions` only (R1 to R6 copied them out of the old
   encrypted `js/data.js` with exactly those ids; the file was deleted in R8).
 - **Every module import carries `?v=<release>`** (same as `version.json` and `RELEASE` in
-  `app.js`, and both pages' stylesheets and module tags, checked by `tests/versions.test.mjs`;
+  `app.js`, both pages' stylesheets, `index.html`'s module tag and, since R9, the plain script
+  tag of `passwords.html`, checked by `tests/versions.test.mjs`;
   a release between two numbered ones is `R7b`). Bump them all together each release. Never
   remove a module or an export in the release that stops using it; remove it one release later.
 - **Backups read the server fresh (`store.snapshotRaw`); never build one from page state.**
@@ -257,21 +258,27 @@ Full design and reference data (committee, candidates, questions, rules) live in
   `#apply`, else the role that last worked on this browser, `ls` `ed_iv_lastrole`, else ED,
   Guest, Leadership); a refusal moves on, any other error stops with its own message
   (`signInError`), all refused is "Incorrect password." So a password can change with no
-  commit, from the ED tools passwords page (`passwords.html`, `js/pwpage.js`, Leadership only;
-  Setup and the ED dashboard link to it; the rules of the change in `js/passwords.js`): tick,
-  the CURRENT values and Check (proves every account, changes nothing), and only then the new
-  values and Change now. Every message sits at the top of its step (a phone's keyboard covers
-  the bottom), and on a touch screen the field to fix is marked, not focused. Never bring back a
-  file, hash, wrap or check value made from a password (the old `js/data.js` wraps let anyone
-  test guesses offline and forced a commit for every change), and never let a password reach
-  the console, storage, Firestore or history: `tests/passwords.test.mjs` spies on all of them.
-  The change order is fixed (Motion Voting first, hiring `admin@`, the page's own account,
-  last), each account is signed in seconds before its own change (Firebase's 5-minute
-  recent-login rule), helpers use `initializeAuth` with `inMemoryPersistence` (never
-  `getAuth`, which would store the ED and Guest sign-ins on the Leadership computer), and a
-  re-run converges. The three passwords must all differ, or the gate cannot tell roles apart.
+  commit. Never bring back a file, hash, wrap or check value made from a password (the old
+  `js/data.js` wraps let anyone test guesses offline and forced a commit for every change), and
+  never let a password reach the console, storage, Firestore or history. The one deliberate
+  exception is outside any repo: the ED tools passwords page keeps the three passwords
+  encrypted, with a key made from the Leadership password, in the separate Firebase project
+  `mgh-ed-admin`. The three passwords must all differ, or the gate cannot tell roles apart.
   Firebase throttles the **device** after repeated failures, so nothing replays a password:
   it is never stored (an older page's `ed_iv_code` is deleted on load).
+- **The passwords are seen and changed only on the ED tools passwords page (R9)**,
+  `PASSWORDS_PAGE` in `js/config.js` (`https://michaelgarronhospital-ed.github.io/passwords.html`,
+  the gear on the ED tools front page, in the dashboard repo). Nothing in this tool changes a
+  password. This repo's `passwords.html` is only a redirect there (meta refresh, the plain
+  script `js/pwmoved.js`, and an "Open it." link; no module, no inline script), and
+  `js/pwpage.js` is a stub that sends a cached older copy of that page there; keep both, since
+  links and bookmarks to the old address live on. Setup's Passwords card only says where the
+  passwords are and links there, plus "An older password change started here didn't finish..."
+  while `interviews_meta/passwords.pending` exists (left by the old page; the new page finds
+  which tools still have the old password). `interviews_meta/passwords` stays in backups and
+  restore. `js/passwords.js` and `store.updatePasswords` are unused from R9 and are deleted in
+  R10 with `tests/passwords.test.mjs` (never remove a module in the release that stops using
+  it). Pinned by `tests/versions.test.mjs` and `sim/passwords-moved.mjs`.
 - **Storage must never be touched directly — use `ss`/`ls` from `util.js`.**
   iOS Safari with "Block All Cookies", Private Browsing and some in-app browsers
   make `localStorage`/`sessionStorage` throw, *including the property getter*,

@@ -35,15 +35,37 @@ test("index.html loads both stylesheets with the same ?v=", () => {
   for (const l of links) assert.equal(l.split("?v=")[1], release, l);
 });
 
-// the passwords page (passwords.html, js/pwpage.js) is pinned the same way
-test("passwords.html loads its module and both stylesheets with the same ?v=", () => {
+// R9: the passwords page moved to the ED dashboard. passwords.html is a plain
+// redirect: no module, no inline script, one plain script (js/pwmoved.js) and
+// both stylesheets pinned like index.html, and every way out (meta refresh,
+// script, link) goes to PASSWORDS_PAGE.
+test("passwords.html is a redirect to PASSWORDS_PAGE without a module", async () => {
+  const { PASSWORDS_PAGE } = await import(new URL("js/config.js", root));
+  assert.equal(PASSWORDS_PAGE, "https://michaelgarronhospital-ed.github.io/passwords.html");
   const html = readFileSync(new URL("passwords.html", root), "utf8");
-  const m = html.match(/<script type="module" src="js\/pwpage\.js\?v=([^"]+)"/);
-  assert.ok(m, "no versioned pwpage.js script tag");
-  assert.equal(m[1], release);
+  assert.ok(!/type="module"/.test(html), "passwords.html loads a module");
+  const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
+  assert.equal(scripts.length, 1, "passwords.html should load exactly one script");
+  assert.equal(scripts[0][2].trim(), "", "passwords.html has an inline script");
+  assert.equal(scripts[0][1].trim(), `src="js/pwmoved.js?v=${release}"`);
   const links = [...html.matchAll(/<link rel="stylesheet" href="(css\/[^"]+)"/g)].map((x) => x[1]);
   assert.deepEqual(links.map((l) => l.split("?v=")[0]).sort(), ["css/ed-ui.css", "css/styles.css"]);
   for (const l of links) assert.equal(l.split("?v=")[1], release, l);
+  assert.ok(html.includes(`<meta http-equiv="refresh" content="0; url=${PASSWORDS_PAGE}" />`), "no meta refresh to PASSWORDS_PAGE");
+  assert.ok(html.includes(`The passwords page has moved. <a class="ed-btn ed-btn-filled" href="${PASSWORDS_PAGE}">Open it.</a>`), "no visible link to PASSWORDS_PAGE");
+  const moved = readFileSync(new URL("js/pwmoved.js", root), "utf8");
+  assert.ok(!/\bimport\b|\bexport\b/.test(moved), "js/pwmoved.js must stay a plain script");
+  assert.ok(moved.includes(`location.replace("${PASSWORDS_PAGE}");`), "js/pwmoved.js doesn't go to PASSWORDS_PAGE");
+});
+
+// cached older passwords.html pages load js/pwpage.js as a module: it only sends them on
+test("js/pwpage.js is the stub that sends older pages to PASSWORDS_PAGE", () => {
+  const src = readFileSync(new URL("js/pwpage.js", root), "utf8");
+  const imports = [...src.matchAll(/import\s[^;]*?from\s*["']([^"']+)["']/g)].map((m) => m[1]);
+  assert.deepEqual(imports, [`./config.js?v=${release}`]);
+  assert.match(src, /import \{ PASSWORDS_PAGE \} from/);
+  assert.match(src, /^location\.replace\(PASSWORDS_PAGE\);$/m);
+  assert.ok(!/\bimport\(/.test(src), "the stub loads another module");
 });
 
 test("app.js says it is the same release", () => {
