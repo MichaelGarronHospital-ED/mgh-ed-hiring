@@ -157,7 +157,7 @@ and sample questions. Data does **not** sync across devices in this mode.
 6. Committee → `index.html`; applicants → `book.html`.
 
 ## Interview times
-Setup (gear icon) → **Interview times**. Add one time, or a block that's split into
+Availability tab → **Interview times** (Admin; in Setup until R11). Add one time, or a block that's split into
 back-to-back interviews (e.g. Oct 7, 9:00–12:00, 1-hour → three times). Each time can be
 edited or removed, or a whole day at once; changes show on everyone's screen live.
 - Every time has a permanent id (`js/slots.js`); availability and manual panels are
@@ -169,7 +169,7 @@ edited or removed, or a whole day at once; changes show on everyone's screen liv
 - Duplicates are blocked; overlaps and past dates ask for confirmation. Edits run in a
   Firestore transaction, so two admins editing at once don't overwrite each other.
 - The `SLOTS` in `js/config.js` are only the starting defaults, used until the first
-  edit in Setup. After that the saved list is authoritative, even if it's empty.
+  edit. After that the saved list is authoritative, even if it's empty.
 
 ## One link, three audiences
 The same `index.html` serves everyone; what you can do depends on the password you type:
@@ -222,7 +222,7 @@ from scratch takes these console steps (they can't be done from the repo):
 3. **Firestore → Rules →** paste [`firestore.rules`](firestore.rules) → **Publish**.
 4. Check that the emails in `AUTH` in [`js/config.js`](js/config.js) match the three accounts.
 5. Sign in as **admin** once — the app publishes the PII-free list of interview times
-   to `/interviews_public/slots` (and again on every edit in Setup → Interview times),
+   to `/interviews_public/slots` (and again on every edit of the interview times on the Availability tab),
    so applicants can read *only* that.
 
 What this enforces (server-side, not just UI):
@@ -281,7 +281,7 @@ it, so every Admin save would fail.
 ## Backups and the change history (Oct 2026)
 
 - **Download a backup before every release of the tool and before any big change.**
-  Ranking tab, "Back up this hiring cycle", or Setup, Backup: **Download backup file (for
+  Ranking tab, "Back up this hiring cycle", or Setup, Back up: **Download backup file (for
   restoring)** saves the whole working round as one JSON file, read fresh from the database
   (never from what the page happens to hold). It includes the interview questions, the input
   of people who have left or were taken off the list, the applicants' replies and the change
@@ -299,7 +299,7 @@ it, so every Admin save would fail.
   list of people. A row can be removed outright only if that person saved nothing. "Add
   people" takes one per line: "Name, F" or "Name, M" for interviewers, just the name for
   screeners.
-- **Setup, Interview questions** edits the questions, the rating scale and the guidance.
+- **The Questions tab** (Admin; in Setup until R11) edits the questions, the rating scale and the guidance.
   Once anyone has scored, questions can't be added, removed or reordered (only the wording
   fixed), because notes are filed under each question.
 - **Round stages (Setup).** Close screening, availability and scoring as each deadline
@@ -324,14 +324,14 @@ it, so every Admin save would fail.
   second applicant with an existing surname is added, both get their own answers (the page
   says so); applicants with a unique surname see no difference. If answers were already saved
   under the shared surname, Panels, Needs attention asks whose they are.
-- **Two rooms and day chairs (Setup, Interview times).** Each time can be "1 room" or "2 rooms"
+- **Two rooms and day chairs (Availability tab, Interview times).** Each time can be "1 room" or "2 rooms"
   (two interviews at once, two separate panels). Each day can have its own chair ("Chair this
   day"), or none; a day with two-room times also picks who leads room 2.
 - **Your interviews (Score tab).** Nobody is pre-selected. Once the schedule is locked, a reviewer
   sees only the applicants on their own panels, with "Show all applicants" to widen.
-- **Messages and calendar files (Panels).** For each panel: "Copy email to applicant", "Copy email
-  to panel", and calendar files (.ics) for the panel and for the applicant; also "Calendar file
-  for all interviews" and "Copy all applicant emails". Setup, Interview details holds the
+- **Messages and calendar files (Panels).** For each panel: Email (to the applicant, to the
+  panel) and Calendar (.ics for the panel, for the applicant); in the tab's More menu, "Calendar
+  file for all interviews" and "Copy all applicant emails". Setup, Interview details holds the
   location, Zoom link and contact used in them. Availability: "Email who we're waiting on"
   opens your mail app with the interviewers' work emails (from Setup) in Bcc; for applicants it
   copies a reminder (applicant emails are never stored). Nothing is sent by the tool itself.

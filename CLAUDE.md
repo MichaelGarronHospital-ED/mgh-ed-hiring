@@ -52,6 +52,35 @@ Full design and reference data (committee, candidates, questions, rules) live in
   the repo on 2026-10-14. Applicant files (CVs) are NOT in this
   public repo; they stay in Alvin's "ED Interviews" folder.
 
+## Tabs and Setup (R11, Oct 18 2026)
+
+- **Tabs follow the order of the work** (`buildTabs`). Admin: Screen, Availability, Panels,
+  Questions, Ranking (plus Score after Questions when Admin reviews as a member who
+  interviews). Members who interview: Screen, Availability, Score. Screens only: Screen.
+  Availability must stay before Panels: panels are built from it.
+- **Screen** (Admin): "+ Add applicants" at the top (a `<details data-sec="adder">`, open by
+  itself only while there are no applicants), then Collation & shortlist, then the Coordinator
+  dashboard.
+- **Availability** (Admin): the **Interview times** card first (`data-sec="times"`, the same
+  `timesEditor()` and `store.updateTimes` that were in Setup, closed to a one-line summary once
+  times exist), then both grids. The tab redraws on every live update, so `render()` holds it
+  while focus is in its `.tform` or a times save is in flight (`editorBusy()`, the old
+  `setupBusy`), and `flushSetup` catches up on focusout. `rerenderSettings()` redraws Setup
+  AND the Availability or Questions tab when it is on screen; every editor action calls it.
+  Pinned by `sim/foundations.mjs` `editorsSurviveUpdates`.
+- **Questions** (Admin only, `#questions`, `renderQuestions`): the same `questionsEditor()`,
+  draft and `store.updateQuestions`; still locked once scoring starts (the lock is the tab's
+  grey line). It files nothing under a name, so Admin with no name sees it.
+- **Panels**: one filled button (Lock the schedule; once locked, Send times to applicants),
+  everything else in one "More" menu; per panel two small groups, Email and Calendar.
+- **Setup** (the gear) keeps only once-a-round and rare settings, under four small headings:
+  People (Committee and screeners, Panel chair), This round (Round stages, Deadlines, Screening
+  rule, Interview details, Applications folder, This round), Records (Back up, Restore, Past
+  rounds, Keep closed rounds for, Change history), Passwords. Every `data-sec` id is unchanged;
+  `setQuestions` and `setSlots` are gone (sims open the tabs instead).
+- Explanations live on the (i) (`infoIcon`, `.tooltip`), never as paragraphs on the page; a
+  "More" menu (`details.more`) closes on a pick, an outside tap or Escape.
+
 ## Non-negotiables
 
 - **Members are keyed by `id`, never by display name. Legacy ids are the names; never re-key.**
@@ -127,7 +156,8 @@ Full design and reference data (committee, candidates, questions, rules) live in
   lands as "Admin" (coordinators hold it, not just physicians). Every view that
   files input under `ui.member` — own screening, own availability, the Score
   tab — must be hidden when it's null, or it writes under `"null"`. An admin
-  picks a name via "review as a member". Pinned by `sim` → `adminHasNoName`.
+  picks a name via "review as a member". Pinned by `sim` → `adminHasNoName` (which since R11
+  also pins the tab order and that the times and questions editors sit on their tabs).
 - **All asset paths relative** so GitHub Pages serves it at `…/mgh-ed-hiring/`.
 - **Panel rules** (Phase 2): 3–5 members, Kyle present if available, ≥1 male +
   ≥1 female. Genders are in DESIGN.md; treat hard-vs-soft as pending Kyle's confirm.
