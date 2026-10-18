@@ -81,6 +81,15 @@ export const dialogOpen = () => ["confirmWrap", "flowWrap"].some((id) => {
 //   ctl.body  (the body element, to wire inputs after a step is painted)
 //   ctl.close(value)  resolves the promise
 // Escape or a click outside closes with null unless opts.sticky.
+// Give focus back to what had it before a dialog opened. An item picked from a
+// "More" menu is hidden once the menu closes, so its menu's button gets focus
+// instead (R11), never the page.
+function focusBack(el) {
+  if (!el || !el.focus) return;
+  const menu = el.closest && el.closest("details.more");
+  const target = menu && !menu.open ? menu.querySelector("summary") : el;
+  try { if (target) target.focus(); } catch { /* gone */ }
+}
 export function flowDialog(show, opts = {}) {
   const wrap = document.getElementById("flowWrap");
   if (!wrap) return Promise.resolve(null);
@@ -96,7 +105,7 @@ export function flowDialog(show, opts = {}) {
         wrap.classList.add("hidden"); body.innerHTML = ""; btns.innerHTML = "";
         document.removeEventListener("keydown", onKey, true);
         wrap.onclick = null;
-        if (prevFocus && prevFocus.focus) { try { prevFocus.focus(); } catch { /* gone */ } }
+        focusBack(prevFocus);
         if (opts.onClose) try { opts.onClose(v); } catch { /* ignore */ }
         resolve(v);
       },
@@ -173,7 +182,7 @@ export function confirmDialog(msg, opts = {}) {
       yes.onclick = no.onclick = wrap.onclick = null;
       if (alt) alt.onclick = null;
       document.removeEventListener("keydown", onKey, true);
-      if (prevFocus && prevFocus.focus) { try { prevFocus.focus(); } catch { /* gone */ } }
+      focusBack(prevFocus);
       resolve(v);
     };
     const onKey = (e) => {

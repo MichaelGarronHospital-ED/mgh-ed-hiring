@@ -70,6 +70,12 @@ gate, confirm, stage lock, history entry, privacy rule and saved value is as it 
   New checks: `stages` `infoIconsFitAPhone` and the filled Send button in `lockScheduleHolds`,
   `foundations` `moreMenuFocus`, and `editorsSurviveUpdates` now also pins live grids while
   the form is held and the removed-time message. The new checks fail on the build before them.
+- **Second review:** the times card is held only for a live update, never for the editor's
+  own Edit, Cancel and Save, which on iOS leave focus in the field and so looked like they did
+  nothing (`foundations` `timesButtonsWithFocusInField`, fails on the build before). A dialog
+  opened from a More menu gives focus back to that menu's button on Cancel. A subtitle is
+  trimmed before its last word is kept with the (i), and each card wires its open/close
+  listener once.
 - No module or export was removed. `firestore.rules` is unchanged.
 
 ## R10: "Leadership" is now "Admin" in every visible word (built Oct 18 2026; ships after R9)

@@ -346,7 +346,7 @@ async function initStore(role) {
         backToMemberPick();
         return;
       }
-      renderBanner(); render();
+      renderBanner(); render({ live: true });
       refreshSetup();   // keep the open Setup modal live
     }
     // The "Who are you?" list is built before the first Firestore snapshot can
@@ -632,7 +632,7 @@ function section(id, title, sub, bodyHtml, opts = {}) {
   // the (i) stays on the line of the word before it, never alone on a phone
   // (a long subtitle wraps like any text; sims read .sec-sub without the (i))
   const t = String(title), i = t.lastIndexOf(" ");
-  const u = String(sub || ""), j = u.lastIndexOf(" ");
+  const u = String(sub || "").trim(), j = u.lastIndexOf(" ");
   const subHead = j < 0 ? "" : escapeHtml(u.slice(0, j + 1)), subTail = escapeHtml(j < 0 ? u : u.slice(j + 1));
   const titleHtml = sub
     ? `${escapeHtml(t)} <span class="subline"><span class="sec-sub"><span class="dot">· </span>${subHead}<span class="nobr">${subTail}${infoIcon(opts.info)}</span></span></span>`
@@ -644,6 +644,10 @@ function section(id, title, sub, bodyHtml, opts = {}) {
 // wire <details> toggles → persist open state (called after each render)
 function wireSections() {
   document.querySelectorAll("details.section, details.adder").forEach((d) => {
+    // once per element: a card kept across redraws (the held times card) must
+    // not gain another listener on every update
+    if (d.dataset.wired) return;
+    d.dataset.wired = "1";
     d.addEventListener("toggle", () => {
       ui.openSections[d.dataset.sec] = d.open;
       if (d.dataset.sec === "setHistory" && d.open && !ui.hist) IV.loadHistory();
@@ -718,13 +722,15 @@ function renderBanner() {
   el.innerHTML = `<div class="inner">${ICON.cal}<span>${txt}</span></div>`;
 }
 
-function render() {
+// live: a store update, not the person's own action. Only a live update may
+// hold the Availability tab's times card (see renderAvailabilityInner).
+function render({ live = false } = {}) {
   ["screen", "availability", "score", "panels", "questions", "ranking"].forEach((t) =>
     $("#" + t).classList.toggle("hidden", t !== ui.tab));
   // The interview times editor lives on the Availability tab (R11); while it is
   // being typed in, renderAvailability holds that one card (see there).
   ({ screen: renderScreen, availability: renderAvailability, score: renderScore,
-     panels: renderPanels, questions: renderQuestions, ranking: renderRanking }[ui.tab] || (() => {}))();
+     panels: renderPanels, questions: renderQuestions, ranking: renderRanking }[ui.tab] || (() => {}))({ live });
   wireSections();
 }
 
@@ -1257,11 +1263,11 @@ function timesSummary(slots) {
   const days = groupByDate(slots);
   return `${pl(slots.length, "time")} on ${days.length === 1 && days[0].date ? fmtDate(days[0].date) : pl(days.length, "day")}`;
 }
-function renderAvailability() {
+function renderAvailability({ live = false } = {}) {
   const restore = keepFocus("#availability");
-  try { renderAvailabilityInner(); } finally { restore(); }
+  try { renderAvailabilityInner(live); } finally { restore(); }
 }
-function renderAvailabilityInner() {
+function renderAvailabilityInner(live) {
   const map = S.availIv[ui.member] || {};
   const slots = EFF().slots;
   const mine = isInterviewer(ui.member), avOpen = isOpen("availability");
@@ -1278,7 +1284,9 @@ function renderAvailabilityInner() {
   const root = $("#availability");
   const timesSec = ui.isAdmin ? root.querySelector(':scope > details[data-sec="times"]') : null;
   const act = document.activeElement;
-  const holdTimes = !!timesSec && (!!ui.tBusy || !!(act && timesSec.contains(act) && act.closest(".tform")));
+  // Only on a live update: the editor's own buttons (Edit, Cancel, Save) must
+  // always redraw it, even when iOS leaves focus in a field after the tap.
+  const holdTimes = live && !!timesSec && (!!ui.tBusy || !!(act && timesSec.contains(act) && act.closest(".tform")));
   if (holdTimes) ui.setupStale = true;
   else if (ui.isAdmin) dropGoneEdit();
   if (ui.isAdmin && !holdTimes) {
@@ -4007,7 +4015,7 @@ const rounds = createRounds({
   downloadText: (name, text, mime) => downloadFile(name, text, mime),
   backupName: (name) => backupFileName(name),
   excelFromData: (data) => downloadExcel(toState(data)),
-  rerender: () => { render(); refreshSetup(); },
+  rerender: () => { render({ live: true }); refreshSetup(); },
   onActive: (on) => { ui.closing = on; },
 });
 // Every page other than the one closing: read-only while the close is alive;

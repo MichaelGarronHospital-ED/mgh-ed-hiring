@@ -64,14 +64,16 @@ Full design and reference data (committee, candidates, questions, rules) live in
   on the card's (i), once), then Who has screened (`data-sec="dash"`).
 - **Availability** (Admin): the **Interview times** card first (`data-sec="times"`, the same
   `timesEditor()` and `store.updateTimes` that were in Setup, closed to a one-line summary once
-  times exist), then both grids. The tab redraws on every live update; while focus is in the
-  times card's `.tform` or a times save is in flight, `renderAvailabilityInner` holds ONLY that
-  card (it replaces the nodes after it, never the card, which would blur the field) so the
+  times exist), then both grids. The tab redraws on every live update; on a live update only
+  (`render({ live: true })`, never the editor's own Edit, Cancel or Save, which must redraw even
+  when iOS leaves focus in a field), while focus is in the times card's `.tform` or a times save
+  is in flight, `renderAvailabilityInner` holds ONLY that card (it replaces the nodes after it, never the card, which would blur the field) so the
   grids stay live, and `flushSetup` (focusout) or `timesBusy` catches the card up.
   `dropGoneEdit()` closes an edit whose time someone else removed, on the tab and in Setup.
   `rerenderSettings()` redraws Setup AND the Availability or Questions tab when it is on screen;
   every editor action calls it (a live update's `refreshSetup` passes `tab:false`, since
-  `render()` already drew the tab). Pinned by `sim/foundations.mjs` `editorsSurviveUpdates`.
+  `render()` already drew the tab). Pinned by `sim/foundations.mjs` `editorsSurviveUpdates`
+  and `timesButtonsWithFocusInField`.
 - **Questions** (Admin only, `#questions`, `renderQuestions`): the same `questionsEditor()`,
   draft and `store.updateQuestions`; still locked once scoring starts (the lock is the tab's
   grey line). It files nothing under a name, so Admin with no name sees it.

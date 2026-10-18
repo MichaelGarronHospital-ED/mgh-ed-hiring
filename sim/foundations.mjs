@@ -128,6 +128,35 @@ const scenarios = {
     return problems;
   },
 
+  // R11 review: iOS leaves focus in the field after a button is tapped. The
+  // times editor's own buttons must still redraw the card then (only a live
+  // update may hold it): Cancel closes the edit, Edit opens another time, and
+  // Save with nothing changed closes the edit.
+  async timesButtonsWithFocusInField(page, url) {
+    const problems = [];
+    await load(page, url, base(), "adminpw"); await landAsAdmin(page);
+    await tab(page, "availability"); await sleep(400);
+    await page.evaluate(() => { const d = document.querySelector('#availability details[data-sec="times"]'); d.open = true; d.dispatchEvent(new Event("toggle")); });
+    // the handlers are called with focus left in the field, as an iOS tap does
+    const step = (focusSel, act) => page.evaluate(async (focusSel, act) => {
+      const f = document.querySelector(focusSel); if (!f) return { error: `no ${focusSel}` };
+      f.focus();
+      await eval(act);
+      await new Promise((r) => setTimeout(r, 150));
+      const ed = document.querySelector("#availability .trow.editing");
+      return { editing: !!document.querySelector("#tEdDate"),
+        editRow: ed ? ed.querySelector("#tEdStart").value : "" };
+    }, focusSel, act);
+    await page.evaluate(() => window.IV.tEdit("t0")); await sleep(150);
+    let r = await step("#tEdDate", "window.IV.tEditCancel()");
+    problems.push(...ok(!r.error && !r.editing, `Cancel with focus in the date field left the edit open: ${JSON.stringify(r)}`));
+    r = await step("#tAddFrom", "window.IV.tEdit('t1')");
+    problems.push(...ok(!r.error && r.editing && r.editRow === "10:00", `Edit with focus in Add times didn't open t1: ${JSON.stringify(r)}`));
+    r = await step("#tEdDate", "window.IV.tSave(null)");
+    problems.push(...ok(!r.error && !r.editing, `Save with nothing changed left the edit open: ${JSON.stringify(r)}`));
+    return problems;
+  },
+
   // R11 review: a More menu closes when focus tabs out of it, and after a pick
   // focus goes back to its button instead of the page.
   async moreMenuFocus(page, url) {
@@ -149,6 +178,15 @@ const scenarios = {
     const after = await page.evaluate(() => ({ open: document.querySelector("details.panelmore").open,
       focus: document.activeElement && document.activeElement.matches("details.panelmore > summary") }));
     problems.push(...ok(!after.open && after.focus, `after a pick: ${JSON.stringify(after)}`));
+    // a pick that opens a dialog (Remove on a Screen row): Cancel gives focus to
+    // that row's More button, not the page
+    await tab(page, "screen"); await sleep(200);
+    await page.evaluate(() => { document.querySelector("#screen .collrow details.more").open = true; });
+    await page.click('#screen .collrow details.more button[onclick^="IV.removeCand("]');
+    await page.waitForSelector("#confirmWrap:not(.hidden)", { timeout: 5000 });
+    await page.click("#confirmNo"); await sleep(200);
+    const back = await page.evaluate(() => !!(document.activeElement && document.activeElement.matches("#screen .collrow details.more > summary")));
+    problems.push(...ok(back, "after Cancel on a menu's Remove, focus fell to the page"));
     return problems;
   },
 
