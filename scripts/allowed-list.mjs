@@ -17,7 +17,7 @@ export const lastKey = (name) =>
 
 // An applicant's key is their own availKey when they share a surname (set by
 // the app since Oct 2026, H14), else the surname key. Must match util.js candKey,
-// or a script run and an open leadership page would rewrite the list back and forth.
+// or a script run and an open Admin page would rewrite the list back and forth.
 export const candKey = (c) => (c && c.availKey) || lastKey(c && c.name);
 
 export const allowedKeysFrom = (candidates) =>

@@ -23,7 +23,7 @@ export function roster(state, fallback) {
 // candidate is on the interview list: not removed and fewer than 2 flags
 export function activeCandidates(state, committee) {
   const flags = (id) => committee.filter((m) => ((state.screening || {})[`${m.id || m.name}~${id}`] || {}).flag).length;
-  // Restated from DESIGN.md / H7, not imported: leadership "in"/"out" wins; else
+  // Restated from DESIGN.md / H7, not imported: Admin "in"/"out" wins; else
   // off at the Setup threshold (default 2; 0 = never automatically).
   const t = (state.settings || {}).flagThreshold;
   const th = Number.isInteger(t) && t >= 0 ? t : 2;

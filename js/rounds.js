@@ -20,10 +20,10 @@
 // ============================================================================
 
 import { buildBackup, chunkBytes, unchunk, parseBackup, CLEAR_COLLECTIONS, canonical, encodeValue, utf8Length,
-         FORMAT, VERSION, docHash } from "./backup.js?v=R9";
-import { entry as hEntry } from "./history.js?v=R9";
-import { escapeHtml, flowDialog, toast, ss } from "./util.js?v=R9";
-import { bookingFor } from "./stages.js?v=R9";
+         FORMAT, VERSION, docHash } from "./backup.js?v=R10";
+import { entry as hEntry } from "./history.js?v=R10";
+import { escapeHtml, flowDialog, toast, ss } from "./util.js?v=R10";
+import { bookingFor } from "./stages.js?v=R10";
 
 export const TIMING = { renewMs: 30000, staleMs: 5 * 60000, idleMs: 30 * 60000, lateMs: 2 * 60000, progressMs: 30000,
   keptMax: 200, chunk: 450, partBytes: 900000, keptHistoryBytes: 400000 };
@@ -114,7 +114,7 @@ export function createRounds(deps) {
   const onWake = async () => { if (C.active && document.visibilityState === "visible" && (await wakeCheck())) await renew(); };
   try { document.addEventListener("visibilitychange", onWake); window.addEventListener("focus", onWake); } catch { /* tests */ }
 
-  function tookOver(msg = "Another Leadership page took over closing. Nothing more was changed from this page.") {
+  function tookOver(msg = "Another Admin page took over closing. Nothing more was changed from this page.") {
     if (!C.active && !C.ctl) return;
     setActive(false);
     show({ title: "Closing the round", html: `<p>${escapeHtml(msg)}</p>`, buttons: [{ label: "Close", kind: "filled", run: (k) => k.close() }] });
@@ -138,7 +138,7 @@ export function createRounds(deps) {
     acted();
     show({ title: "Close the round?",
       html: `<p>Everything in it (applicants, screening, availability, panels, scores, ranking, offers and change history) moves to
-        Past rounds, which only Leadership can see. The committee and applicants will see an empty tool, ready for the next round.</p>
+        Past rounds, which only Admin can see. The committee and applicants will see an empty tool, ready for the next round.</p>
         <p class="muted">Kept for next round: the committee list, the interview questions and your settings.</p>`,
       buttons: [{ label: "Cancel", kind: "ghost", run: (k) => k.close() }, { label: "Continue", kind: "filled", run: () => { acted(); pause(); } }] });
   }
@@ -149,7 +149,7 @@ export function createRounds(deps) {
     C.half = 1; C.kept = []; C.backup = null;
     try { await store().startClose(ctx(), C.attemptId); }
     catch (e) {
-      show({ title: "Close the round", html: `<p>${escapeHtml(e && e.code === "took-over" ? "Another Leadership page is already closing the round." : (e && e.message) || "Couldn't start. Check your connection.")}</p>`,
+      show({ title: "Close the round", html: `<p>${escapeHtml(e && e.code === "took-over" ? "Another Admin page is already closing the round." : (e && e.message) || "Couldn't start. Check your connection.")}</p>`,
         buttons: [{ label: "Close", kind: "filled", run: (k) => k.close() }] });
       return;
     }
@@ -219,7 +219,7 @@ export function createRounds(deps) {
     const phone = /iPhone|iPad|Android/i.test(navigator.userAgent || "") || (navigator.maxTouchPoints || 0) > 1;
     const paint = (ticked) => show({ title: "Now save the backup",
       html: `<p>Download the backup file and save it with the CVs on OneDrive. It has applicant names and the committee's comments; don't email it.</p>
-        ${phone ? `<p class="small">Keep this page open until you have saved the backup. If you switch to another app for more than a few minutes, another Leadership page could take over the close.</p>` : ""}
+        ${phone ? `<p class="small">Keep this page open until you have saved the backup. If you switch to another app for more than a few minutes, another Admin page could take over the close.</p>` : ""}
         <div class="row backup-actions"><button type="button" class="btn tinted small" id="clBackup">Download backup file</button>
           <button type="button" class="btn ghost small" id="clExcel">Download Excel</button></div>
         <label class="small knows"><input type="checkbox" id="clSaved" ${ticked ? "checked" : ""}/> I saved the backup.</label>`,

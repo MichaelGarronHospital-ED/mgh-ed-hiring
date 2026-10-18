@@ -91,11 +91,11 @@ Full design and reference data (committee, candidates, questions, rules) live in
   a release between two numbered ones is `R7b`). Bump them all together each release. Never
   remove a module or an export in the release that stops using it; remove it one release later.
 - **Backups read the server fresh (`store.snapshotRaw`); never build one from page state.**
-  The leadership page mixes this browser's echo into its state and fills in defaults. The
+  The Admin page mixes this browser's echo into its state and fills in defaults. The
   Excel workbook is built from the same fresh read (`toState` + `withState`).
-- **Every leadership change writes its history entry in the same batch or transaction**
+- **Every Admin change writes its history entry in the same batch or transaction**
   (`store.*(…, history)`), with no applicant name in it. Undo is offered only for hand-made
-  panels, leadership on/off decisions and "make this a note" (`js/history.js`).
+  panels, Admin on/off decisions and "make this a note" (`js/history.js`).
 
 - **Applicant PII never lives in this app.** CVs/cover letters stay in OneDrive;
   the app only links out. Store only names + committee input (flags/ratings/scores).
@@ -117,6 +117,12 @@ Full design and reference data (committee, candidates, questions, rules) live in
   out. Please sign in again." Both Log out buttons call `logOut()`, which
   signs out before reloading. Firebase's default kept the sign-in in the browser for good and
   let a second tab switch the first tab's account. Pinned by `sim/auth.mjs`.
+- **The access level is called "Admin" in every word anyone sees (R10, Alvin, Oct 18 2026).**
+  It was "Leadership" until R9. Only visible words changed: the account emails (`admin@`,
+  voting's `leadership@`), uids, stored values (`by: "leadership"`, `shortlistBy: "leadership"`,
+  `exportedBy`), role keys (`AUTH.uids`, `PARTNERS.voting.uids.leadership`), `ls`/`ss` keys and
+  `firestore.rules` still say what they said; never rename those. "ED leadership" meaning the
+  department's leaders as people stays ("Ask leadership to add you").
 - **Admin signs in with no name; `ui.member` can be `null`.** The admin code
   lands as "Admin" (coordinators hold it, not just physicians). Every view that
   files input under `ui.member` — own screening, own availability, the Score
@@ -155,7 +161,7 @@ Full design and reference data (committee, candidates, questions, rules) live in
   use the app: Screen tab, More, **Rename** (keeps the id, moves availability when
   the surname key changes) or **Merge into another entry** (the in-app port of
   `scripts/migrate-candidate.mjs`, with a preview). The scripts stay as a fallback.
-- **Working-round documents are deleted only by Leadership actions that say so
+- **Working-round documents are deleted only by Admin actions that say so
   (merge, delete permanently) or by the close-round flow, which archives and
   verifies first.** Every in-app move is a plan from `js/candidates.js` applied by
   `store.applyPlan`, which writes copies before deleting their sources.
@@ -164,8 +170,8 @@ Full design and reference data (committee, candidates, questions, rules) live in
   set by the app, never re-keyed), else the normalized surname (`lastKey`). ONE
   definition (`util.js`), shared by the app, the store, the rules' allowed list and
   `scripts/allowed-list.mjs`. A surname change moves the document; two applicants
-  sharing a surname share one document only until leadership separates them (new
-  pairs are separated when added; a surname-only document is never guessed, leadership
+  sharing a surname share one document only until Admin separates them (new
+  pairs are separated when added; a surname-only document is never guessed, Admin
   is asked whose it is). The rules
   refuse a write under a surname not on the roster (`/interviews_meta/allowed`,
   fail-closed) so nothing is silently lost — **sync that list before publishing
@@ -256,13 +262,13 @@ Full design and reference data (committee, candidates, questions, rules) live in
 - **The role is found by signing in, and nothing in any repo may be derived from a password.**
   Since R7 the gate tries the password on the role accounts in `roleOrder()` (Guest first on
   `#apply`, else the role that last worked on this browser, `ls` `ed_iv_lastrole`, else ED,
-  Guest, Leadership); a refusal moves on, any other error stops with its own message
+  Guest, Admin); a refusal moves on, any other error stops with its own message
   (`signInError`), all refused is "Incorrect password." So a password can change with no
   commit. Never bring back a file, hash, wrap or check value made from a password (the old
   `js/data.js` wraps let anyone test guesses offline and forced a commit for every change), and
   never let a password reach the console, storage, Firestore or history. The one deliberate
   exception is outside any repo: the ED tools passwords page keeps the three passwords
-  encrypted, with a key made from the Leadership password, in the separate Firebase project
+  encrypted, with a key made from the Admin password, in the separate Firebase project
   `mgh-ed-admin`. The three passwords must all differ, or the gate cannot tell roles apart.
   Firebase throttles the **device** after repeated failures, so nothing replays a password:
   it is never stored (an older page's `ed_iv_code` is deleted on load).
@@ -277,7 +283,7 @@ Full design and reference data (committee, candidates, questions, rules) live in
   while `interviews_meta/passwords.pending` exists (left by the old page; the new page finds
   which tools still have the old password). `interviews_meta/passwords` stays in backups and
   restore. `js/passwords.js` and `store.updatePasswords` are unused from R9 and are deleted in
-  R10 with `tests/passwords.test.mjs` (never remove a module in the release that stops using
+  R11 with `tests/passwords.test.mjs` (never remove a module in the release that stops using
   it). Pinned by `tests/versions.test.mjs` and `sim/passwords-moved.mjs`.
 - **Storage must never be touched directly — use `ss`/`ls` from `util.js`.**
   iOS Safari with "Block All Cookies", Private Browsing and some in-app browsers
@@ -310,7 +316,7 @@ Full design and reference data (committee, candidates, questions, rules) live in
   and `.tform input` have equal specificity, so order decides; anything appended
   after it silently undoes it.
 - **Verify the pipeline by playing a round, not by reading the scheduler.**
-  `sim/` drives a whole round through the real UI (leadership adds applicants,
+  `sim/` drives a whole round through the real UI (Admin adds applicants,
   interviewers and applicants submit availability, panels get built) and checks
   what the Panels tab *shows* against the rules restated independently of
   `panels.js`; `npm run fuzz -- 100 1` does it on random rounds, replayable by
@@ -332,7 +338,7 @@ Full design and reference data (committee, candidates, questions, rules) live in
   allows `get` to the committee and `list` to admin only: the app subscribes to
   exactly `<member>~<candId>` for the signed-in member (`store.setMember` →
   `_syncOwnScreening`), so a reviewer's own flags and ratings follow them to any
-  device while the collation stays leadership-only. **Scores allow neither** —
+  device while the collation stays Admin-only. **Scores allow neither**:
   a reviewer who could `get` a score could rebuild the ranking mid-process — so
   the Score tab still replays from the per-device `localStorage` echo and says
   so on screen. Don't make scores symmetric with screening, and don't widen
@@ -349,9 +355,9 @@ Full design and reference data (committee, candidates, questions, rules) live in
   so a reviewer's state has nothing to leak even if a gate were missed. Both
   halves are pinned in `tests/store.own-screening.test.mjs`. Don't add a rating,
   average or flag count to a view that isn't admin-gated.
-- **Leadership is checked first in every rule, so stage gates cost ED and Guest writes
+- **Admin is checked first in every rule, so stage gates cost ED and Guest writes
   only.** Rules v2 reads `interviews_meta/state` with `get()` for the stage and round
-  gates; `isAdmin() || ...` first means leadership saves never pay for it. Every gate
+  gates; `isAdmin() || ...` first means Admin saves never pay for it. Every gate
   reads a missing field as open, so older data and older pages behave as before.
 - **Every published rules version is tagged** (`rules-v1-2026-10-16`, `rules-v2-<date>`).
   Roll back the page first, then the rules, never the rules alone under an R1+ page.

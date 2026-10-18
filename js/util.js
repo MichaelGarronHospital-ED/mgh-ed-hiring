@@ -282,7 +282,7 @@ export function typedFirstKeys(first) {
   return [...new Set([rest.join(""), rest[0] || ""])].filter(Boolean);
 }
 // The id of an applicant's availability document: their own key when they share
-// a surname (set by Leadership), else today's surname key.
+// a surname (set by Admin), else today's surname key.
 export const candKey = (c) => (c && c.availKey) || lastKey(c && c.name);
 export const dupKey = (c) => { const f = firstKey(c.name); return f ? `${lastKey(c.name)}-${f}` : lastKey(c.name); };
 

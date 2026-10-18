@@ -51,7 +51,7 @@ async function applicantSignIn(page, url, state, first, last) {
 
 const scenarios = {
   // H14: a second Kim is added while answers exist under "kim". Both get their
-  // own key; leadership is asked whose the answers are; they move only there.
+  // own key; Admin is asked whose the answers are; they move only there.
   async secondKimPrompt(page, url) {
     const problems = [];
     await load(page, url, base({ availCand: { ashcombe: { t0: "ip" }, kim: { t0: "zoom", t1: "ip" } } }), "adminpw");

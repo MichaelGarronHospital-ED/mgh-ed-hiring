@@ -24,6 +24,39 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## R10: "Leadership" is now "Admin" in every visible word (built Oct 18 2026; ships after R9)
+
+Alvin's decision (Oct 18 2026): the shared password and access level called "Leadership" is
+called "Admin" everywhere people see it. Nothing else changes: same password, same accounts,
+nobody is signed out.
+
+- **The page:** the sign-in help ("the Admin password"), the role line ("Admin access.", "Those
+  need the Admin password"), "Only Admin sees everyone's together", the "(Admin only)" concern and
+  note boxes, "Taken off by Admin" / "Kept on by Admin" and the exports' "(Admin decision)",
+  "Admin is closing this round", "Another Admin page took over closing", Past rounds "which only
+  Admin can see", Setup's Passwords card ("Admin, ED and Guest") and Change history ("Admin",
+  "Admin (name)").
+- **Kept as "leadership"** where it means the department's leaders as people: "Not on the list?
+  Ask leadership to add you.", "Check with leadership before changing." (how long closed rounds
+  are kept) and the two lines that send a disabled account or a wrong-looking password to
+  leadership for the Firebase console (the Admin password gives no console access).
+- **Unchanged on purpose:** account emails (`admin@`, voting's `leadership@`), uids, every stored
+  value (`by: "leadership"`, `shortlistBy: "leadership"`, a backup's `exportedBy`), role keys in
+  code, browser storage keys, addresses and `firestore.rules` (not even its comments, so the file
+  still matches the published rules). Old history entries show as "Admin" because the page names
+  them; nothing is rewritten.
+- `scripts/diagnose-login.mjs` and `scripts/report-data.mjs` print "Admin"; tests and sims that
+  read the words follow (`tests/history.test.mjs`, `sim/stages.mjs`, `sim/rounds.mjs`,
+  `sim/passwords-moved.mjs`, `sim/emulator.mjs`). Code comments, README, CLAUDE.md, DESIGN.md
+  and the sim, tests and scripts READMEs use "Admin" too; older entries here stay as written.
+- **Moved to R11, untouched:** deleting `js/passwords.js`, `store.updatePasswords` and
+  `tests/passwords.test.mjs` (with the `.pw*` styles and the sim's `playwright-core`), and the
+  comment in `scripts/diagnose-login.mjs`, all planned for R10 in the R9 entry below.
+  `js/passwords.js` keeps its old words (only its `?v=` pins move), since nothing loads it.
+- Version `R10`.
+
+---
+
 ## R9: the passwords page moved to the ED dashboard (built Oct 17 2026; ships after R8)
 
 Phase B of the passwords design (section B.7.1). The Leadership, ED and Guest passwords are now

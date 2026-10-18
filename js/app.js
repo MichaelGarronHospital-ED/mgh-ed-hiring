@@ -2,39 +2,39 @@
 //  Committee app controller. One link, three audiences, told apart by which
 //  role account accepts the password (R7):
 //    - committee reviewer: the ED password -> Screen, Availability, Score
-//    - admin: the Leadership password -> also Panels, Ranking, Setup
+//    - admin: the Admin password -> also Panels, Ranking, Setup
 //    - applicant: the Guest password -> own scheduling only (candidate view)
 //  Wired to the store (local or Firestore). What each account may do is
 //  enforced by the Firestore rules (see config.js and firestore.rules).
 // ============================================================================
 import { firebaseConfig, ORG_NAME, CHAIR, COMMITTEE, SLOTS, ONEDRIVE,
-         LOCAL_CODES, AUTH, SCREENING_DEADLINE, PASSWORDS_PAGE } from "./config.js?v=R9";
-import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R9";
-import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R9";
-import { autoPanels, buildPanel } from "./panels.js?v=R9";
+         LOCAL_CODES, AUTH, SCREENING_DEADLINE, PASSWORDS_PAGE } from "./config.js?v=R10";
+import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R10";
+import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R10";
+import { autoPanels, buildPanel } from "./panels.js?v=R10";
 import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell, lastKey,
-         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R9";
-import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R9";
+         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R10";
+import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R10";
 import { effectiveSlots, slotLabel, slotTimeLabel, groupByDate, checkSlot, splitRange, responseCounts,
-         newSlotId, isStructured, fmtDate } from "./slots.js?v=R9";
+         newSlotId, isStructured, fmtDate } from "./slots.js?v=R10";
 import { normalizeCommittee, interviewers as interviewersOf, pickable as pickableOf, memberName, memberStatus,
-         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R9";
+         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R10";
 import { fromLegacy, normalizeQuestions, liveQuestions, idsWithNotes, scoringStarted, checkEdit, newQuestionId,
-         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R9";
+         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R10";
 import { entry as hEntry, newHistoryId, panelUndo, shortlistUndo, screeningUndo, canUndo, undoneIds, textFor, whoFor, whenFor,
-         hashOf, toDate } from "./history.js?v=R9";
-import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R9";
-import { createRounds, pageId } from "./rounds.js?v=R9";
-import { signInPinned } from "./signin.js?v=R9";
-import { icsEvent, icsCalendar } from "./ics.js?v=R9";
-import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R9";
+         hashOf, toDate } from "./history.js?v=R10";
+import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R10";
+import { createRounds, pageId } from "./rounds.js?v=R10";
+import { signInPinned } from "./signin.js?v=R10";
+import { icsEvent, icsCalendar } from "./ics.js?v=R10";
+import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R10";
 import { STAGES, STAGE_WORD, stageOpen, stageClosedAt, roundOpen, bookingFor, thresholdOf, isOnList, closePlan, reopenPlan,
-         lockEntry } from "./stages.js?v=R9";
+         lockEntry } from "./stages.js?v=R10";
 
 // The release this page is. Must equal version.json and every "?v=" in every
 // import (tests/versions.test.mjs). A page that sees a different version.json
 // was updated underneath it (section "Reload notice" below).
-const RELEASE = "R9";
+const RELEASE = "R10";
 
 // Interview questions (H2): the saved document (interviews_meta/questions), the
 // only copy since R7 (the old encrypted js/data.js was deleted in R8).
@@ -88,8 +88,8 @@ const locked = () => !!(S && S.schedule && S.schedule.locked);
 const dayOf = (at) => { const d = toDate(at); return d ? d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""; };
 const mname = (id) => EFF().nameOf(id);
 const isInterviewer = (id) => !!id && EFF().interviewers.some((m) => m.id === id);
-// Who a Leadership history entry says did it: the name Leadership picked to
-// review as, else just "leadership".
+// Who an Admin history entry says did it: the name Admin picked to review
+// as, else just "leadership" (the stored value; shown as "Admin").
 const byWho = () => ui.member || "leadership";
 const slotName = (id) => slotLabel(EFF().slots.find((t) => t.id === String(id)));
 // only answers for times that still exist count (edited/removed times leave stale keys)
@@ -117,7 +117,7 @@ const isRefusal = (e) => /wrong-password|invalid-credential|user-not-found|inval
 const SIGNED_OUT_MSG = "You were signed out. Please sign in again.";
 // Guest first on an applicant link (every applicant-facing link is
 // index.html#apply); else the role that last worked on this browser (not
-// secret); else ED, then Guest, then Leadership. So nearly every sign-in costs
+// secret); else ED, then Guest, then Admin. So nearly every sign-in costs
 // no refused attempt, and the worst case two.
 function roleOrder() {
   const order = ["committee", "candidate", "admin"];
@@ -159,7 +159,7 @@ async function unlock(typed) {
     return;
   }
   // every account refused: the password is wrong. A disabled account answers
-  // the same whatever was typed, so it is named only when it is Leadership's
+  // the same whatever was typed, so it is named only when it is Admin's
   // (the one account nobody else could have meant)
   const paused = gateWrong();
   gateFail((disabled && disabled.role === "admin"
@@ -197,7 +197,7 @@ async function enter(role) {
   await initStore(role);
   $("#gate").classList.add("hidden");
   watchSignOut();
-  // Admin goes straight in as "Admin", with no name: the Leadership password is
+  // Admin goes straight in as "Admin", with no name: the Admin password is
   // held by coordinators as well as committee members. An admin who also
   // reviews picks their name from the header ("review as a member").
   if (role === "candidate") proceedCandidate();
@@ -288,9 +288,9 @@ function gateMsg(msg) {
 function gateHint(n) {
   if (n < 2) return "";
   return `<div class="note tip" style="text-align:left; margin-top:.7rem">The ED tools use three passwords:
-    the <b>ED</b> password (committee: Screen, Availability, Score), the <b>Leadership</b> password
+    the <b>ED</b> password (committee: Screen, Availability, Score), the <b>Admin</b> password
     (adds Panels, Ranking, Offers and Setup) and the <b>Guest</b> password (applicants booking times).
-    The ED password signs you in without the leadership view. If you are sure you have the right one,
+    The ED password signs you in without the Admin view. If you are sure you have the right one,
     leadership should check the matching account in the Firebase console.</div>`;
 }
 
@@ -380,7 +380,7 @@ async function initStore(role) {
 // app open, with no separate step for someone to forget.
 //
 // Guard against a write loop between page versions (review M4, m4). Two open
-// Leadership tabs that build the list differently (an older and a newer page)
+// Admin tabs that build the list differently (an older and a newer page)
 // would otherwise rewrite it back and forth all day. So:
 //   - a write made because THIS tab's roster changed since its last write is
 //     never counted and never held back;
@@ -388,7 +388,7 @@ async function initStore(role) {
 //     to something this tab did not write, while this tab's roster stayed the
 //     same. An ordinary snapshot (the list unchanged) never counts, and neither
 //     does the retry timer. After 3 fights in 10 minutes this tab stops
-//     rewriting and tells Leadership to reload the other tab, and a timer
+//     rewriting and tells Admin to reload the other tab, and a timer
 //     writes again once the 10 minutes are up.
 //   - calls are gathered for 250 ms, and once a write settles the page looks
 //     again, so a roster edit made while a write was in flight is never missed.
@@ -448,7 +448,7 @@ async function loadFirestore() {
   const db = f.getFirestore(app);
   return {
     // the Firebase app functions too (initializeApp, deleteApp), for the helper
-    // apps of js/passwords.js; unused from R9, removed with it in R10
+    // apps of js/passwords.js; unused from R9, removed with it in R11
     app, auth, authFns: au, appFns: { initializeApp: a.initializeApp, deleteApp: a.deleteApp },
     db, collection: f.collection, doc: f.doc,
     setDoc: f.setDoc, updateDoc: f.updateDoc, onSnapshot: f.onSnapshot, runTransaction: f.runTransaction,
@@ -477,15 +477,15 @@ function proceedToMemberPick() {
   fillMemberSel();
   // Say which of the two codes was used. The staff code signs you in perfectly
   // well — just without Panels, Ranking and Setup — so someone who reaches for
-  // the wrong one gets in and then finds the leadership view missing, which
+  // the wrong one gets in and then finds the Admin view missing, which
   // they report as "I can't log in as admin". Nothing on screen told them.
   const rl = $("#roleLine");
   if (rl) {
     rl.className = ui.isAdmin ? "note tip" : "note";
     rl.innerHTML = ui.isAdmin
-      ? `<b>Leadership access.</b> Pick your name to screen, give availability and score as yourself.`
+      ? `<b>Admin access.</b> Pick your name to screen, give availability and score as yourself.`
       : `<b>Committee access:</b> Screen, Availability and Score. Expecting Panels, Ranking and Setup?
-         Those need the <b>Leadership</b> password, not the ED password.`;
+         Those need the <b>Admin</b> password, not the ED password.`;
   }
   $("#adminOnlyBtn").classList.toggle("hidden", !ui.isAdmin);
   $("#memberpick").classList.remove("hidden");
@@ -610,7 +610,7 @@ function buildTabs() {
 const cand = (id) => S.candidates.find((c) => c.id === id);
 // everyone on the list counts, including people who have left (their input stays)
 const flagsCount = (id) => EFF().committee.filter((c) => (S.screening[key(c.id, id)] || {}).flag).length;
-// H7: on the interview list unless removed, taken off by leadership, or (with
+// H7: on the interview list unless removed, taken off by Admin, or (with
 // no decision) at the concern threshold from Setup (0 = never automatically).
 const isIn = (c) => isOnList(c, flagsCount(c.id), EFF().threshold);
 const activeCands = () => S.candidates.filter(isIn);
@@ -837,15 +837,15 @@ function myInputNotice(list, get, deviceOnly) {
   // the app can't do is worse than saying nothing.
   const anywhere = !store || store.screeningReadBack !== false;
   const why = deviceOnly
-    ? "Everything you type is saved to leadership. Scores are deliberately write-only: nobody on the "
+    ? "Everything you type is saved for Admin. Scores are deliberately write-only: nobody on the "
       + "committee can read anyone's back, which is what stops the ranking leaking mid-process. This "
       + "browser keeps a copy of your scores so you can see them again here. Logging out clears it. "
       + "On another device they look blank; that is the privacy model, not lost work."
     : anywhere
-      ? "Saved to leadership as you tap. Your own flags and ratings follow you: sign in on any device, "
-        + "pick your name, and they are here. Only leadership sees everyone's together."
-      : "Saved to leadership as you tap. This browser remembers your own answers; on another device "
-        + "they will look blank until leadership finishes the setup.";
+      ? "Saved for Admin as you tap. Your own flags and ratings follow you: sign in on any device, "
+        + "pick your name, and they are here. Only Admin sees everyone's together."
+      : "Saved for Admin as you tap. This browser remembers your own answers; on another device "
+        + "they will look blank until Admin finishes the setup.";
   return `<p class="progress"><b>${done} of ${list.length}</b> ${deviceOnly ? "scored" : "reviewed"}${infoIcon(why)}</p>`;
 }
 
@@ -855,7 +855,7 @@ function renderScreen() {
   const { pickable: committee, oneDrive } = EFF();   // waiting on = active people only
   const scrOpen = isOpen("screening");
   let html = me ? hint(scrOpen ? "Raise a concern if you feel someone isn't qualified. A note never counts against them. Priority is optional."
-    : roundOpen(S.meta) ? "Screening is closed. Your answers are saved." : "Leadership is closing this round. Changes are paused.") : "";
+    : roundOpen(S.meta) ? "Screening is closed. Your answers are saved." : "Admin is closing this round. Changes are paused.") : "";
 
   if (ui.isAdmin) {
     const submitted = new Set();
@@ -899,8 +899,8 @@ function renderScreen() {
       const th = EFF().threshold, byLead = c.shortlistBy === "leadership";
       const ruleOff = th > 0 && fc >= th;
       const statusPill = c.removed ? '<span class="pill out">Removed</span>'
-        : byLead && c.shortlist === "out" ? '<span class="pill out">Taken off by leadership</span>'
-        : byLead && c.shortlist === "in" ? (ruleOff ? '<span class="pill neutral">Kept on by leadership</span>' : "")
+        : byLead && c.shortlist === "out" ? '<span class="pill out">Taken off by Admin</span>'
+        : byLead && c.shortlist === "in" ? (ruleOff ? '<span class="pill neutral">Kept on by Admin</span>' : "")
         : !isIn(c) ? `<span class="pill out">Off the list: ${fc} concern${fc === 1 ? "" : "s"}</span>` : "";
       const listVal = byLead && (c.shortlist === "in" || c.shortlist === "out") ? c.shortlist : "auto";
       const listSeg = c.removed ? "" : `<div class="listseg"><span class="muted small">Interview list</span>
@@ -996,7 +996,7 @@ function renderScreen() {
       <div style="margin-top:.5rem"><button class="btn tinted small" onclick="IV.addCands(this)">Add candidates</button></div>`;
 
     html += section("collation", "Collation & shortlist", `${activeCands().length} of ${S.candidates.length} still in`, collation,
-        { open: !me, info: "Everyone's concerns, notes and priority ratings, collated. An applicant drops off the interview list at the number of concerns set in Setup, Screening rule, unless you set them On or Off. Concerns and notes are visible to leadership only. Export the shortlist as a CSV here." })
+        { open: !me, info: "Everyone's concerns, notes and priority ratings, collated. An applicant drops off the interview list at the number of concerns set in Setup, Screening rule, unless you set them On or Off. Concerns and notes are visible to Admin only. Export the shortlist as a CSV here." })
       + section("dash", "Coordinator dashboard", `${nSub}/${committee.length} submitted`, dash,
         { open: false, info: "Track who has and hasn't submitted their screening, so you can chase people before the deadline.", count: hidden.entries.length ? ICON.warn : null })
       + section("adder", "Add candidates", "", adder,
@@ -1032,16 +1032,16 @@ function renderScreen() {
         <div class="rate" role="group" aria-label="Priority rating for ${escapeHtml(c.name)}">${[1, 2, 3, 4, 5].map((n) => `<button class="${sc.rating === n ? "on" : ""}" aria-pressed="${sc.rating === n}" onclick="IV.rate('${c.id}',${n})"${dis}>${n}</button>`).join("")}</div>
         <button class="flagbtn ${flagged ? "on" : ""}" aria-pressed="${flagged}" aria-label="Concern about ${escapeHtml(c.name)}" onclick="IV.toggleFlag('${c.id}')"${dis}>${flagged ? `${ICON.flag} Concern` : "Concern"}</button>
         <button class="flagbtn notebtn ${noteOpen ? "on" : ""}" aria-pressed="${noteOpen}" aria-label="Note about ${escapeHtml(c.name)}" onclick="IV.toggleNote('${c.id}')"${dis}>Note</button></div>
-      ${flagged ? `<textarea id="rsn-${c.id}" placeholder="What is the concern? (leadership only)" aria-label="What is the concern?"${dis}>${escapeHtml(sc.reason || "")}</textarea>
+      ${flagged ? `<textarea id="rsn-${c.id}" placeholder="What is the concern? (Admin only)" aria-label="What is the concern?"${dis}>${escapeHtml(sc.reason || "")}</textarea>
         ${scrOpen ? `<div style="margin-top:.4rem"><button class="savebtn" onclick="IV.saveReason('${c.id}',this)">Save concern</button></div>` : ""}` : ""}
-      ${noteOpen ? `<textarea id="note-s-${c.id}" maxlength="2000" placeholder="Your note (leadership only). It never counts against the applicant." aria-label="Your note"${dis}>${escapeHtml(sc.note || "")}</textarea>
+      ${noteOpen ? `<textarea id="note-s-${c.id}" maxlength="2000" placeholder="Your note (Admin only). It never counts against the applicant." aria-label="Your note"${dis}>${escapeHtml(sc.note || "")}</textarea>
         <label class="small knows"><input type="checkbox" id="knows-${c.id}" ${sc.conflict ? "checked" : ""}${dis}/> I know this applicant personally</label>
         ${scrOpen ? `<div style="margin-top:.4rem"><button class="savebtn" onclick="IV.saveNote('${c.id}',this)">Save note</button></div>` : ""}` : ""}
     </div>`;
   }).join("");
 
   html += docsBar + (rows ? `<div class="card flush list">${rows}</div>`
-    : ui.isAdmin ? "" : empty(ICON.list, "Nothing to screen yet", "Applicants will appear here once leadership adds them."));
+    : ui.isAdmin ? "" : empty(ICON.list, "Nothing to screen yet", "Applicants will appear here once Admin adds them."));
   $("#screen").innerHTML = html;
 }
 
@@ -1235,10 +1235,10 @@ function renderAvailability() {
   const slots = EFF().slots;
   const mine = isInterviewer(ui.member), avOpen = isOpen("availability");
   let html = mine ? hint(avOpen ? "Tap how you can do each time you're free. Tap again to clear."
-    : roundOpen(S.meta) ? "Availability is closed. Your answers are saved." : "Leadership is closing this round. Changes are paused.") : "";
+    : roundOpen(S.meta) ? "Availability is closed. Your answers are saved." : "Admin is closing this round. Changes are paused.") : "";
   html += slots.length
     ? (mine ? `<div class="card"><div class="slotgrid">${slotRows(slots, map, "IV.avail", !avOpen)}</div></div>` : "")
-    : empty(ICON.calendar, "No interview times yet", ui.isAdmin ? "Add interview times in Setup (the gear icon)." : "Leadership hasn't published the interview times yet. Check back soon.");
+    : empty(ICON.calendar, "No interview times yet", ui.isAdmin ? "Add interview times in Setup (the gear icon)." : "Admin hasn't published the interview times yet. Check back soon.");
 
   // There used to be three sections here — both grids and a separate
   // "Availability dashboard" whose whole content was who hadn't answered. That
@@ -1287,7 +1287,7 @@ function renderScore() {
   const list = !lockedNow || ui.scoreAll ? all : mine;
   const scOpen = isOpen("scoring");
   const toggle = lockedNow ? `<p class="toolline scoretoggle"><button class="linky" onclick="IV.scoreShowAll(${ui.scoreAll ? "false" : "true"})">${ui.scoreAll ? "Show only my interviews" : "Show all applicants"}</button></p>` : "";
-  const head = hint(!scOpen ? (roundOpen(S.meta) ? "Scoring is closed. Your answers are saved." : "Leadership is closing this round. Changes are paused.")
+  const head = hint(!scOpen ? (roundOpen(S.meta) ? "Scoring is closed. Your answers are saved." : "Admin is closing this round. Changes are paused.")
     : lockedNow ? "Notes per question, then one overall rating." : "Notes per question, then one overall rating. The schedule isn't final yet, so everyone is listed.");
   const dis = scOpen ? "" : ' disabled aria-disabled="true"';
   // Questions by id, in the saved order (H2). Notes are keyed by question id;
@@ -1794,7 +1794,7 @@ function chairLine(panels, memName) {
 }
 
 // H11: an applicant's reply to their published time ({ reply, replyAt }), read
-// from the availability documents leadership already listens to.
+// from the availability documents the Admin page already listens to.
 const replyOf = (c) => { const k = candKey(c); const r = (S.availRaw ? S.availRaw[k] : (S.replies || {})[k]) || {}; return { reply: r.reply || "", at: r.replyAt || null }; };
 const replyLate = () => { const d = EFF().deadlines.reply; return !!d && daysUntil(d) < 0; };
 
@@ -2043,7 +2043,7 @@ function backupCard() {
 function listStatus(c) {
   if (c.removed) return "Removed";
   const fc = flagsCount(c.id), th = EFF().threshold;
-  if (c.shortlistBy === "leadership") return c.shortlist === "out" ? "Off (leadership decision)" : "Interview list (leadership decision)";
+  if (c.shortlistBy === "leadership") return c.shortlist === "out" ? "Off (Admin decision)" : "Interview list (Admin decision)";
   return isIn(c) ? "Interview list" : `Off (${fc} concern${fc === 1 ? "" : "s"}${th ? `, rule ${th}` : ""})`;
 }
 
@@ -2175,13 +2175,13 @@ function renderSettings() {
     ${section("setInfo", "Interview details", "", infoBody, { open: false, info: "Used in every email and calendar file the tool writes for you, and in what applicants see." })}
     ${section("setSlots", "Interview times", `${slots.length} time${slots.length === 1 ? "" : "s"}`, slotsBody, { open: false, info: "The interview times interviewers and applicants choose from. Add a single time or a block of back-to-back times; edit or remove any time. If people already answered for a time you change, you choose whether to keep their answers or ask them again." })}
     ${section("setOneDrive", "Applications folder (OneDrive)", "", odBody, { open: false, info: "Link to the access-controlled OneDrive folder holding the CVs/cover letters. Committee members open applicant files from here. Stored privately, never in the app's code." })}
-    ${section("setRound", "This round", (S.meta && S.meta.roundName) || "", roundBody(), { open: false, info: "Name the round, and close it when hiring is done. Closing moves everything to Past rounds, which only Leadership can see." })}
+    ${section("setRound", "This round", (S.meta && S.meta.roundName) || "", roundBody(), { open: false, info: "Name the round, and close it when hiring is done. Closing moves everything to Past rounds, which only Admin can see." })}
     ${section("setPast", "Past rounds", ui.past && ui.past.due ? `${ui.past.due} can now be deleted` : "", pastBody(), { open: false, info: "Closed rounds. Download them again, bring one back, or delete one for good after the keep-until date." })}
     ${section("setRetention", "Keep closed rounds for", retentionLabel(), retentionBody(), { open: false, info: "Set by the department. Check with leadership before changing." })}
     ${section("setRestore", "Restore from a backup file", "", restoreBody(), { open: false, info: "Load a backup file back in. You see exactly what would be added before anything is written." })}
     ${section("setBackup", "Backup", "", backupBody, { open: false, info: "Download everything in the working round. Do this before every release of the tool and before any big change." })}
-    ${section("setPasswords", "Passwords for all ED tools", S.passwordsMeta && S.passwordsMeta.pending ? "An older change didn't finish" : "Leadership, ED and Guest", passwordsBody(), { open: false, info: "The three shared passwords. They are seen and changed on the ED tools passwords page, which changes them in Physician Hiring and Motion Voting together; the Patient Hub statistics page follows the Leadership password." })}
-    ${section("setHistory", "Change history", "", historyBody(), { open: false, info: "Changes made with the Leadership password, newest first. Undo is offered where the change can still be undone." })}
+    ${section("setPasswords", "Passwords for all ED tools", S.passwordsMeta && S.passwordsMeta.pending ? "An older change didn't finish" : "Admin, ED and Guest", passwordsBody(), { open: false, info: "The three shared passwords. They are seen and changed on the ED tools passwords page, which changes them in Physician Hiring and Motion Voting together; the Patient Hub statistics page follows the Admin password." })}
+    ${section("setHistory", "Change history", "", historyBody(), { open: false, info: "Changes made with the Admin password, newest first. Undo is offered where the change can still be undone." })}
     ${hint("Applicants are added on the Screen tab, under “Add candidates”.")}`;
 }
 
@@ -2382,7 +2382,7 @@ async function applyRestore(plan, backup, label) {
 // the old password, so the card only says to open it.
 function passwordsBody() {
   const pending = !!(S.passwordsMeta && S.passwordsMeta.pending);
-  return `<p class="small" style="margin-top:0">The Leadership, ED and Guest passwords are seen and changed on the ED tools
+  return `<p class="small" style="margin-top:0">The Admin, ED and Guest passwords are seen and changed on the ED tools
     passwords page (the gear on the ED tools front page).</p>
     ${pending ? `<p class="small" id="pwPending"><b class="warn">${ICON.warn} An older password change started here didn't finish.</b>
     Open the passwords page; it finds which tools still have the old password.</p>` : ""}
@@ -2834,7 +2834,7 @@ async function saved(promise, stage) {
     // H4: a refusal because the stage closed (or the round is closing) says so,
     // instead of sending people to check a connection that is fine
     const closed = e && e.code === "permission-denied" && stage && !isOpen(stage);
-    toast(closed ? (roundOpen(S.meta) ? `${STAGE_WORD[stage]} is closed. This change was not saved.` : "Leadership is closing this round. This change was not saved.")
+    toast(closed ? (roundOpen(S.meta) ? `${STAGE_WORD[stage]} is closed. This change was not saved.` : "Admin is closing this round. This change was not saved.")
       : "Couldn't save. Check your connection", "err");
     const el = $("#saveStatus"); if (el) el.classList.add("hidden");
   }
@@ -3946,7 +3946,7 @@ function renderRoundLine() {
   // read-only for real: no click, key or focus reaches the page or Setup
   ["#app", "#settings"].forEach((q) => { const e = $(q); if (e) e.inert = ro; });
   if (mode !== "fresh" && mode !== "stale") { el.classList.add("hidden"); el.innerHTML = ""; return; }
-  if (mode === "fresh") { el.innerHTML = `<p>Leadership (another page) is closing the round now.</p>`; el.classList.remove("hidden"); return; }
+  if (mode === "fresh") { el.innerHTML = `<p>Admin (another page) is closing the round now.</p>`; el.classList.remove("hidden"); return; }
   const started = dayOf(st.closingStartedAt);
   const paint = (status) => {
     el.innerHTML = status === "clearing"
@@ -3985,7 +3985,7 @@ function withState(st, fn) { const keep = S; S = st; try { return fn(); } finall
 // ------------------------------------------------- reload notice (section 2.3)
 // version.json is fetched every 10 minutes (and when the tab comes back after
 // that long), never cached. When it names another release, ED and Guest pages
-// show one line; a Leadership page reloads itself, but only when nothing could
+// show one line; an Admin page reloads itself, but only when nothing could
 // be lost: nothing pausing or unconfirmed, no dialog open, no field focused, no
 // panel editor or draft open, and session storage working (where it is
 // blocked the sign-in lives in memory and a reload would drop it). At most

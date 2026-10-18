@@ -109,7 +109,7 @@ const scenarios = {
     return problems;
   },
 
-  // H4: reopening clears the frozen (auto) answers and keeps leadership's.
+  // H4: reopening clears the frozen (auto) answers and keeps Admin's.
   async reopenScreeningClearsAuto(page, url) {
     const problems = [];
     const cands = base().candidates.map((c) => c.id === "c-2" ? { ...c, shortlist: "out", shortlistBy: "leadership" } : c);
@@ -119,7 +119,7 @@ const scenarios = {
     await clickText(page, "#settings", "Reopen"); await sleep(300);
     const st = await dumpState(page);
     problems.push(...ok(st.candidates.find((c) => c.id === "c-1").shortlistBy === undefined, "auto answer kept after reopen"));
-    problems.push(...ok(st.candidates.find((c) => c.id === "c-2").shortlist === "out", "leadership decision lost on reopen"));
+    problems.push(...ok(st.candidates.find((c) => c.id === "c-2").shortlist === "out", "Admin decision lost on reopen"));
     problems.push(...ok(st.meta.stages.screening.closed === false, "not reopened"));
     return problems;
   },
@@ -196,7 +196,7 @@ const scenarios = {
     // On overrides 3 concerns
     await page.evaluate(() => window.IV.setShortlist("c-1", "in")); await sleep(300);
     text = await page.$eval("#screen", (e) => e.textContent);
-    problems.push(...ok(text.includes("Kept on by leadership"), "no kept-on pill"));
+    problems.push(...ok(text.includes("Kept on by Admin"), "no kept-on pill"));
     await tab(page, "panels");
     panels = await readPanels(page);
     problems.push(...ok(panels.schedule.some((p) => p.name.includes("Ashcombe")), "On didn't put Ashcombe back on the schedule"));

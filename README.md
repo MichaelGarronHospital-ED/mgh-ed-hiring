@@ -28,11 +28,11 @@ Design + decisions live in [`DESIGN.md`](DESIGN.md); the paneling algorithm is i
 
 - **Deploys:** GitHub Pages, from `main`, root folder, no build step. A push to
   `main` is live about a minute later.
-- **Secrets:** none in the repo and none in GitHub Actions. The ED, Leadership and
+- **Secrets:** none in the repo and none in GitHub Actions. The ED, Admin and
   Guest passwords are shared by word of mouth and are only the passwords of Firebase
   accounts (see "Passwords" below). No file in the repo is derived from them. The one
   deliberate exception is outside any repo: the ED tools passwords page keeps the three
-  passwords encrypted (with a key made from the Leadership password) in the separate
+  passwords encrypted (with a key made from the Admin password) in the separate
   Firebase project `mgh-ed-admin`.
 - **Old address:** this tool used to live at
   `https://dralvinyang.github.io/ED-motion-voting/tools/interviews/`. That old
@@ -46,17 +46,20 @@ Since Oct 14 2026 every ED tool uses the same three passwords (shared out of ban
 never written in this repo):
 
 - **ED password** (ED physicians / the committee): Screen, Availability, Score.
-- **Leadership password**: adds Panels, Ranking, Offers and Setup. It is independent of
-  the ED password, so knowing the ED password does not make anyone leadership.
+- **Admin password**: adds Panels, Ranking, Offers and Setup. It is independent of
+  the ED password, so knowing the ED password does not give anyone Admin access.
 - **Guest password** (applicants): goes straight to the applicant's own scheduling and
   sees no committee data.
 
+Until R10 (Oct 2026) the Admin password was called the Leadership password. Only the name
+changed: same password, same accounts and emails, nobody signed out.
+
 Each password is only the password of Firebase accounts: in Physician Hiring
-`committee@` (ED), `admin@` (Leadership) and `applicant@ed-hiring.app` (Guest); in
+`committee@` (ED), `admin@` (Admin) and `applicant@ed-hiring.app` (Guest); in
 Motion Voting `ed@` and `leadership@ed-motion-voting.app`. The Patient Hub statistics
-page checks the Leadership password against `admin@ed-hiring.app`. **The sign-in page
+page checks the Admin password against `admin@ed-hiring.app`. **The sign-in page
 finds your role by which account accepts the password** (ED first, then Guest, then
-Leadership; the role that last worked on this browser first; Guest first on an
+Admin; the role that last worked on this browser first; Guest first on an
 applicant link). The password itself is never saved: a reload in the same tab resumes
 from Firebase's own sign-in for that tab. Since release R7 nothing in the repo is
 derived from a password, so changing one needs no code change (the old encrypted
@@ -70,7 +73,7 @@ makes with a freed email gets another uid and nothing else.
 
 | Role | uid | Email before the move | Email now (R8b) |
 |---|---|---|---|
-| Leadership | `ULgtfRrkAVPS2aT69Tc4CjMqbsx1` | `admin@ed-hiring.app` | `admin@mgh-ed-hiring.invalid` |
+| Admin | `ULgtfRrkAVPS2aT69Tc4CjMqbsx1` | `admin@ed-hiring.app` | `admin@mgh-ed-hiring.invalid` |
 | ED | `36FXvbR8ExgU7p4cmwuCNfkgFgD2` | `committee@ed-hiring.app` | `committee@mgh-ed-hiring.invalid` |
 | Guest | `jvmQYhgYlRMf3f2J3uw8XXos8yD3` | `applicant@ed-hiring.app` | `applicant@mgh-ed-hiring.invalid` |
 
@@ -80,10 +83,10 @@ until both are updated (`firestore.rules` and `AUTH.uids` in `js/config.js`;
 
 **To see or change one: the ED tools passwords page**,
 https://michaelgarronhospital-ed.github.io/passwords.html (the gear on the ED tools front page).
-Since R9 it lives in the ED dashboard repo, not here: sign in with the Leadership password, and
+Since R9 it lives in the ED dashboard repo, not here: sign in with the Admin password, and
 each of the three passwords has Show, Copy and Change; Change asks only for the new password
 twice and changes it in Physician Hiring and Motion Voting together (the Patient Hub statistics
-page follows the Leadership password). How it works, and its honest limits, are in the
+page follows the Admin password). How it works, and its honest limits, are in the
 dashboard repo's README. Then tell people in person or by phone; never email a password.
 - This tool's old page, `passwords.html`, is now only a redirect there ("The passwords page has
   moved. Open it."), so old links and bookmarks keep working; `js/pwpage.js` sends a cached
@@ -96,11 +99,11 @@ dashboard repo's README. Then tell people in person or by phone; never email a p
   Once the new passwords page shows every tool agrees, a leftover `pending` field in
   `interviews_meta/passwords` can be removed in the Firebase console (project `mgh-ed-hiring`,
   Firestore): it only drives that "didn't finish" line.
-- Everyone signed in with an old ED or Leadership password is asked for the new one within
+- Everyone signed in with an old ED or Admin password is asked for the new one within
   about an hour, phones on Motion Voting included: don't change one on a voting day. Applicants
   with the old Guest password can't sign in until they get the new one.
 - `js/passwords.js` (the old page's rules of a change) and `store.updatePasswords` are unused
-  from R9 and are deleted in R10 with `tests/passwords.test.mjs`.
+  from R9 and are deleted in R11 with `tests/passwords.test.mjs`.
 - `set-passwords.py` in the `MGH-ED-Tools` folder stays as a break-glass tool for someone
   with the Firebase CLI; the normal way is the passwords page.
 - `scripts/diagnose-login.mjs` says which account accepts a given password (read-only).
@@ -117,7 +120,7 @@ No terminal needed:
    signs in at console.firebase.google.com with that Google account.
 2. Physician Hiring: open project `mgh-ed-hiring`, then Build, Authentication, Users.
    Motion Voting: project `ed-motion-voting-99b96`, same place.
-3. Find the account (`committee@` for ED, `applicant@` for Guest, `admin@` for Leadership;
+3. Find the account (`committee@` for ED, `applicant@` for Guest, `admin@` for Admin;
    `ed@` and `leadership@` in Motion Voting; the uids are in the table above). **Do NOT
    delete it and add it again**: the new account would get a new uid, which the rules and
    pages refuse. The console cannot type a new password into an existing account, and
@@ -126,7 +129,7 @@ No terminal needed:
    department account, `python3 set-passwords.py` in the `MGH-ED-Tools` folder (its own
    instructions), which changes the password of the same account (same uid).
 4. Then open the ED tools passwords page (the gear on the ED tools front page) and sign in as
-   Leadership. If a tool no longer accepts the password the page has saved, it says which one
+   Admin. If a tool no longer accepts the password the page has saved, it says which one
    and asks for the one in use, so every tool ends up the same.
 
 ## Run it now (local mode)
@@ -145,7 +148,7 @@ and sample questions. Data does **not** sync across devices in this mode.
 3. Firestore → **Rules** → paste [`firestore.rules`](firestore.rules) → Publish.
 4. Project settings → Your apps → Web → copy the config → paste into
    `firebaseConfig` in [`js/config.js`](js/config.js).
-5. Deploy, then open `index.html` as **Leadership** (the Leadership password) → the **Setup** tab, and
+5. Deploy, then open `index.html` as **Admin** (the Admin password) → the **Setup** tab, and
    set the real **committee** (names + each member's self-identified gender, used only
    to build balanced panels), **chair**, **interview times**, and the **OneDrive**
    applications-folder link. These save to your Firestore — they never go in the repo.
@@ -171,7 +174,7 @@ edited or removed, or a whole day at once; changes show on everyone's screen liv
 ## One link, three audiences
 The same `index.html` serves everyone; what you can do depends on the password you type:
 - **ED physician / committee**: the ED password → Screen · Availability · Score.
-- **Admin**: the (independent) Leadership password → signed in as "Admin" with no name to
+- **Admin**: the (independent) Admin password → signed in as "Admin" with no name to
   pick: the collation, both availability grids, Panels · Ranking · Setup. An admin who
   also reviews taps **review as a member** in the header to pick their name, which
   adds their own screening, availability and the Score tab.
@@ -195,10 +198,10 @@ from scratch takes these console steps (they can't be done from the repo):
    | Email | Password | Who |
    |---|---|---|
    | `committee@ed-hiring.app` | the **ED password** | ED physicians / reviewers |
-   | `admin@ed-hiring.app` | the **Leadership password** (independent of the ED one) | leadership |
+   | `admin@ed-hiring.app` | the **Admin password** (independent of the ED one) | leadership |
    | `applicant@ed-hiring.app` | the **Guest password** | candidates |
 
-   > The Leadership password is independent of the ED password, so a reviewer who
+   > The Admin password is independent of the ED password, so a reviewer who
    > knows the ED password **cannot** sign in as admin: the reviewer/admin (ranking)
    > wall holds. The three must all be different (the sign-in page tells the roles
    > apart by which account accepts the password).
@@ -230,18 +233,18 @@ What this enforces (server-side, not just UI):
   **ranking is admin-only for real**, not just hidden in the UI.
 - The ED password (every ED physician has it) can **save but never delete**: no
   document in any collection, and it **cannot change the applicant list**. Adding,
-  removing and deleting are leadership's.
+  removing and deleting are Admin's.
 - Applicant availability can only hold `slots` (time id → in person / Zoom / either),
   at most 200 times.
 - A sign-in lasts for that browser tab only. **Log out** signs out of Firebase too.
-- **Rules v2 (Oct 2026).** When leadership closes a stage (screening, availability or
+- **Rules v2 (Oct 2026).** When Admin closes a stage (screening, availability or
   scoring), the ED password can no longer change that stage's answers, on the server,
   not just on screen; applicants can still confirm or withdraw after availability
   closes. While a round is being closed, ED and Guest writes are paused. The change
   history, the applicants' confirmed times and the saved copies of closed rounds are
-  three new collections; only leadership can read them (an applicant can fetch only
-  their own confirmed time). Leadership is always checked first in every rule, so
-  these gates cost nothing on leadership saves and one extra read on ED and Guest
+  three new collections; only Admin can read them (an applicant can fetch only
+  their own confirmed time). Admin is always checked first in every rule, so
+  these gates cost nothing on Admin saves and one extra read on ED and Guest
   saves. Everything reads "not set" as open, so data from before v2 behaves as before.
 
 Honest limits (see the header of `firestore.rules`): reviewers share one committee
@@ -250,7 +253,7 @@ accounts or custom claims). So a reviewer cannot delete anything, but could stil
 overwrite a colleague's screening or score. And an applicant could overwrite another's
 availability by typing their last name. The same shared Guest account means an applicant
 who types another applicant's surname could see that person's confirmed interview time,
-or confirm or withdraw for them; every reply shows to leadership with its date, and a
+or confirm or withdraw for them; every reply shows to Admin with its date, and a
 withdrawal never removes anyone by itself. All of these are low-impact and documented.
 
 ### Publishing the rules from the command line
@@ -272,8 +275,8 @@ The tests in `tests/` keep their own emulator-only `firebase.json` and are unaff
 commit you published, the day you publish). To go back: `git show <tag>:firestore.rules
 > firestore.rules`, then deploy as above. **Roll back the page first, then the rules, and
 never the rules alone while a page from Oct 2026 release R1 or later is live**: those
-pages write a change-history entry with every leadership save, and the v1 rules refuse
-it, so every leadership save would fail.
+pages write a change-history entry with every Admin save, and the v1 rules refuse
+it, so every Admin save would fail.
 
 ## Backups and the change history (Oct 2026)
 
@@ -285,7 +288,7 @@ it, so every leadership save would fail.
   history. A later release can load it back in. **Download Excel** is the same read, for
   people to look at. Both have applicant names and the committee's comments: save them with
   the CVs on OneDrive and don't email them.
-- **Setup, Change history** lists every change made with the Leadership password, newest
+- **Setup, Change history** lists every change made with the Admin password, newest
   first, 50 at a time. It never stores an applicant's name (names are filled in when it is
   shown). Hand-made panel changes can be undone there (and for 10 seconds from the message
   after "Reset hand-made panels"); undo is refused if the panel changed since.
@@ -334,7 +337,7 @@ it, so every leadership save would fail.
   copies a reminder (applicant emails are never stored). Nothing is sent by the tool itself.
 - **Applicants see their confirmed time (Panels, Send times to applicants, once locked).** An
   applicant then sees their time when they sign in, and can confirm ("I'll be there") or
-  withdraw ("I can't come", with Undo). Leadership sees "Withdrew" on the panel row (and in Needs
+  withdraw ("I can't come", with Undo). Admin sees "Withdrew" on the panel row (and in Needs
   attention), and "No reply yet" only after the reply date. Applicant links now end in `#apply`.
 - **Lock the schedule (Panels)** freezes every panel; later availability changes don't move
   an interview, and Needs attention names anyone no longer free or no longer on the
@@ -343,8 +346,8 @@ it, so every leadership save would fail.
   saved), asks you to download the backup file and type the round name, then clears the working
   round so the committee and applicants see an empty tool. Kept for next round: the committee, the
   interview questions and your settings. While it runs, ED and applicant pages are paused and other
-  Leadership pages are read-only. If the closing page stops part way (closed laptop, lost
-  connection), any Leadership page can "Finish closing" or "Stop closing" after 5 minutes;
+  Admin pages are read-only. If the closing page stops part way (closed laptop, lost
+  connection), any Admin page can "Finish closing" or "Stop closing" after 5 minutes;
   stopping after clearing began puts everything back. Anything someone changed after the copy is
   never deleted: it is kept and listed in This round for you to keep or delete.
 - **Past rounds (Setup)** lists closed rounds: download the backup file or Excel again, print a
@@ -357,13 +360,13 @@ it, so every leadership save would fail.
   missing items only" never changes or deletes anything and works only for a file from the round
   you are working on; "Replace the working round" only into an empty round.
 - **Interview questions live in the database** (`interviews_meta/questions`). Releases R1 to
-  R6 copied them out of the old locked `js/data.js` at the first Leadership sign-in (Change
+  R6 copied them out of the old locked `js/data.js` at the first Admin sign-in (Change
   history: "Copied the interview questions"); since R7 the database is the only copy (the file
   was deleted in R8), and every backup file carries it. Notes stay attached to their question.
 - **Log out** first saves anything still pausing and waits up to 5 seconds for unsaved
   changes (it asks before throwing any away), then clears this browser's copy of your scores.
 - **When a new version goes live**, an open page notices within 10 minutes and shows "This
-  page was updated. Reload to get the latest version." A Leadership page reloads itself
+  page was updated. Reload to get the latest version." An Admin page reloads itself
   instead, but only when nothing typed could be lost.
 - **Known gaps while a page from before Oct 2026 is still open** (it never shows that line,
   so reload every open tab on release day). Low risk, but known:
@@ -372,7 +375,7 @@ it, so every leadership save would fail.
     to what they entered until it is put back from the JSON backup; people from before keep
     theirs (their id is their name).
   - An old page editing interview times drops "2 rooms".
-  - An old page counts concerns with a fixed threshold of 2 and ignores Leadership's On or
+  - An old page counts concerns with a fixed threshold of 2 and ignores Admin's On or
     Off decisions.
   - An old page saving during a closed stage gets "Couldn't save. Check your connection"
     (the server refuses it).
@@ -390,7 +393,7 @@ On the **Ranking** tab (admin):
   CVs on OneDrive after each cycle: the site is the working copy, not the record.
 
 ## Security notes
-- The **questions/scale/guidance** live in Firestore; the rules let only the ED and Leadership
+- The **questions/scale/guidance** live in Firestore; the rules let only the ED and Admin
   accounts read them (never applicants), and they are not in the page source.
 - Applicant **names/CVs** never live in the repo — names in Firestore/local, CVs in
   access-controlled OneDrive (the app only links out).

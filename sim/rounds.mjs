@@ -239,7 +239,7 @@ const scenarios = {
     await signIn(pB, "adminpw"); await landAsAdmin(pB);
     await sleep(500);
     const fresh = await pB.$eval("#roundLine", (e) => e.textContent);
-    problems.push(...ok(fresh.includes("Leadership (another page) is closing the round now."), `B fresh view: ${fresh}`));
+    problems.push(...ok(fresh.includes("Admin (another page) is closing the round now."), `B fresh view: ${fresh}`));
     await pB.waitForFunction(() => (document.querySelector("#roundLine") || {}).textContent.includes("part of the round has been cleared"), { timeout: 15000 });
     await pB.evaluate(() => window.IV.roundTakeover("stop"));
     await pB.waitForFunction(() => (document.querySelector("#flowTitle") || {}).textContent === "Closing stopped", { timeout: 20000 });

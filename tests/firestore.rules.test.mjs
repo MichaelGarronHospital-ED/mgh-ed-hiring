@@ -101,7 +101,7 @@ describe("screening: reviewers get their own back, the collation stays admin-onl
   // ratings used to be readable only in the browser they were typed in, so
   // signing in anywhere else showed them a blank review — which reads as lost
   // work. `get` by exact id is now open to the committee so the app can fetch
-  // "<member>~<candId>"; `list` stays admin-only, so nobody but leadership can
+  // "<member>~<candId>"; `list` stays admin-only, so nobody but Admin can
   // sweep up the collection and see the collation.
   //
   // The rules cannot tell one reviewer from another (shared account), so this
@@ -310,7 +310,7 @@ describe("the ED password can save but never delete", () => {
   // Every ED physician now holds the committee password, not just the 13 on
   // the committee. So it may create and update the documents reviewers fill in,
   // but it must never remove one, and it must not touch the applicant list.
-  // Leadership keeps every power it had.
+  // Admin keeps every power it had.
 
   const committeeDocs = [CAND, SCREEN, SCORE, AVAIL_I, AVAIL_C, CONFIG, PUBLIC, ALLOWED, "interviews_offers/c-1"];
 

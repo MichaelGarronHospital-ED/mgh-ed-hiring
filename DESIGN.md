@@ -28,7 +28,7 @@ run end-to-end against a live Firebase project (needs the user's project + a bro
   "send your list to Amanda" and avoids one opinion anchoring others. All input is
   editable until the admin **closes** that phase.
 - **Role accounts (Oct 2026):** the three passwords are the passwords of three Firebase
-  accounts (Leadership `admin@`, ED `committee@`, Guest `applicant@`). Since R7c a role is
+  accounts (Admin `admin@`, ED `committee@`, Guest `applicant@`). Since R7c a role is
   known by its account's **uid**, never its email (rules v3 and every page); the emails only
   sign in, and move to `@mgh-ed-hiring.invalid` addresses nobody can register (Phase A of the
   passwords design). **Never delete a role account**: a new one has a new uid. The uids are in

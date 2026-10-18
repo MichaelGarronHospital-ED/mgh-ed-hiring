@@ -2,7 +2,7 @@
 //  Change history (H12). Pure helpers: no DOM, no store.
 //
 //  interviews_history/{autoId} = { at: <server time>, by, action, text,
-//  cand?, member?, undo?, restored? }. Leadership actions only, append-only,
+//  cand?, member?, undo?, restored? }. Admin actions only, append-only,
 //  written in the SAME transaction or batch as the change it describes (so there
 //  is never "saved but not logged"). No applicant name is ever stored: `text`
 //  may hold {cand} and {member}, and names are drawn from the ids when the
@@ -11,7 +11,7 @@
 //  Undo exists only for changes that touch one field with no side effects, so
 //  "has it changed since?" is one comparison of a hash:
 //    panel.save, panel.reset, panel.resetAll   (the entries of panelOverrides)
-//    shortlist.set                             (a leadership on/off decision)
+//    shortlist.set                             (an Admin on/off decision)
 //    screening.toNote                          (one screening document)
 //  Everything else is logged only; most have a plain opposite action already.
 // ============================================================================
@@ -63,7 +63,7 @@ export function panelUndo(beforeMap, afterMap, cids) {
   const pick = (m) => Object.fromEntries(cids.map((c) => [c, (m || {})[c] || null]));
   return { kind: "panelOverrides", before: pick(beforeMap), afterHash: hashOf(pick(afterMap)) };
 }
-// A leadership shortlist decision on one candidate.
+// An Admin shortlist decision on one candidate.
 export function shortlistUndo(beforeCand, afterCand) {
   const pick = (c) => ({ shortlist: (c && c.shortlist) || null, shortlistBy: (c && c.shortlistBy) || null });
   return { kind: "shortlist", before: pick(beforeCand), afterHash: hashOf(pick(afterCand)) };
@@ -118,8 +118,8 @@ export function textFor(e, { candName, memberName } = {}) {
 }
 
 export function whoFor(e, memberName) {
-  if (!e.by || e.by === "leadership") return "Leadership";
-  return `Leadership (${(memberName && memberName(e.by)) || e.by})`;
+  if (!e.by || e.by === "leadership") return "Admin";
+  return `Admin (${(memberName && memberName(e.by)) || e.by})`;
 }
 
 // "Mar 1, 2:14 pm" from a Firestore Timestamp, a { __ts } value, a Date or an ISO string.

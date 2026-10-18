@@ -4,7 +4,7 @@
 //
 //  Since R7 there is one test, the same one the page makes: which role account
 //  accepts the password? The page tries ED (committee@), Guest (applicant@) and
-//  Leadership (admin@mgh-ed-hiring.invalid); this script tries all three and says which
+//  Admin (admin@mgh-ed-hiring.invalid); this script tries all three and says which
 //  accepted it, or why none did. With --voting it also tries Motion Voting's
 //  two accounts (ed@ and leadership@mgh-ed-voting.invalid), which Setup,
 //  the ED tools passwords page (passwords.html) keeps on the same values.
@@ -69,9 +69,9 @@ console.log(`Password length: ${PW.length} characters` +
 const accounts = [
   ["ED", "hiring", AUTH.committeeEmail, AUTH.uids.committee],
   ["Guest", "hiring", AUTH.candidateEmail, AUTH.uids.candidate],
-  ["Leadership", "hiring", AUTH.adminEmail, AUTH.uids.admin],
+  ["Admin", "hiring", AUTH.adminEmail, AUTH.uids.admin],
   ...(VOTING ? [["ED", "voting", PARTNERS.voting.edEmail, PARTNERS.voting.uids.ed],
-    ["Leadership", "voting", PARTNERS.voting.leadershipEmail, PARTNERS.voting.uids.leadership]] : []),
+    ["Admin", "voting", PARTNERS.voting.leadershipEmail, PARTNERS.voting.uids.leadership]] : []),
 ];
 const configs = { hiring: firebaseConfig, voting: PARTNERS.voting.firebaseConfig };
 const results = [];
@@ -102,7 +102,7 @@ if (codes.some((c) => /OPERATION_NOT_ALLOWED|PASSWORD_LOGIN_DISABLED/.test(c))) 
 } else if (hiring.length) {
   const role = hiring[0].role;
   console.log(`  This is the ${role.toUpperCase()} password for Physician Hiring; the page signs in with it.`);
-  if (role === "ED") console.log("  The ED password has no Panels, Ranking or Setup: those need the Leadership password.");
+  if (role === "ED") console.log("  The ED password has no Panels, Ranking or Setup: those need the Admin password.");
   console.log("  If a person still can't get in, the fault is on their side: their network blocks");
   console.log("  www.gstatic.com, or they are throttled from earlier tries (wait 15 minutes).");
   if (VOTING) {

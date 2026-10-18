@@ -733,7 +733,7 @@ details.more > summary::-webkit-details-marker { display:none; }
 /* ---- close the round, past rounds, restore (H1) ------------------------------ */
 .roundline p { background:var(--ed-amber-tint); color:var(--ed-amber); }
 .roundline .linky { color:inherit; }
-/* another Leadership page is closing the round: this one is read-only */
+/* another Admin page is closing the round: this one is read-only */
 /* read-only while another page closes the round: the page sets `inert` on both */
 body.closing-elsewhere #app, body.closing-elsewhere #settings { opacity:.6; }
 .filepick { display:inline-flex; align-items:center; cursor:pointer; }

@@ -19,7 +19,7 @@ export const firebaseConfig = {
 
 // ---- 2. Access ------------------------------------------------------------
 // THREE shared passwords, none stored here or anywhere in the repo: ED (the
-// committee), Leadership (adds Panels, Ranking and Setup) and Guest (applicants,
+// committee), Admin (adds Panels, Ranking and Setup) and Guest (applicants,
 // straight to their own scheduling; they never see the roster, questions, scores
 // or other applicants). Each is only the password of a Firebase role account
 // (AUTH below); the page finds the role by which account accepts it. Since R7 no

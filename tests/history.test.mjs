@@ -26,8 +26,8 @@ test("names are drawn from ids at display time", () => {
   assert.equal(textFor(entry("roster.add", "Added", { cand: "c-1" }), ctx), "Added: Dr Rosalind Ashcombe");
   assert.equal(textFor(entry("chair.set", "Changed the chair to {member}", { member: "m-1" }), ctx), "Changed the chair to Marrocco");
   assert.equal(textFor(entry("roster.delete", "Deleted {cand}", { cand: "c-gone" }), ctx), "Deleted an applicant");
-  assert.equal(whoFor({ by: "leadership" }), "Leadership");
-  assert.equal(whoFor({ by: "m-1" }, ctx.memberName), "Leadership (Marrocco)");
+  assert.equal(whoFor({ by: "leadership" }), "Admin");
+  assert.equal(whoFor({ by: "m-1" }, ctx.memberName), "Admin (Marrocco)");
   assert.equal(whenFor(null), "Just now");
   assert.match(whenFor({ __ts: "2027-03-01T19:14:00.000Z" }), /^Mar 1, \d+:14 (am|pm)$/);
 });
