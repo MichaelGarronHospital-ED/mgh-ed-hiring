@@ -87,29 +87,32 @@ async function confirm(page, which = "yes") {
   return text;
 }
 
-// open Setup → Interview times, edit one time, answer the "already answered"
-// dialog ("yes" = ask again, "alt" = keep answers)
-async function editTime(page, id, { date, start, end }, answer) {
-  await page.evaluate(() => document.querySelector("#setupBtn").click());
-  await page.evaluate(() => { const d = document.querySelector('details[data-sec="setSlots"]'); if (d) d.open = true; });
+// open the Availability tab's Interview times card (R11: it moved there from
+// Setup), edit one time, answer the "already answered" dialog ("yes" = ask
+// again, "alt" = keep answers)
+async function openTimes(page) {
+  await tab(page, "availability");
+  await page.evaluate(() => { const d = document.querySelector('#availability details[data-sec="times"]'); if (d) { d.open = true; d.dispatchEvent(new Event("toggle")); } });
   await sleep(100);
+}
+async function editTime(page, id, { date, start, end }, answer) {
+  await openTimes(page);
   await page.evaluate((id) => {
-    const b = [...document.querySelectorAll("#settings button")]
+    const b = [...document.querySelectorAll("#availability button")]
       .find((x) => (x.getAttribute("onclick") || "") === `IV.tEdit('${id}')`);
     if (!b) throw new Error(`no edit button for ${id}`);
     b.click();
   }, id);
-  await page.waitForSelector("#tEdStart");
+  await page.waitForSelector("#availability #tEdStart");
   await page.evaluate((v) => { if (v.date) window.IV.tEditField("date", v.date);
     if (v.start) window.IV.tEditField("start", v.start);
     if (v.end) window.IV.tEditField("end", v.end); }, { date, start, end });
   await page.evaluate(() => {
-    [...document.querySelectorAll("#settings button")]
+    [...document.querySelectorAll("#availability button")]
       .find((x) => (x.getAttribute("onclick") || "").includes("IV.tSave")).click();
   });
   await confirm(page, answer);
   await sleep(300);
-  await page.evaluate(() => document.querySelector("#setupClose").click());
 }
 
 // ---------------------------------------------------------------- scenarios
@@ -176,11 +179,9 @@ const scenarios = {
     await asAdmin(page, url, base());
     await tab(page, "panels");
     const before = await readPanels(page);
-    await page.evaluate(() => document.querySelector("#setupBtn").click());
-    await page.evaluate(() => { const d = document.querySelector('details[data-sec="setSlots"]'); if (d) d.open = true; });
-    await sleep(100);
+    await openTimes(page);
     await page.evaluate(() => {
-      const b = [...document.querySelectorAll("#settings button")]
+      const b = [...document.querySelectorAll("#availability button")]
         .find((x) => (x.getAttribute("onclick") || "").includes("IV.tRemove(['t1']"));
       if (!b) throw new Error("no remove button for t1");
       b.click();
@@ -188,7 +189,6 @@ const scenarios = {
     const msg = await confirm(page, "yes");
     problems.push(...ok(/already answered/.test(msg), `remove dialog didn't mention existing answers: ${JSON.stringify(msg)}`));
     problems.push(...ok(/Scheduled then/.test(msg), `remove dialog didn't mention the booked panel: ${JSON.stringify(msg)}`));
-    await page.evaluate(() => document.querySelector("#setupClose").click());
     await tab(page, "panels");
     const after = await readPanels(page);
     problems.push(...ok(!after.schedule.some((p) => p.slot === "t1"), "a panel is still booked at the removed time"));
@@ -297,6 +297,11 @@ const scenarios = {
     problems.push(...ok(!!t1 && t1.start === "10:15", `the time didn't change: ${JSON.stringify(t1)}`));
     problems.push(...ok(st.availCand.carter && st.availCand.carter.t1 === "either", "the applicant's answer was dropped"));
     problems.push(...ok(st.availIv.Abara.t1 === "ip", "an interviewer's answer was dropped"));
+    // R11: the Availability tab's times card shows the saved time, form closed
+    const card = await page.evaluate(() => ({ text: (document.querySelector('#availability details[data-sec="times"]') || {}).textContent || "",
+      editing: !!document.querySelector("#tEdStart"), inSetup: !!document.querySelector("#settings .tadd, #settings #tAddDate") }));
+    problems.push(...ok(/10:15/.test(card.text) && !card.editing, `the times card didn't redraw with the saved time: ${card.text.slice(0, 120)}`));
+    problems.push(...ok(!card.inSetup, "the times editor is still in Setup"));
     await tab(page, "panels");
     const shown = await readPanels(page);
     problems.push(...ok(shown.schedule.some((p) => p.name.includes("Carter")), "Carter is no longer scheduled after a kept edit"));
@@ -448,6 +453,8 @@ const scenarios = {
     const t0 = await tabs();
     problems.push(...ok(!t0.includes("score"), `plain admin has a Score tab: ${t0}`));
     problems.push(...ok(t0.includes("panels") && t0.includes("ranking"), `plain admin is missing Admin tabs: ${t0}`));
+    // R11: the tabs follow the order of the work
+    problems.push(...ok(t0.join() === "screen,availability,panels,questions,ranking", `plain admin's tab order: ${t0}`));
     const screen = await page.$eval("#screen", (el) => el.innerHTML);
     problems.push(...ok(!/Your review/.test(screen) && !/IV\.toggleFlag/.test(screen),
       "plain admin is shown a personal screening list to file flags under"));
@@ -455,11 +462,18 @@ const scenarios = {
     const av = await page.$eval("#availability", (el) => el.innerHTML);
     problems.push(...ok(!/IV\.avail\(/.test(av), "plain admin is shown a personal availability picker"));
     problems.push(...ok(/avgrid/.test(av), "plain admin can't see the availability grids"));
+    problems.push(...ok(/IV\.tAdd\(/.test(av) && /IV\.tEdit\(/.test(av), "plain admin can't edit the interview times on the Availability tab"));
+    await tab(page, "questions");
+    const qs = await page.$eval("#questions", (el) => el.innerHTML);
+    problems.push(...ok(/IV\.saveQuestions\(/.test(qs), "plain admin can't edit the questions on the Questions tab"));
+    problems.push(...ok(!/IV\.(avail|toggleFlag|rate|scoreTyped|note)\(/.test(qs) && !/overallIn/.test(qs), "the Questions tab shows a view that files input under a name"));
 
     await changeMember(page, "Abara");
     const who = await page.$eval("#whoLine", (el) => el.textContent.trim());
     problems.push(...ok(who === "Abara", `picking a name as admin didn't take (header says ${who})`));
     problems.push(...ok((await tabs()).includes("score"), "admin reviewing as a member has no Score tab"));
+    const t1 = await tabs();
+    problems.push(...ok(t1.join() === "screen,availability,panels,questions,score,ranking", `admin reviewing as an interviewer: tab order ${t1}`));
 
     await page.click("#changeMember");
     await page.waitForSelector("#adminOnlyBtn:not(.hidden)");
@@ -476,6 +490,12 @@ const scenarios = {
     const escape = await page.$eval("#adminOnlyBtn", (el) => !el.classList.contains("hidden"));
     problems.push(...ok(!escape, "the staff code is offered 'continue as admin'"));
     await pickMember(page, "Abara");
+    const tm = await tabs();
+    problems.push(...ok(tm.join() === "screen,availability,score", `a member's tabs: ${tm}`));
+    await tab(page, "availability");
+    const mav = await page.$eval("#availability", (el) => el.innerHTML);
+    problems.push(...ok(/IV\.avail\(/.test(mav) && !/IV\.t(Add|Edit|Remove)\(/.test(mav), "a member's Availability tab is wrong (no picker, or the times editor shows)"));
+    problems.push(...ok(!(await page.$eval("#questions", (el) => el.innerHTML.trim())), "a member has Questions content"));
     return problems;
   },
 };

@@ -57,7 +57,7 @@ const scenarios = {
     await load(page, url, base({ availCand: { ashcombe: { t0: "ip" }, kim: { t0: "zoom", t1: "ip" } } }), "adminpw");
     await landAsAdmin(page);
     await page.evaluate(() => { document.querySelector("#bulkAdd").value = "Dr Min Kim";
-      [...document.querySelectorAll("#screen button")].find((b) => b.textContent.trim() === "Add candidates").click(); });
+      [...document.querySelectorAll("#screen button")].find((b) => b.textContent.trim() === "Add applicants").click(); });
     const msg = await confirm(page);
     problems.push(...ok(msg.includes("Two applicants have the last name Kim: Jane Kim and Min Kim") && msg.includes("asked for their first name too"), `dialog: ${msg}`));
     let st = await dumpState(page);
@@ -176,7 +176,7 @@ const scenarios = {
     await load(page, url, base(), "adminpw"); await landAsAdmin(page);
     for (const nm of ["Dr Ivy Trelawney", "Dr Sam Ellery", "Dr Tomas Weir", "Dr Grace Lindqvist"]) {
       await page.evaluate((nm) => { document.querySelector("#bulkAdd").value = nm;
-        [...document.querySelectorAll("#screen button")].find((b) => b.textContent.trim() === "Add candidates").click(); }, nm);
+        [...document.querySelectorAll("#screen button")].find((b) => b.textContent.trim() === "Add applicants").click(); }, nm);
       await sleep(250);
     }
     // the list is written within a couple of seconds (gathered, at most 2 s): poll for it

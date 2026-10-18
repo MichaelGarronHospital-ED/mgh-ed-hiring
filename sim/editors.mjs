@@ -1,5 +1,5 @@
-// R2: the committee editor (H6) and the questions editor (H2), through the real
-// UI on LocalStore. Run: node editors.mjs [name]
+// R2: the committee editor (H6) and the questions editor (H2, on the Questions
+// tab since R11), through the real UI on LocalStore. Run: node editors.mjs [name]
 import { pathToFileURL } from "node:url";
 import { serve, browser, openPage, signIn, pickMember, landAsAdmin, tab, dumpState, sleep, daysAhead } from "./drive.mjs";
 import { readPanels } from "./scrape.mjs";
@@ -152,14 +152,15 @@ const scenarios = {
 
   // H2: edit, reorder, save; notes stay with their question. Then the first
   // score locks the list: add, remove and move are hidden; wording still saves.
+  // R11: the editor is on the Admin-only Questions tab (it was in Setup).
   async questionsEditAndLock(page, url) {
     const problems = [];
     await load(page, url, base({ scores: {} }), "adminpw");
-    await landAsAdmin(page); await openCard(page, "setQuestions");
+    await landAsAdmin(page); await tab(page, "questions");
     await page.evaluate(() => window.IV.qAdd());
     await page.type("#qText-2", "What would you change here?");
     await page.evaluate(() => window.IV.qMove(2, -1));
-    await page.evaluate(() => [...document.querySelectorAll("#settings button")].find((b) => b.textContent.trim() === "Save questions").click());
+    await page.evaluate(() => [...document.querySelectorAll("#questions button")].find((b) => b.textContent.trim() === "Save questions").click());
     await sleep(400);
     let st = await dumpState(page);
     const ids = st.questions.questions.map((q) => q.id);
@@ -173,13 +174,14 @@ const scenarios = {
     const qs = await page.$$eval("#score .qrow", (rows) => rows.map((r) => [r.querySelector(".q").textContent, r.querySelector("textarea").value]));
     problems.push(...ok(qs[2] && qs[2][0] === "A difficult case" && qs[2][1] === "about the case", `Score tab rows: ${JSON.stringify(qs)}`));
     // scoring has started now: locked
-    await relogin(page, "adminpw"); await landAsAdmin(page); await openCard(page, "setQuestions");
-    const card = await page.$eval('details[data-sec="setQuestions"]', (e) => e.textContent);
+    await relogin(page, "adminpw"); await landAsAdmin(page); await tab(page, "questions");
+    const card = await page.$eval("#questions", (e) => e.textContent);
+    problems.push(...ok(!(await page.$('#settings [id^="qText-"]')), "the questions editor is still in Setup"));
     problems.push(...ok(card.includes("Locked because scoring has started"), "no lock note"));
     problems.push(...ok(!card.includes("Add a question") && !card.includes("Move up") && !card.includes("Remove"), "add, move or remove still offered while locked"));
     await page.$eval("#qText-0", (e) => { e.value = ""; });
     await page.type("#qText-0", "Tell us about yourself, briefly");
-    await page.evaluate(() => [...document.querySelectorAll("#settings button")].find((b) => b.textContent.trim() === "Save questions").click());
+    await page.evaluate(() => [...document.querySelectorAll("#questions button")].find((b) => b.textContent.trim() === "Save questions").click());
     const msg = await confirmYes(page);
     problems.push(...ok(msg.includes("Only fix spelling or small wording"), `confirm: ${msg}`));
     st = await dumpState(page);
@@ -192,7 +194,7 @@ const scenarios = {
     await page.bringToFront();   // a background tab doesn't take typing
     await page.$eval("#qText-0", (e) => { e.value = ""; });
     await page.type("#qText-0", "Tell us about yourself");
-    await page.evaluate(() => [...document.querySelectorAll("#settings button")].find((b) => b.textContent.trim() === "Save questions").click());
+    await page.evaluate(() => [...document.querySelectorAll("#questions button")].find((b) => b.textContent.trim() === "Save questions").click());
     await confirmYes(page); await sleep(600);
     const q0 = await pB.$eval("#score .qrow .q", (e) => e.textContent).catch(() => "");
     problems.push(...ok(q0 === "Tell us about yourself", `the open Score tab still shows "${q0}"`));

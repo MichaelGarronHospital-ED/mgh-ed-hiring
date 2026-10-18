@@ -168,7 +168,7 @@ export const cases = {
     await sleep(500);
     problems.push(...ok(!(await emu.getDocument("interviews_meta/questions")), "a questions document was written at sign-in"));
     await p.evaluate(() => { document.querySelector("#bulkAdd").value = "Dr Jane Kim";
-      [...document.querySelectorAll("#screen button")].find((b) => b.textContent.trim() === "Add candidates").click(); });
+      [...document.querySelectorAll("#screen button")].find((b) => b.textContent.trim() === "Add applicants").click(); });
     const added = await until(async () => Object.values(await emu.listCollection("interviews_candidates")).find((c) => c.name === "Dr Jane Kim"));
     problems.push(...ok(added && added.addedAt && added.addedAt.__ts, "the new applicant wasn't saved with addedAt"));
     const ha = await until(async () => (await history()).find((e) => e.action === "roster.add"));
@@ -297,7 +297,7 @@ export const cases = {
     const lead = await freshPage({ log });
     await asLeadership(lead);
     await lead.evaluate(() => { document.querySelector("#bulkAdd").value = "Dr Min Kim";
-      [...document.querySelectorAll("#screen button")].find((b) => b.textContent.trim() === "Add candidates").click(); });
+      [...document.querySelectorAll("#screen button")].find((b) => b.textContent.trim() === "Add applicants").click(); });
     await lead.waitForSelector("#confirmWrap:not(.hidden)", { timeout: 8000 }); await lead.click("#confirmYes");
     const allowed = await until(async () => { const a = await emu.getDocument("interviews_meta/allowed");
       return a && a.keys.includes("kim-jane") && a.keys.includes("kim-min") && !a.keys.includes("kim") && a; });

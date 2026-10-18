@@ -71,6 +71,44 @@ const scenarios = {
     await other.close();
     return problems;
   },
+  // R11: the times editor moved from Setup to the Availability tab and the
+  // questions editor to the Questions tab. Both tabs redraw on every live
+  // update, so what Setup did for them must still hold: a live update never
+  // redraws a times form while Admin is typing in it (it catches up once focus
+  // leaves), and a question being typed keeps its text, focus and caret.
+  async editorsSurviveUpdates(page, url) {
+    const problems = [];
+    await load(page, url, base(), "adminpw"); await landAsAdmin(page);
+    await tab(page, "availability");
+    await page.evaluate(() => { const d = document.querySelector('#availability details[data-sec="times"]'); d.open = true; d.dispatchEvent(new Event("toggle")); });
+    await sleep(100);
+    await page.evaluate(() => { const el = document.querySelector("#tAddFrom"); el.__mark = 1; el.focus(); });
+    const other = await page.browser().newPage();
+    await other.goto(url, { waitUntil: "domcontentloaded" });
+    const bump = (who) => other.evaluate((who) => {
+      const s = JSON.parse(localStorage.getItem("ed_interviews_v1"));
+      s.availIv = { ...s.availIv, [who]: { t0: "ip", t1: "ip" } };
+      localStorage.setItem("ed_interviews_v1", JSON.stringify(s));
+      new BroadcastChannel("ed_interviews").postMessage(1);
+    }, who);
+    await bump("Dufour"); await sleep(400);
+    await page.bringToFront();
+    const held = await page.evaluate(() => { const el = document.querySelector("#tAddFrom"); return { same: !!(el && el.__mark), focused: document.activeElement === el }; });
+    problems.push(...ok(held.same && held.focused, `a live update redrew the times form while it was being typed in: ${JSON.stringify(held)}`));
+    await page.evaluate(() => document.activeElement.blur()); await sleep(500);
+    const caught = await page.evaluate(() => { const el = document.querySelector("#tAddFrom"); return { redrawn: !!el && !el.__mark,
+      grid: (document.querySelector('#availability details[data-sec="avgrid"] .sec-sub') || {}).textContent || "" }; });
+    problems.push(...ok(caught.redrawn && /5 of 5/.test(caught.grid), `the tab didn't catch up once focus left the form: ${JSON.stringify(caught)}`));
+    // the Questions tab: typing survives an update
+    await tab(page, "questions");
+    await page.click("#qText-1"); await page.keyboard.press("End"); await page.keyboard.type(" (typed)");
+    await other.bringToFront(); await bump("Ekwueme"); await sleep(400); await page.bringToFront();
+    const q = await page.evaluate(() => ({ v: document.querySelector("#qText-1").value, f: document.activeElement && document.activeElement.id }));
+    problems.push(...ok(q.v === "A difficult case (typed)" && q.f === "qText-1", `a live update lost a question being typed: ${JSON.stringify(q)}`));
+    await other.close();
+    return problems;
+  },
+
   // Members keyed by id: a member whose id is not her name shows by name
   // everywhere, and her input (keyed by id) is found.
   async membersById(page, url) {
@@ -100,7 +138,7 @@ const scenarios = {
   },
 
   // R7: nothing is decrypted or copied any more. With no questions document the
-  // Admin sign-in writes nothing, the Questions card says how to add them,
+  // Admin sign-in writes nothing, the Questions tab says how to add them,
   // and the Passwords card waits for them (design 5.2).
   async noQuestionCopySinceR7(page, url) {
     const problems = [];
@@ -109,8 +147,8 @@ const scenarios = {
     const st = await dumpState(page);
     problems.push(...ok(!st.questions, "a questions document appeared after the Admin sign-in"));
     problems.push(...ok(!Object.values(st.history || {}).some((h) => h.action === "questions.migrate"), "a questions copy was recorded"));
-    await openSetupCard(page, "setQuestions");
-    const q = await page.$eval('details[data-sec="setQuestions"]', (e) => e.textContent);
+    await tab(page, "questions");   // R11: the questions editor has its own tab
+    const q = await page.$eval("#questions", (e) => e.textContent);
     problems.push(...ok(q.includes("Restore them from a backup file") && !q.includes("old locked file") && !q.includes("Locked because scoring"), `Questions card: ${q.slice(0, 200)}`));
     await openSetupCard(page, "setPasswords");
     const pw = await page.$eval('details[data-sec="setPasswords"]', (e) => e.textContent);
@@ -121,10 +159,11 @@ const scenarios = {
       && !pw.includes("Change a password") && !pw.includes("didn't finish"), `Passwords card: ${pw.slice(0, 200)}`));
     // review: notes exist but the questions are missing: not locked, and the
     // ids the notes use can be rebuilt ("0", "1")
-    await openSetupCard(page, "setQuestions");
+    await page.evaluate(() => document.querySelector("#setupClose").click());
+    await tab(page, "questions");
     await page.evaluate(() => window.IV.qFromNotes()); await sleep(200);
     await page.type("#qText-0", "Tell us about yourself"); await page.type("#qText-1", "A difficult case");
-    await page.evaluate(() => [...document.querySelectorAll("#settings button")].find((b) => b.textContent.trim() === "Save questions").click());
+    await page.evaluate(() => [...document.querySelectorAll("#questions button")].find((b) => b.textContent.trim() === "Save questions").click());
     await sleep(500);
     const sq = (await dumpState(page)).questions;
     problems.push(...ok(sq && sq.questions.map((x) => x.id).join() === "0,1", `rebuilt ids: ${JSON.stringify(sq)}`));

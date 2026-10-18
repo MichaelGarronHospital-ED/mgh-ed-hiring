@@ -45,6 +45,10 @@ async function confirm(page) {
   await page.waitForSelector("#confirmWrap:not(.hidden)", { timeout: 5000 });
   const t = await page.$eval("#confirmMsg", (e) => e.textContent); await page.click("#confirmYes"); await sleep(300); return t;
 }
+const clickOn = (page, scope, handler) => page.evaluate((scope, handler) => {
+  const b = [...document.querySelectorAll(`${scope} button`)].find((x) => (x.getAttribute("onclick") || "") === handler);
+  if (!b) throw new Error(`no ${handler} button in ${scope}`); b.click();
+}, scope, handler);
 const clickText = (page, scope, text) => page.evaluate((scope, text) => {
   const b = [...document.querySelectorAll(`${scope} button`)].find((x) => x.textContent.trim() === text);
   if (!b) throw new Error(`no button "${text}" in ${scope}`); b.click();
@@ -228,17 +232,19 @@ const scenarios = {
     return problems;
   },
 
-  // H13: Setup sets a time to two rooms and a day with no chair; Panels shows
-  // Room 2, and two panels at once are disjoint.
+  // H13: the times editor (on the Availability tab since R11) sets a time to
+  // two rooms and a day with no chair; Panels shows Room 2, and two panels at
+  // once are disjoint.
   async twoRoomsAndNoChairDay(page, url) {
     const problems = [];
     const st0 = base({ availCand: { ashcombe: { t0: "ip" }, carter: { t0: "ip" }, fahmy: { t2: "ip" } } });
     await load(page, url, st0, "adminpw"); await landAsAdmin(page);
-    await page.evaluate(() => document.querySelector("#setupBtn").click()); await sleep(150);
-    await page.evaluate(() => { const d = document.querySelector('details[data-sec="setSlots"]'); d.open = true; });
-    await page.evaluate(() => window.IV.setRooms("t0", 2)); await sleep(300);
-    await page.evaluate((d) => window.IV.setDayChair(d, "none"), D2); await sleep(300);
-    await page.evaluate(() => document.querySelector("#setupClose").click());
+    await tab(page, "availability");
+    await page.evaluate(() => { const d = document.querySelector('#availability details[data-sec="times"]'); d.open = true; });
+    // the controls are the ones on the tab, not a hidden copy somewhere else
+    await clickOn(page, "#availability", "IV.setRooms('t0',2)"); await sleep(300);
+    await page.evaluate((d) => { const sel = document.querySelector(`#availability select[onchange^="IV.setDayChair('${d}'"]`);
+      if (!sel) throw new Error("no day chair picker on the Availability tab"); sel.value = "none"; sel.dispatchEvent(new Event("change")); }, D2); await sleep(300);
     await tab(page, "panels");
     const shown = await readPanels(page);
     const at0 = shown.schedule.filter((p) => p.slot === "t0");

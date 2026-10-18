@@ -116,7 +116,7 @@ export const COMMITTEE = [
 ];
 
 // ---- 6. Interview time slots ----------------------------------------------
-// Starting defaults only — once an admin edits times in Setup → Interview times,
+// Starting defaults only: once an admin edits times on the Availability tab (Interview times),
 // the database list takes over. From Amanda (Sept 2026): 7 one-hour slots on
 // Oct 1 + 3 on Oct 7 = 10 interviews (Oct 8 available if more are needed).
 // ids "0"…"9" match how these were keyed when they were a plain list — keep them.
