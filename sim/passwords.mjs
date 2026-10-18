@@ -32,13 +32,13 @@ if (OUT) fs.mkdirSync(OUT, { recursive: true });
 const OLD = { leadership: "lead-old-test-1", ed: "ed-old-test-22", guest: "guest-old-test-3" };   // long enough for the leak check to mean something
 const NEW = { leadership: "harbour lantern violet", ed: "river stone lamp forty", guest: "maple window seven" };
 const ACCTS = [
-  ["voting:ed", "ed@ed-motion-voting.app", "ed"], ["voting:leadership", "leadership@ed-motion-voting.app", "leadership"],
-  ["hiring:committee", "committee@ed-hiring.app", "ed"], ["hiring:applicant", "applicant@ed-hiring.app", "guest"],
-  ["hiring:admin", "admin@ed-hiring.app", "leadership"],
+  ["voting:ed", "ed@mgh-ed-voting.invalid", "ed"], ["voting:leadership", "leadership@mgh-ed-voting.invalid", "leadership"],
+  ["hiring:committee", "committee@mgh-ed-hiring.invalid", "ed"], ["hiring:applicant", "applicant@mgh-ed-hiring.invalid", "guest"],
+  ["hiring:admin", "admin@mgh-ed-hiring.invalid", "leadership"],
 ];
 const ok = (cond, msg) => (cond ? [] : [msg]);
-// R7c: the Leadership account's email moves FROM, TO (R7d swaps them: a rollback)
-const EMAIL_FROM = "admin@ed-hiring.app", EMAIL_TO = "admin@mgh-ed-hiring.invalid";
+// R7d: the accounts have the new emails; the change here goes back (what --undo would do)
+const EMAIL_FROM = "admin@mgh-ed-hiring.invalid", EMAIL_TO = "admin@ed-hiring.app";
 
 async function signInWorks(email, password) {
   const r = await fetch(`${emu.AUTH}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake-api-key`, {
@@ -197,7 +197,7 @@ const cases = {
       // both ED accounts, then Physician Hiring's Guest and Leadership accounts (unticked, proven too)
       problems.push(...ok((ready.match(/: ready/g) || []).length === 4 && ready.includes("Motion Voting, ED account") && ready.includes("Physician Hiring, Guest account")
         && !ready.includes("Motion Voting, Leadership account"), `ready: ${ready}`));
-      problems.push(...ok(await signInWorks("committee@ed-hiring.app", OLD.ed), "Check changed something"));
+      problems.push(...ok(await signInWorks("committee@mgh-ed-hiring.invalid", OLD.ed), "Check changed something"));
       await shot(p, "step3");
       await type(p, "pwNew_ed", NEW.ed); await type(p, "pwRep_ed", NEW.ed + "x");
       await flowClick(p, "Change now"); await sleep(300);
@@ -259,7 +259,7 @@ const cases = {
       const pend = await emu.getDocument("interviews_meta/passwords");
       problems.push(...ok(pend && pend.pending && pend.pending.done.join() === "voting:ed,voting:leadership" && pend.pending.inProgress === "hiring:committee",
         `pending: ${JSON.stringify(pend)}`));
-      problems.push(...ok(!(await signInWorks("committee@ed-hiring.app", NEW.ed)), "the cut update went through anyway"));
+      problems.push(...ok(!(await signInWorks("committee@mgh-ed-hiring.invalid", NEW.ed)), "the cut update went through anyway"));
       await closePage(p);
 
       // a new tab, a new browser even
@@ -308,29 +308,6 @@ const cases = {
     return [...problems, ...log.filter((l) => /^pageerror/.test(l))];
   },
 
-  // R7c (review): after migrate-emails.py --apply the five accounts have their
-  // .invalid emails while this page (R7c) still has the old ones in its config.
-  // The page signs in, and Check and Change now reach every account, hiring AND
-  // voting, through the fallback to the other email.
-  async afterApplyPageAndFlowWork() {
-    const problems = [], log = [];
-    await reset();
-    const NEWE = { "voting:ed": "ed@mgh-ed-voting.invalid", "voting:leadership": "leadership@mgh-ed-voting.invalid",
-      "hiring:committee": "committee@mgh-ed-hiring.invalid", "hiring:applicant": "applicant@mgh-ed-hiring.invalid", "hiring:admin": "admin@mgh-ed-hiring.invalid" };
-    const UIDK = { "voting:ed": "votingEd", "voting:leadership": "votingLeadership", "hiring:committee": "committee", "hiring:applicant": "applicant", "hiring:admin": "admin" };
-    for (const [key] of ACCTS) await emu.setEmail(emu.UIDS[UIDK[key]], NEWE[key]);
-    const p = await freshPage(390, log);
-    await signIn(p, OLD.leadership); await onPage(p);
-    await toNewValues(p, ["ed"]);
-    const ready = await p.$eval("#flowBody", (e) => e.textContent);
-    problems.push(...ok((ready.match(/: ready/g) || []).length === 4, `Check after --apply: ${ready.slice(0, 300)}`));
-    await fillNew(p, ["ed"]);
-    await flowClick(p, "Change now"); await waitFlow(p, "Done", 30000);
-    problems.push(...ok(await signInWorks(NEWE["hiring:committee"], NEW.ed) && await signInWorks(NEWE["voting:ed"], NEW.ed), "the ED accounts under their new emails didn't take the new password"));
-    await closePage(p);
-    return [...problems, ...log.filter((l) => /^pageerror/.test(l))];
-  },
-
   // Another page starts a change of other passwords while this dialog is open:
   // Change now refuses rather than overwrite that page's record.
   async secondPageCantOverwrite() {
@@ -342,7 +319,7 @@ const cases = {
     await fillNew(p, ["ed"]);
     await emu.setDocument("interviews_meta/passwords", { pending: { roles: ["guest"], startedAt: { __ts: new Date().toISOString() }, done: ["hiring:applicant"], inProgress: null } });
     await flowClick(p, "Change now"); await waitFlow(p, "Nothing was changed");
-    problems.push(...ok(await signInWorks("committee@ed-hiring.app", OLD.ed) && await signInWorks("ed@ed-motion-voting.app", OLD.ed), "an ED account changed anyway"));
+    problems.push(...ok(await signInWorks("committee@mgh-ed-hiring.invalid", OLD.ed) && await signInWorks("ed@mgh-ed-voting.invalid", OLD.ed), "an ED account changed anyway"));
     const meta = await emu.getDocument("interviews_meta/passwords");
     problems.push(...ok(meta.pending && meta.pending.roles.join() === "guest" && meta.pending.done.join() === "hiring:applicant", `the other record was overwritten: ${JSON.stringify(meta)}`));
     await closePage(p);
@@ -357,7 +334,7 @@ const cases = {
       if (scheme === "dark" && !OUT) break;
       await reset();
       await emu.clearAuth();
-      for (const [, email, role] of ACCTS) await emu.addUser(email, email === "ed@ed-motion-voting.app" ? "an older ed value" : OLD[role]);
+      for (const [, email, role] of ACCTS) await emu.addUser(email, email === "ed@mgh-ed-voting.invalid" ? "an older ed value" : OLD[role]);
       const p = await freshPage(390, log, scheme);
       await signIn(p, OLD.leadership); await onPage(p);
       await p.evaluate(() => { window.PW.change(); });
@@ -376,7 +353,7 @@ const cases = {
       await flowClick(p, "Check"); await waitFlow(p, "Type the new passwords", 30000);
       await fillNew(p, ["ed"]);
       await flowClick(p, "Change now"); await waitFlow(p, "Done", 30000);
-      problems.push(...ok(await signInWorks("ed@ed-motion-voting.app", NEW.ed) && await signInWorks("committee@ed-hiring.app", NEW.ed), "drifted account not brought in line"));
+      problems.push(...ok(await signInWorks("ed@mgh-ed-voting.invalid", NEW.ed) && await signInWorks("committee@mgh-ed-hiring.invalid", NEW.ed), "drifted account not brought in line"));
       await closePage(p);
     }
     return [...problems, ...log.filter((l) => /^pageerror/.test(l))];

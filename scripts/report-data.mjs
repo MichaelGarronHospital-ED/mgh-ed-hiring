@@ -19,7 +19,7 @@
 //    --issues   only the things that need attention: stale entries, duplicate
 //               surnames, availability that matches no candidate, empty docs.
 //
-//  Admin is required: firestore.rules lets only admin@ed-hiring.app READ
+//  Admin is required: firestore.rules lets only admin@mgh-ed-hiring.invalid READ
 //  screening and scores (that is what keeps the ranking private from
 //  reviewers), so the committee code will not work here.
 // ============================================================================
@@ -52,12 +52,8 @@ if (process.env.ED_IV_EMULATOR) {
   console.log(`*** EMULATOR MODE (${process.env.ED_IV_EMULATOR}) ***`);
 } else {
   let cred;
-  // the old email, then the new .invalid one (Phase A: the accounts' emails move)
   try { cred = await signInWithEmailAndPassword(auth, AUTH.adminEmail, PASSWORD); }
-  catch (e0) {
-    try { cred = await signInWithEmailAndPassword(auth, AUTH.newEmails.admin, PASSWORD); }
-    catch (e) { console.error(`Sign-in failed (${e.code || e.message}). Check the admin password.`); process.exit(1); }
-  }
+  catch (e) { console.error(`Sign-in failed (${e.code || e.message}). Check the admin password.`); process.exit(1); }
   // the Leadership account by its uid (R7c), never by its email
   if (cred.user.uid !== AUTH.uids.admin) { console.error("That email belongs to another account than the Leadership account (different uid). Stopping."); process.exit(1); }
 }

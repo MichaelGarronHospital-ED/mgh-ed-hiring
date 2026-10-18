@@ -67,9 +67,9 @@ export const nextDownload = (page, act) => page.evaluate((act) => new Promise((r
 }), act);
 const history = async () => Object.values(await emu.listCollection("interviews_history"));
 
-// R7c: the emails the accounts move FROM and TO in emailChangeKeepsSessions (R7d swaps them: a rollback)
-const FROM = { admin: "admin@ed-hiring.app", committee: "committee@ed-hiring.app", applicant: "applicant@ed-hiring.app" };
-const TO = { admin: "admin@mgh-ed-hiring.invalid", committee: "committee@mgh-ed-hiring.invalid", applicant: "applicant@mgh-ed-hiring.invalid" };
+// R7d: the accounts have the new emails; the change here goes back (what --undo would do in a rollback)
+const FROM = { admin: "admin@mgh-ed-hiring.invalid", committee: "committee@mgh-ed-hiring.invalid", applicant: "applicant@mgh-ed-hiring.invalid" };
+const TO = { admin: "admin@ed-hiring.app", committee: "committee@ed-hiring.app", applicant: "applicant@ed-hiring.app" };
 export const cases = {
   // R7c (Phase A): a role is known by uid, never by email.
   // (1) Signed in as each role, the account's email is changed by the admin API
@@ -82,7 +82,7 @@ export const cases = {
   //     in its config while the session is the account under its NEW email (signed
   //     in again in the same tab after the change). Reload: still in, same role.
   //     A page that decided the role by email would put each one at the sign-in box.
-  // (A fresh sign-in after the change: signInAcrossTheSwitch, below.)
+  // (A fresh sign-in: signInWithInvalidEmailsOnly, below.)
   async emailChangeKeepsSessions() {
     const problems = [], log = [];
     const roles = [
@@ -126,41 +126,33 @@ export const cases = {
     return [...problems, ...log.filter((l) => !/console\.error/.test(l) || !/400/.test(l))];
   },
 
-  // R7c (review): the right password is never refused across the switch. A
-  // fresh sign-in on this R7c page (old emails in its config) after --apply
-  // falls back to the new email and notes "new" for this browser; after --undo
-  // the same browser falls back to the old one; an account somebody made with
-  // a freed old email (another uid) is refused, and the real password still works.
-  async signInAcrossTheSwitch() {
+  // R7d: the pages sign in with the one .invalid email of each account (R7c's
+  // fallback to the old email is gone, and so is its note of which worked). An
+  // account with another uid behind the Leadership email is refused. And the
+  // reason R7d ships weeks after the switch, not in it: once the accounts are
+  // back on the old emails (an --undo), this page refuses the right password.
+  async signInWithInvalidEmailsOnly() {
     const problems = [], log = [];
     const roles = [["admin", "adminpw", "#app:not(.hidden)"], ["committee", "staffpw", "#memberpick:not(.hidden)"], ["applicant", "guestpw", "#candview:not(.hidden)"]];
-    const kind = (p) => p.evaluate(() => localStorage.getItem("ed_iv_emailkind"));
-    for (const [role, to] of Object.entries(TO)) await emu.setEmail(emu.UIDS[role], to);   // --apply
-    let admin = null;
     for (const [role, pw, landed] of roles) {
       const p = await freshPage({ log });
       await signIn(p, pw);
-      let ok1 = true; try { await p.waitForSelector(landed, { timeout: 15000 }); } catch { ok1 = false; }
-      problems.push(...ok(ok1 && (await kind(p)) === "new", `${role}: an R7c page can't sign in after --apply (kind ${await kind(p)})`));
-      if (role === "admin") admin = p; else await closePage(p);
+      let in1 = true; try { await p.waitForSelector(landed, { timeout: 15000 }); } catch { in1 = false; }
+      const kind = await p.evaluate(() => localStorage.getItem("ed_iv_emailkind"));
+      problems.push(...ok(in1 && kind === null, `${role}: didn't sign in with the .invalid email (or kept an email kind: ${kind})`));
+      await closePage(p);
     }
-    for (const [role, from] of Object.entries(FROM)) await emu.setEmail(emu.UIDS[role], from);   // --undo
-    await Promise.all([admin.waitForNavigation({ waitUntil: "domcontentloaded" }), admin.click("#logout")]);
-    await admin.waitForFunction("window.__edReady === true"); await sleep(300);
-    await signIn(admin, "adminpw");
-    let ok2 = true; try { await admin.waitForSelector("#app:not(.hidden)", { timeout: 15000 }); } catch { ok2 = false; }
-    problems.push(...ok(ok2 && (await kind(admin)) === "old", `after --undo the same browser can't sign in (kind ${await kind(admin)})`));
-    await closePage(admin);
-    // a squatter on the freed old email after --apply: another uid, refused
-    for (const [role, to] of Object.entries(TO)) await emu.setEmail(emu.UIDS[role], to);
+    // another uid behind admin@...invalid: refused
+    await emu.setEmail(emu.UIDS.admin, TO.admin);
     await emu.addUser(FROM.admin, "squatter pass 1", emu.PROJECT, "squatteruid000000000000001");
     const q = await freshPage({ log });
     await signIn(q, "squatter pass 1"); await sleep(2000);
-    const msg = await q.$eval("#gerr", (e) => e.textContent);
-    problems.push(...ok(msg.includes("Incorrect password.") && (await q.$eval("#gate", (e) => !e.classList.contains("hidden"))), `the squatter got in: ${msg}`));
-    await signIn(q, "adminpw");
-    let ok3 = true; try { await q.waitForSelector("#app:not(.hidden)", { timeout: 15000 }); } catch { ok3 = false; }
-    problems.push(...ok(ok3, "the real Leadership password doesn't sign in beside a squatter"));
+    let msg = await q.$eval("#gerr", (e) => e.textContent);
+    problems.push(...ok(msg.includes("Incorrect password.") && (await q.$eval("#gate", (e) => !e.classList.contains("hidden"))), `another uid got in: ${msg}`));
+    // the Leadership account on its old email (after an --undo): this page refuses it
+    await signIn(q, "adminpw"); await sleep(2000);
+    msg = await q.$eval("#gerr", (e) => e.textContent);
+    problems.push(...ok(msg.includes("Incorrect password."), `after --undo an R7d page should refuse (it has no fallback): ${msg}`));
     await closePage(q);
     return [...problems, ...log.filter((l) => !/console\.error/.test(l) || !/400/.test(l))];
   },

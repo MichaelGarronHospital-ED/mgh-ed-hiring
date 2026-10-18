@@ -26,9 +26,9 @@
 //  with the server time. There is no "saved but not logged".
 // ============================================================================
 
-import { effectiveSlots, toStored } from "./slots.js?v=R8";
-import { lastKey, candKey, ls } from "./util.js?v=R8";
-import { ROUND_COLLECTIONS, quarantineSet, isQuarantined } from "./backup.js?v=R8";
+import { effectiveSlots, toStored } from "./slots.js?v=R8b";
+import { lastKey, candKey, ls } from "./util.js?v=R8b";
+import { ROUND_COLLECTIONS, quarantineSet, isQuarantined } from "./backup.js?v=R8b";
 
 // R6 (review 3 m2): documents kept by a close because they changed after the
 // copy belong to no round until leadership decides. Every view leaves them out.

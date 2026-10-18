@@ -239,10 +239,10 @@ Full design and reference data (committee, candidates, questions, rules) live in
 - **Every hiring branch must contain R7c before it merges** (merge `main` into it first). A branch
   made before it (`hiring-r8` at 689b3f8 was one) signs in with the old `ed-hiring.app` emails
   only and decides roles by email; merged after the email switch, it locks everyone out.
-  Until R7d, every sign-in tries both emails of an account (the kind that last worked first,
-  `js/signin.js`), accepting only the pinned uid. R7d (new emails only, dropping that fallback)
-  ships after the email switch, rebased on whatever is live then; it adds `tests/emails.test.mjs`,
-  which fails on any old address in `js/` or a page.
+  R7d (new emails only) ships after the email switch, rebased on whatever is live then: here it
+  is R8b, on top of R8. Every sign-in goes through `js/signin.js`: the account's one `.invalid`
+  email, accepted only for the pinned uid (R7c tried both emails while they moved).
+  `tests/emails.test.mjs` fails on any old address in `js/` or a page.
 - **A role is known by its account's uid, never by its email (R7c, rules v3).** `firestore.rules`
   checks `request.auth.uid` and the `password` sign-in provider (`signedIn(uid)`); every page and
   script decides "who is this" by `uid` against `AUTH.uids` (and `PARTNERS.voting.uids`), and uses
