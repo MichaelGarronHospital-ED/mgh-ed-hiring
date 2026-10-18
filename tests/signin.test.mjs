@@ -1,17 +1,17 @@
-// R7c (Phase A window): every sign-in tries the email that last worked on this
-// browser, else the old one, then the other once; only the pinned uid counts.
-// Before --apply, after --apply with an R7c page, after --undo; a wrong password
-// is refused (both tried); another uid behind an email is a refusal; anything
-// but a refusal (network, too many attempts) stops at once.
+// R8b (the R7d cleanup): a sign-in uses the account's one .invalid email
+// (R7c's two-email fallback is gone); only the pinned uid counts; a wrong password is one
+// refused call; another uid behind the email is a refusal; anything but a
+// refusal (network, too many attempts) is passed on as it is.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const store = new Map();
+const store = new Map([["ed_iv_emailkind", "new"], ["ed_iv_emailkind_voting", "old"], ["ed_iv_lastrole", "admin"]]);
 globalThis.window = { localStorage: { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) },
   sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} } };
-const { emailOrder, rememberKind, signInPinned } = await import("../js/signin.js");
+const signin = await import("../js/signin.js");
+const { signInPinned } = signin;
 
-const ACCT = { emails: { old: "admin@ed-hiring.app", new: "admin@mgh-ed-hiring.invalid" }, uid: "UID-ADMIN", project: "hiring" };
+const ACCT = { email: "admin@mgh-ed-hiring.invalid", uid: "UID-ADMIN" };
 // a fake Firebase: email -> { password, uid }; counts calls
 function server(accounts) {
   const calls = [];
@@ -23,60 +23,49 @@ function server(accounts) {
   };
   return { signIn, calls };
 }
-const login = async (srv, pw) => {
-  const r = await signInPinned(srv.signIn, ACCT, pw);
-  rememberKind("hiring", r.kind);
-  return r;
-};
 
-test("before --apply: the old email, one sign-in", async () => {
-  store.clear();
-  const s = server({ "admin@ed-hiring.app": { password: "lead pw 1", uid: "UID-ADMIN" } });
-  const r = await login(s, "lead pw 1");
-  assert.equal(r.kind, "old");
-  assert.deepEqual(s.calls, ["admin@ed-hiring.app"]);
+test("R7c's remembered email kinds are deleted on load; nothing else is touched", () => {
+  assert.equal(store.has("ed_iv_emailkind"), false);
+  assert.equal(store.has("ed_iv_emailkind_voting"), false);
+  assert.equal(store.get("ed_iv_lastrole"), "admin");
 });
 
-test("after --apply with an R7c page: the old email is refused, the new one works and is tried first next time", async () => {
-  store.clear();
+// kept one more release (CLAUDE.md: never remove an export in the release that
+// stops using it): an older page, still open or cached, imports these and
+// passes { emails: { old, new } }. It now signs in with the new email only.
+test("an older page's imports still work and reach the new email only", async () => {
+  assert.deepEqual(signin.emailOrder("hiring"), ["new"]);
+  assert.deepEqual(signin.emailOrder("voting"), ["new"]);
+  signin.rememberKind("hiring", "old");
+  assert.equal(store.has("ed_iv_emailkind"), false);
   const s = server({ "admin@mgh-ed-hiring.invalid": { password: "lead pw 1", uid: "UID-ADMIN" } });
-  const r = await login(s, "lead pw 1");
+  const old = { emails: { old: "admin@old-domain.example", new: "admin@mgh-ed-hiring.invalid" }, uid: "UID-ADMIN", project: "hiring" };
+  const r = await signInPinned(s.signIn, old, "lead pw 1", { order: signin.emailOrder("hiring") });
   assert.equal(r.kind, "new");
-  assert.deepEqual(s.calls, ["admin@ed-hiring.app", "admin@mgh-ed-hiring.invalid"]);
-  assert.deepEqual(emailOrder("hiring"), ["new", "old"]);
-  s.calls.length = 0;
-  await login(s, "lead pw 1");
-  assert.deepEqual(s.calls, ["admin@mgh-ed-hiring.invalid"], "the second sign-in should need one call");
+  assert.deepEqual(s.calls, ["admin@mgh-ed-hiring.invalid"]);
 });
 
-test("after --undo: this browser tries the new email first, then the old one works", async () => {
-  store.clear(); rememberKind("hiring", "new");
-  const s = server({ "admin@ed-hiring.app": { password: "lead pw 1", uid: "UID-ADMIN" } });
-  const r = await login(s, "lead pw 1");
-  assert.equal(r.kind, "old");
-  assert.deepEqual(s.calls, ["admin@mgh-ed-hiring.invalid", "admin@ed-hiring.app"]);
+test("the right password: one sign-in with the .invalid email", async () => {
+  const s = server({ "admin@mgh-ed-hiring.invalid": { password: "lead pw 1", uid: "UID-ADMIN" } });
+  const r = await signInPinned(s.signIn, ACCT, "lead pw 1");
+  assert.equal(r.cred.user.uid, "UID-ADMIN");
+  assert.deepEqual(s.calls, ["admin@mgh-ed-hiring.invalid"]);
 });
 
-test("a wrong password is refused after both emails; nothing remembered", async () => {
-  store.clear();
-  const s = server({ "admin@ed-hiring.app": { password: "lead pw 1", uid: "UID-ADMIN" } });
+test("a wrong password is one refused call; no other email is tried", async () => {
+  const s = server({ "admin@mgh-ed-hiring.invalid": { password: "lead pw 1", uid: "UID-ADMIN" } });
   await assert.rejects(() => signInPinned(s.signIn, ACCT, "wrong"), (e) => e.code === "auth/invalid-credential");
-  assert.equal(s.calls.length, 2);
-  assert.equal(store.size, 0);
+  assert.deepEqual(s.calls, ["admin@mgh-ed-hiring.invalid"]);
 });
 
-test("an account with another uid behind an email is a refusal (a squatter on a freed old email)", async () => {
-  store.clear();
+test("another uid behind the email is a refusal, and is signed out", async () => {
   let signedOut = 0;
-  const s = server({ "admin@ed-hiring.app": { password: "squat", uid: "SOMEONE-ELSE" }, "admin@mgh-ed-hiring.invalid": { password: "lead pw 1", uid: "UID-ADMIN" } });
+  const s = server({ "admin@mgh-ed-hiring.invalid": { password: "squat", uid: "SOMEONE-ELSE" } });
   await assert.rejects(() => signInPinned(s.signIn, ACCT, "squat", { onWrongUid: async () => { signedOut++; } }), (e) => e.code === "auth/invalid-credential");
   assert.equal(signedOut, 1);
-  // and the real password still reaches the real account under its new email
-  assert.equal((await signInPinned(s.signIn, ACCT, "lead pw 1")).kind, "new");
 });
 
-test("a network error or a pause stops at once (no second email)", async () => {
-  store.clear();
+test("a network error or a pause is passed on as it is", async () => {
   const calls = [];
   const signIn = async (email) => { calls.push(email); throw Object.assign(new Error("x"), { code: "auth/too-many-requests" }); };
   await assert.rejects(() => signInPinned(signIn, ACCT, "x"), (e) => e.code === "auth/too-many-requests");

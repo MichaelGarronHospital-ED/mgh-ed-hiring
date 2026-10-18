@@ -52,7 +52,8 @@ const UID_OF_EMAIL = {
   "admin@mgh-ed-hiring.invalid": UIDS.admin, "committee@mgh-ed-hiring.invalid": UIDS.committee, "applicant@mgh-ed-hiring.invalid": UIDS.applicant,
   "leadership@mgh-ed-voting.invalid": UIDS.votingLeadership, "ed@mgh-ed-voting.invalid": UIDS.votingEd,
 };
-export const ROLE_USERS = [["admin@ed-hiring.app", "adminpw"], ["committee@ed-hiring.app", "staffpw"], ["applicant@ed-hiring.app", "guestpw"]];
+// the emails the pages sign in with (R7d: the .invalid ones)
+export const ROLE_USERS = [["admin@mgh-ed-hiring.invalid", "adminpw"], ["committee@mgh-ed-hiring.invalid", "staffpw"], ["applicant@mgh-ed-hiring.invalid", "guestpw"]];
 
 // ---- Firestore REST values <-> plain JS -------------------------------------
 // Timestamps are written from { __ts: ISO } and read back as { __ts: ISO }.

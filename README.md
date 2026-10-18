@@ -63,12 +63,12 @@ derived from a password, so changing one needs no code change (the old encrypted
 `js/data.js`, and the "Re-keying" it needed, are gone since R8).
 
 **A role is known by its account's uid, never by its email (R7c).** The rules and every page
-check the account's uid; the emails are only for signing in. That lets the account emails
+check the account's uid; the emails are only for signing in. That let the account emails
 move to addresses nobody can ever register (`admin@mgh-ed-hiring.invalid` and so on, Phase A
-of the passwords design) without signing anyone in as the wrong role, and an account somebody
+of the passwords design; the pages sign in with them since R8b, the R7d cleanup) without signing anyone in as the wrong role, and an account somebody
 makes with a freed email gets another uid and nothing else.
 
-| Role | uid | Email now | Email after the move |
+| Role | uid | Email before the move | Email now (R8b) |
 |---|---|---|---|
 | Leadership | `ULgtfRrkAVPS2aT69Tc4CjMqbsx1` | `admin@ed-hiring.app` | `admin@mgh-ed-hiring.invalid` |
 | ED | `36FXvbR8ExgU7p4cmwuCNfkgFgD2` | `committee@ed-hiring.app` | `committee@mgh-ed-hiring.invalid` |

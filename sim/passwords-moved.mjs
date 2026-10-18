@@ -31,7 +31,7 @@ const base = (over = {}) => ({
   settings: { committee: [{ name: "Abara", gender: "M" }, { name: "Dufour", gender: "F" }, { name: "Chen", gender: "M" }], chair: "Abara", times: [], oneDrive: "#", panelOverrides: {} },
   publicInfo: {}, allowedNames: null, ...over,
 });
-// an older passwords.html as a browser may still have it cached (R7 to R8): its module tag
+// an older passwords.html as a browser may still have it cached (R7 to R8b): its module tag
 const OLD_PAGE = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" /><title>ED tools passwords</title>
 <link rel="stylesheet" href="css/ed-ui.css?v=R8" /><link rel="stylesheet" href="css/styles.css?v=R8" /></head>
 <body><div id="gate" class="overlay"><div class="overlay-box"><h2>ED tools passwords</h2><div id="gerr"></div></div></div>

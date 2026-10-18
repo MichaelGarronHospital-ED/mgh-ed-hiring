@@ -4,9 +4,9 @@
 //
 //  Since R7 there is one test, the same one the page makes: which role account
 //  accepts the password? The page tries ED (committee@), Guest (applicant@) and
-//  Leadership (admin@ed-hiring.app); this script tries all three and says which
+//  Leadership (admin@mgh-ed-hiring.invalid); this script tries all three and says which
 //  accepted it, or why none did. With --voting it also tries Motion Voting's
-//  two accounts (ed@ and leadership@ed-motion-voting.app), which Setup,
+//  two accounts (ed@ and leadership@mgh-ed-voting.invalid), which Setup,
 //  the ED tools passwords page (passwords.html) keeps on the same values.
 //
 //  READ ONLY. It reads no documents and writes nothing; it only attempts
@@ -66,22 +66,19 @@ console.log(`Project: ${firebaseConfig.projectId}`);
 console.log(`Password length: ${PW.length} characters` +
   (PW.length < 6 ? " (under 6: Firebase refuses to set a password this short, so no account can have it)" : ""));
 
-// each account under its old email and its new .invalid one (Phase A: they move)
 const accounts = [
-  ["ED", "hiring", AUTH.committeeEmail, AUTH.uids.committee, AUTH.newEmails.committee],
-  ["Guest", "hiring", AUTH.candidateEmail, AUTH.uids.candidate, AUTH.newEmails.candidate],
-  ["Leadership", "hiring", AUTH.adminEmail, AUTH.uids.admin, AUTH.newEmails.admin],
-  ...(VOTING ? [["ED", "voting", PARTNERS.voting.edEmail, PARTNERS.voting.uids.ed, PARTNERS.voting.newEmails.ed],
-    ["Leadership", "voting", PARTNERS.voting.leadershipEmail, PARTNERS.voting.uids.leadership, PARTNERS.voting.newEmails.leadership]] : []),
+  ["ED", "hiring", AUTH.committeeEmail, AUTH.uids.committee],
+  ["Guest", "hiring", AUTH.candidateEmail, AUTH.uids.candidate],
+  ["Leadership", "hiring", AUTH.adminEmail, AUTH.uids.admin],
+  ...(VOTING ? [["ED", "voting", PARTNERS.voting.edEmail, PARTNERS.voting.uids.ed],
+    ["Leadership", "voting", PARTNERS.voting.leadershipEmail, PARTNERS.voting.uids.leadership]] : []),
 ];
 const configs = { hiring: firebaseConfig, voting: PARTNERS.voting.firebaseConfig };
 const results = [];
 const SAY = { ok: "accepted", refused: "refused (wrong password)", throttled: "Firebase is pausing tries from this computer",
   disabled: "the account is switched off", "other-account": "accepted, but by ANOTHER account than the role account (different uid): not this role", blocked: "can't test from here (the key refused this computer)", network: "couldn't reach Firebase" };
-for (const [role, project, oldEmail, uid, newEmail] of accounts) {
-  let email = oldEmail;
-  let r = await trySignIn(configs[project].apiKey, email, PW, uid);
-  if (r === "refused" && newEmail) { email = newEmail; r = await trySignIn(configs[project].apiKey, email, PW, uid); }
+for (const [role, project, email, uid] of accounts) {
+  const r = await trySignIn(configs[project].apiKey, email, PW, uid);
   results.push({ role, project, email, r });
   console.log(`  ${email}: ${SAY[r] || `no answer (${r})`}`);
   if (r === "throttled") {
