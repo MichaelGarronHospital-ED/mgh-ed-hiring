@@ -8,38 +8,36 @@
 //  enforced by the Firestore rules (see config.js and firestore.rules).
 // ============================================================================
 import { firebaseConfig, ORG_NAME, CHAIR, COMMITTEE, SLOTS, ONEDRIVE,
-         LOCAL_CODES, AUTH, SCREENING_DEADLINE } from "./config.js?v=R7c";
-import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R7c";
-import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R7c";
-import { autoPanels, buildPanel } from "./panels.js?v=R7c";
+         LOCAL_CODES, AUTH, SCREENING_DEADLINE } from "./config.js?v=R8";
+import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R8";
+import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R8";
+import { autoPanels, buildPanel } from "./panels.js?v=R8";
 import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell, lastKey,
-         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R7c";
-import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R7c";
+         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R8";
+import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R8";
 import { effectiveSlots, slotLabel, slotTimeLabel, groupByDate, checkSlot, splitRange, responseCounts,
-         newSlotId, isStructured, fmtDate } from "./slots.js?v=R7c";
+         newSlotId, isStructured, fmtDate } from "./slots.js?v=R8";
 import { normalizeCommittee, interviewers as interviewersOf, pickable as pickableOf, memberName, memberStatus,
-         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R7c";
+         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R8";
 import { fromLegacy, normalizeQuestions, liveQuestions, idsWithNotes, scoringStarted, checkEdit, newQuestionId,
-         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R7c";
+         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R8";
 import { entry as hEntry, newHistoryId, panelUndo, shortlistUndo, screeningUndo, canUndo, undoneIds, textFor, whoFor, whenFor,
-         hashOf, toDate } from "./history.js?v=R7c";
-import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R7c";
-import { createRounds, pageId } from "./rounds.js?v=R7c";
-import { emailOrder, rememberKind, signInPinned } from "./signin.js?v=R7c";
-import { icsEvent, icsCalendar } from "./ics.js?v=R7c";
-import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R7c";
+         hashOf, toDate } from "./history.js?v=R8";
+import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R8";
+import { createRounds, pageId } from "./rounds.js?v=R8";
+import { emailOrder, rememberKind, signInPinned } from "./signin.js?v=R8";
+import { icsEvent, icsCalendar } from "./ics.js?v=R8";
+import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R8";
 import { STAGES, STAGE_WORD, stageOpen, stageClosedAt, roundOpen, bookingFor, thresholdOf, isOnList, closePlan, reopenPlan,
-         lockEntry } from "./stages.js?v=R7c";
+         lockEntry } from "./stages.js?v=R8";
 
 // The release this page is. Must equal version.json and every "?v=" in every
 // import (tests/versions.test.mjs). A page that sees a different version.json
 // was updated underneath it (section "Reload notice" below).
-const RELEASE = "R7c";
+const RELEASE = "R8";
 
-// Interview questions (H2): the saved document (interviews_meta/questions).
-// Since R7 there is no other source: the old encrypted js/data.js is no longer
-// read (it stays in the repo, unused, until R8, for cached older pages).
-const LEGACY_DOC = null;   // kept so maybeMigrateQuestions stays inert until R8 removes it
+// Interview questions (H2): the saved document (interviews_meta/questions), the
+// only copy since R7 (the old encrypted js/data.js was deleted in R8).
 const Q = () => normalizeQuestions(S && S.questions);
 let store = null, S = null;
 let fbAuth = null;   // { auth, authFns } once Firebase has loaded, so Log out can sign out
@@ -374,26 +372,9 @@ async function initStore(role) {
       if (pub) { ui._syncedSlots = true; store.syncPublicSlots(pub).catch(() => { ui._syncedSlots = false; }); }
     }
     if (ui.role === "admin") syncAllowedNames();
-    if (ui.role === "admin") maybeMigrateQuestions();
     if (ui.role === "admin" && rounds) renderRoundLine();
   });
   S = store.getState();
-}
-
-// H2 (R1 to R6): the first Leadership sign-in copied the questions out of
-// the old encrypted js/data.js into interviews_meta/questions. Inert since R7
-// (nothing is decrypted any more); removed in R8. It copied them (ids "0".."n-1",
-// exactly the keys every saved note uses). Create-only, in a transaction with
-// its history entry, so two tabs doing it at once write it once.
-function maybeMigrateQuestions() {
-  if (!store || !store.metaLoaded || S.questions || !LEGACY_DOC || ui._migrating || ui._migrated) return;
-  ui._migrating = true;
-  const n = LEGACY_DOC.questions.length;
-  store.createQuestions(LEGACY_DOC, hEntry("questions.migrate",
-    `Copied the interview questions from the old locked file (${n} question${n === 1 ? "" : "s"})`, { by: byWho() }))
-    .then(() => { ui._migrated = true; })
-    .catch((e) => console.warn("questions copy failed:", e && e.code))
-    .finally(() => { ui._migrating = false; });
 }
 
 // Keep the rules' allowed-surname list in step with the roster. firestore.rules
@@ -679,7 +660,7 @@ function wireSections() {
 // beside the thing it explains, where it is asked for rather than announced.
 const hint = (text) => `<p class="hint">${text}</p>`;
 const empty = (icon, title, msg) =>
-  `<div class="empty">${icon}<h4>${escapeHtml(title)}</h4><p>${escapeHtml(msg)}</p></div>`;
+  `<div class="empty">${icon}<h2 class="empty-title">${escapeHtml(title)}</h2><p>${escapeHtml(msg)}</p></div>`;
 
 // Line icons drawn in the text colour. House rule for every ED tool: no emoji
 // as icons (they render differently on every phone and ignore dark mode). The
@@ -1143,7 +1124,7 @@ function availGrid() {
     <span><i class="sw either">E</i> either</span><span><i class="sw no"></i> not available</span>
     <span class="muted small">★ chair · hover any square for the name</span></div>`;
 
-  return `<div class="gridwrap"><table class="avgrid"><thead>${head}</thead><tbody>${body}</tbody></table></div>${legend}`;
+  return `<div class="gridwrap" tabindex="0" role="region" aria-label="Interviewer availability (scrolls sideways)"><table class="avgrid"><thead>${head}</thead><tbody>${body}</tbody></table></div>${legend}`;
 }
 
 // ------------------------------------- applicant availability at a glance
@@ -1253,7 +1234,7 @@ function candGrid() {
     <span class="muted small">hover any square for the name</span></div>`;
 
   return `${capacity}
-    <div class="gridwrap"><table class="avgrid demand"><thead>${head}</thead><tbody>${body}${foot}</tbody></table></div>${legend}`;
+    <div class="gridwrap" tabindex="0" role="region" aria-label="Applicant availability (scrolls sideways)"><table class="avgrid demand"><thead>${head}</thead><tbody>${body}${foot}</tbody></table></div>${legend}`;
 }
 
 // ------------------------------------------------------ 2 · Availability
@@ -2037,7 +2018,7 @@ function offersSection(rows) {
       </div>
     </div>`;
   }).join("");
-  return `<h3 class="sechead">Offers</h3>
+  return `<h2 class="sechead">Offers</h2>
     <p class="hint">Record each offer as you make it, then the answer. Only admins can see this.</p>
     <div class="ofsummary">${summary}</div>
     <div class="card flush list">${body || empty(ICON.mail, "No candidates yet", "Candidates appear here once they are on the list.")}</div>`;
@@ -2051,7 +2032,7 @@ function offersSection(rows) {
 function backupCard() {
   return `<div class="card backup">
     <div class="row center">
-      <div class="grow"><h3 style="margin:0 0 .2rem">Back up this hiring cycle</h3>
+      <div class="grow"><h2 class="h3size" style="margin:0 0 .2rem">Back up this hiring cycle</h2>
         <p class="small muted" style="margin:0">Everything in this round, read fresh from the database. The backup file can be
           loaded back into the tool; the Excel file is for reading. Save both with the CVs on OneDrive; the site is the
           working copy, not the record.</p></div>
@@ -2229,8 +2210,13 @@ function committeeEditor() {
     `<button type="button" class="${cur === v ? "on" : ""}" aria-pressed="${cur === v}" onclick="IV.mSet(${i},'${field}','${v}')">${escapeHtml(l)}</button>`).join("")}</span>`;
   const body = rows.map((m, i) => {
     const saved = hasInput(S, m.id), isChair = m.id === chair;
-    return `<div class="mrow${m.active ? "" : " left"}">
-      <input id="mName-${i}" type="text" value="${escapeHtml(m.name)}" aria-label="Name" oninput="IV.mSet(${i},'name',this.value,true)"/>
+    // on a phone a row is one line (name, what they do) until "Details" opens it
+    const sum = [m.role === "interviewer" ? `Interviews${m.gender ? ", " + m.gender : ""}` : "Screens only", m.active ? "" : "left"].filter(Boolean).join(", ");
+    const open = !!(ui.mOpen && ui.mOpen[i]);
+    return `<div class="mrow${m.active ? "" : " left"}${open ? " open" : ""}">
+      <div class="mhead"><input id="mName-${i}" type="text" value="${escapeHtml(m.name)}" aria-label="Name" oninput="IV.mSet(${i},'name',this.value,true)"/>
+        <button type="button" class="linky small mtoggle" aria-expanded="${open}" onclick="IV.mToggle(${i})">${open ? "Less" : "Details"}</button></div>
+      <span class="msum small muted">${escapeHtml(sum)}</span>
       <div class="mopts">
         ${seg(i, "role", [["interviewer", "Interviews and screens"], ["screener", "Screens only"]], m.role, "Does")}
         ${m.role === "interviewer" ? `<span class="mg">${seg(i, "gender", [["F", "F"], ["M", "M"]], m.gender, "Gender")}${infoIcon("Self-identified. Used only to build balanced panels. Never shown as a label.")}</span>` : ""}
@@ -2649,13 +2635,13 @@ function renderCandidate() {
   const slots = effectiveSlots(S.settings, SLOTS);
   const booking = bookingNow();
   if (booking === "paused") {
-    el.innerHTML = `<div class="overlay"><div class="overlay-box"><div class="logo" aria-hidden="true">ED</div>
+    el.innerHTML = `<div class="overlay"><div class="overlay-box" role="main"><div class="logo" aria-hidden="true">ED</div>
       <h2>Interview availability</h2><p class="muted">Booking is paused. Please try again later.</p>
       <p style="margin-top:16px"><button class="linky" onclick="CAND.logout()">Log out</button></p></div></div>`;
     return;
   }
   if (!ui.candLast) {
-    el.innerHTML = `<div class="overlay"><div class="overlay-box"><div class="logo" aria-hidden="true">ED</div>
+    el.innerHTML = `<div class="overlay"><div class="overlay-box" role="main"><div class="logo" aria-hidden="true">ED</div>
       <h2>Interview availability</h2><p class="muted">${booking === "closed"
         ? "Booking is closed. If you need to change your times, reply to our email. If you have an interview time, enter your name to see it."
         : "Enter your name to pick the times that work for you. You won't see any other applicants or committee information."}</p>
@@ -2860,6 +2846,7 @@ let pendingWrites = 0;
 function track(promise) { pendingWrites++; return Promise.resolve(promise).finally(() => { pendingWrites--; }); }
 const unconfirmed = () => pendingWrites > 0 || Object.keys(inflight).length > 0;
 window.IV = {
+  mToggle: (i) => { ui.mOpen = ui.mOpen || {}; ui.mOpen[i] = !ui.mOpen[i]; rerenderSettings(); },
   toggleFlag: (id) => { if (!isOpen("screening")) return; const cur = (S.screening[key(ui.member, id)] || {}).flag; saved(store.setScreening(ui.member, id, { flag: !cur, reason: cur ? "" : (S.screening[key(ui.member, id)] || {}).reason || "" }), "screening"); },
   toggleNote: (id) => { ui.noteOpen = ui.noteOpen || {}; ui.noteOpen[id] = !ui.noteOpen[id]; renderScreen(); wireSections(); },
   saveNote: (id, btn) => withBusy(btn, async () => {
@@ -3292,7 +3279,6 @@ window.IV = {
       catch (e) { toast((e && e.message) || "Couldn't undo. Check your connection", "err"); }
     } });
   },
-  clearOverrides: (btn) => IV.resetPanels(btn),   // the old name, kept for one release
   // ---- applicants: shared surnames (H14), rename, merge, delete (H5)
   separateKeys: () => separateShared(true),
   claimShared: async (key, id) => {

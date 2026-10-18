@@ -335,7 +335,7 @@ label.chip { font-size:var(--ed-text-sm); padding:6px 12px; }
 .empty { text-align:center; padding:28px 16px; display:flex; flex-direction:column; align-items:center; gap:6px;
   color:var(--ed-ink-2); font-size:var(--ed-text-sm); }
 .empty > svg { width:40px; height:40px; margin-bottom:4px; }
-.empty h4 { margin:0; color:var(--ed-ink); font-size:var(--ed-text); font-weight:600; }
+.empty .empty-title { font-family:inherit; letter-spacing:normal; margin:0; color:var(--ed-ink); font-size:var(--ed-text); font-weight:600; }
 .empty p { margin:0; max-width:340px; }
 
 /* ---- toast: a small dark pill; taps go through it ----------------------- */
@@ -660,7 +660,7 @@ td.adj { font-variant-numeric:tabular-nums; color:var(--ed-ink-2); }
 .pickhint { margin:8px 0 0; text-align:left; }
 .mlist .mrow { padding:12px 0; border-top:1px solid var(--ed-line-soft); display:grid; gap:8px; }
 .mlist .mrow:first-child { border-top:none; padding-top:4px; }
-.mlist .mrow.left > input[type=text] { color:var(--ed-ink-2); }
+.mlist .mrow.left input[type=text] { color:var(--ed-ink-2); }
 .mopts { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
 .mopts .seg button { min-height:36px; }
 .mopts .mg { display:inline-flex; align-items:center; gap:6px; }
@@ -767,6 +767,20 @@ body.closing-elsewhere #app, body.closing-elsewhere #settings { opacity:.6; }
 .pwfield input[aria-invalid="true"] { outline:2px solid var(--ed-red); outline-offset:1px; }
 .pwmsg:empty { display:none; }
 .h3size { font-size:var(--ed-h3); font-weight:700; }
+
+/* the tab row's landmark wrapper adds no box of its own (the sticky row keeps working) */
+.tabsland { display:contents; }
+
+/* ---- committee rows: one line on a phone until "Details" (review) ---------- */
+.mrow .mhead { display:flex; gap:8px; align-items:center; }
+.mrow .mhead input { flex:1; min-width:0; }
+.mrow .mtoggle, .mrow .msum { display:none; }
+.h3size { font-size:var(--ed-h3); font-weight:700; }
+@media (max-width:640px) {
+  .mrow .mtoggle { display:inline-flex; min-height:40px; align-items:center; flex:none; }
+  .mrow .msum { display:block; margin-top:-4px; }
+  .mrow:not(.open) .mopts, .mrow:not(.open) input[type=email], .mrow:not(.open) > .linky.danger { display:none; }
+}
 
 /* ---- mobile field sizing: MUST STAY LAST ---------------------------------
    iOS Safari zooms the whole page whenever a focused field's text is smaller

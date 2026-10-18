@@ -84,7 +84,7 @@ Full design and reference data (committee, candidates, questions, rules) live in
   may change. Never add, remove or reorder mid-round; notes are filed under the ids.
 - **Score notes are keyed by question id. Legacy ids are `"0"`..`"9"`; never renumber.** The
   questions live in `interviews_meta/questions` only (R1 to R6 copied them out of the old
-  encrypted `js/data.js` with exactly those ids; since R7 nothing reads that file).
+  encrypted `js/data.js` with exactly those ids; the file was deleted in R8).
 - **Every module import carries `?v=<release>`** (same as `version.json` and `RELEASE` in
   `app.js`, and both pages' stylesheets and module tags, checked by `tests/versions.test.mjs`;
   a release between two numbered ones is `R7b`). Bump them all together each release. Never
@@ -236,12 +236,13 @@ Full design and reference data (committee, candidates, questions, rules) live in
   `doubleBooked`) or seat someone who never said they were free (now warned).
   Overlapping times are only *warned* at creation — accept one and the chair can
   be auto-scheduled into two at once.
-- **Every hiring branch after R7 must contain R7c and R7d before it merges** (merge `main` into
-  it first). A branch made before them (`hiring-r8` at 689b3f8 was one) signs in with the old
-  `ed-hiring.app` emails and decides roles by email; merged after the email switch, it locks
-  everyone out. R7d adds `tests/emails.test.mjs`, which fails on any old address in `js/` or a page.
+- **Every hiring branch must contain R7c before it merges** (merge `main` into it first). A branch
+  made before it (`hiring-r8` at 689b3f8 was one) signs in with the old `ed-hiring.app` emails
+  only and decides roles by email; merged after the email switch, it locks everyone out.
   Until R7d, every sign-in tries both emails of an account (the kind that last worked first,
-  `js/signin.js`), accepting only the pinned uid; R7d (weeks after the email switch) drops that.
+  `js/signin.js`), accepting only the pinned uid. R7d (new emails only, dropping that fallback)
+  ships after the email switch, rebased on whatever is live then; it adds `tests/emails.test.mjs`,
+  which fails on any old address in `js/` or a page.
 - **A role is known by its account's uid, never by its email (R7c, rules v3).** `firestore.rules`
   checks `request.auth.uid` and the `password` sign-in provider (`signedIn(uid)`); every page and
   script decides "who is this" by `uid` against `AUTH.uids` (and `PARTNERS.voting.uids`), and uses

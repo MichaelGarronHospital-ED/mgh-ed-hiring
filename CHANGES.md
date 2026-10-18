@@ -24,6 +24,36 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## R8: remove what R7 stopped using (built Oct 16, carries R7c; ships on or after Oct 24 2026)
+
+- **Contains R7c** (`main` merged in, Oct 17): roles by uid, rules v3, and R7c's two-email
+  sign-in (`js/signin.js`), unchanged, so R8 works before, during and after the email switch.
+
+- **Deleted `js/data.js`**, the old encrypted copy of the interview questions. Since R7 the page
+  reads the questions only from `interviews_meta/questions` and finds the role by signing in, so
+  nothing used it; it stayed one release so cached older pages kept working. After this release
+  no file in the repo is derived from a password.
+- Removed the compatibility leftovers kept for one release: `CANDIDATE_CODE_LOCAL` and `AUTH.mode` (config),
+  the inert `maybeMigrateQuestions` and `store.createQuestions` (the R1 to R6 questions copy),
+  and the old `IV.clearOverrides` name (now only `IV.resetPanels`). `fromLegacy` stays: it
+  defines the legacy question ids and the tests build fixtures with it.
+- README "Re-keying" removed. NEW check in `tests/versions.test.mjs`: `js/data.js` does not exist
+  and no module, test, sim or script imports it.
+- **Before deploying:** R7 live for a week, and Alvin has signed in with each of the three
+  passwords and run "Change a password" to the Check step. **Never roll the page back past R7
+  after a password has been changed in the app** (pre-R7 pages decide the role by decrypting).
+- **Review fixes (deployability pass, small things that were already there):** every screen
+  has a landmark (the sign-in box, the name picker and the applicant page are main regions; the
+  notice lines are one region), both availability grids are a labelled region you can reach
+  with the keyboard and scroll sideways, the Ranking tab's headings go in order, and on a phone
+  each committee row is one line (name, what they do) with "Details" for the rest.
+- **Final review:** the applicant page has one main region (its own), the empty-state titles are
+  level 2 headings so no tab skips a level, and the tab row sits inside a navigation landmark.
+
+Tests: as R7, plus the new versions check. Checked: see the release commit message.
+
+---
+
 ## R7c: roles known by uid, ahead of the account emails moving to .invalid (Oct 17 2026)
 
 Phase A of the passwords design. The account emails (`admin@ed-hiring.app` and so on) are on a
@@ -53,11 +83,11 @@ role must be known by its account's uid, which never changes, and not by its ema
   "never delete", the lost-password steps no longer delete and re-add an account), DESIGN, CLAUDE.
 - Version `R7c`.
 
-**Precondition for every later hiring branch:** R8 and every hiring branch after it must
-contain R7c AND R7d (merge `main` into it once both are there) before it merges. R7d (a few
-weeks after the window, not in it) only drops the old emails and the fallback. A branch made
-before them (`hiring-r8` at 689b3f8 is one) still signs in with the old emails and decides roles
-by email: merged after the email switch, it would lock everyone out.
+**Precondition for every later hiring branch:** every hiring branch must contain R7c (merge
+`main` into it first). R7d (new emails only, dropping the old emails and the fallback) ships
+after the email switch, rebased on whatever is live then. A branch made before R7c (`hiring-r8`
+at 689b3f8 was one) signs in with the old emails only and decides roles by email: merged after
+the email switch, it would lock everyone out.
 
 Tests: NEW `tests/signin.test.mjs` (before `--apply`, after it, after `--undo`, a wrong password,
 another uid behind an email, a network error stops at once); `tests/passwords.test.mjs` (the

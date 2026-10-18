@@ -9,10 +9,9 @@ Firebase project to go multi-device and real-time.
   the Guest password, then your name and your times.
 
 The clickable prototype Kyle reviewed (`mock.html`) was **deleted on Sept 21 2026**,
-once the real tool had superseded it. It was still being served publicly, it looked
-enough like the real thing to confuse anyone handed the wrong link, and it carried a
-second copy of the encrypted questions — so re-keying had to be done in two places or
-the stale copy would still open under the old code.
+once the real tool had superseded it. The encrypted question file `js/data.js` followed in
+release R8 (Oct 2026): the questions live in the database, and no file in the repo is
+derived from a password.
 
 Design + decisions live in [`DESIGN.md`](DESIGN.md); the paneling algorithm is in
 [`js/panels.js`](js/panels.js) (validated in a Python prototype before porting).
@@ -57,7 +56,8 @@ finds your role by which account accepts the password** (ED first, then Guest, t
 Leadership; the role that last worked on this browser first; Guest first on an
 applicant link). The password itself is never saved: a reload in the same tab resumes
 from Firebase's own sign-in for that tab. Since release R7 nothing in the repo is
-derived from a password, so changing one needs no code change.
+derived from a password, so changing one needs no code change (the old encrypted
+`js/data.js`, and the "Re-keying" it needed, are gone since R8).
 
 **A role is known by its account's uid, never by its email (R7c).** The rules and every page
 check the account's uid; the emails are only for signing in. That lets the account emails
@@ -167,13 +167,6 @@ edited or removed, or a whole day at once; changes show on everyone's screen liv
 - The `SLOTS` in `js/config.js` are only the starting defaults, used until the first
   edit in Setup. After that the saved list is authoritative, even if it's empty.
 
-## Re-keying (no longer used)
-Until release R6 the questions were encrypted in `js/data.js` under the ED and Leadership
-passwords, so a password change meant re-locking that file. Since R7 the page reads the
-questions from the database only and never opens `js/data.js`; the file stays unchanged
-for one release (so a cached older page keeps working for its last minutes) and is
-deleted in R8, with this section. Never re-key it.
-
 ## One link, three audiences
 The same `index.html` serves everyone; what you can do depends on the password you type:
 - **ED physician / committee**: the ED password → Screen · Availability · Score.
@@ -189,7 +182,7 @@ The same `index.html` serves everyone; what you can do depends on the password y
 The live tool runs the "roles" model: each of the three passwords is the password of one Firebase account, and
 the Firestore rules decide what each account may do, on the server. (The old
 `"anon"` mode, where every visitor signed in anonymously, no longer works since R7:
-it found the role by decrypting `js/data.js`.) Setting the roles model up
+it found the role by decrypting the old `js/data.js`, deleted in R8.) Setting the roles model up
 from scratch takes these console steps (they can't be done from the repo):
 
 1. **Firebase console → Authentication → Sign-in method →** enable **Email/Password**.
@@ -364,8 +357,8 @@ it, so every leadership save would fail.
   you are working on; "Replace the working round" only into an empty round.
 - **Interview questions live in the database** (`interviews_meta/questions`). Releases R1 to
   R6 copied them out of the old locked `js/data.js` at the first Leadership sign-in (Change
-  history: "Copied the interview questions"); since R7 the database is the only copy, and every
-  backup file carries it. Notes stay attached to their question.
+  history: "Copied the interview questions"); since R7 the database is the only copy (the file
+  was deleted in R8), and every backup file carries it. Notes stay attached to their question.
 - **Log out** first saves anything still pausing and waits up to 5 seconds for unsaved
   changes (it asks before throwing any away), then clears this browser's copy of your scores.
 - **When a new version goes live**, an open page notices within 10 minutes and shows "This

@@ -26,12 +26,6 @@ export const firebaseConfig = {
 // file is derived from a password, so changing one needs no commit: Setup,
 // "Passwords for all ED tools" (README, "Passwords").
 
-// Guest password for LOCAL mode only (no Firebase; the sim copy sets its own).
-// Deliberately blank here: this repo is public, and in the live (roles) model the
-// Guest password is only the applicant Firebase account's password, checked by
-// Firebase at sign-in. Never write a real password into this file.
-export const CANDIDATE_CODE_LOCAL = "";   // unused since R7; kept one release for cached older pages
-
 // The three passwords for LOCAL mode only (no Firebase; sim/make-site.sh fills
 // them in its own copy). Blank here, always: this repo is public, and in the
 // live model a password is only ever the password of a Firebase account.
@@ -61,9 +55,7 @@ export const PARTNERS = {
 };
 
 // ---- 2b. Auth / security model -------------------------------------------
-// Firebase Auth email/password "role accounts" (the only model since R7). `mode`
-// is no longer read; it stays for one release because cached older pages read
-// it (removed in R8).
+// Firebase Auth email/password "role accounts" (the only model since R7).
 // A ROLE IS KNOWN BY ITS ACCOUNT'S UID, NEVER BY ITS EMAIL (R7c): the rules and
 // every page check `uid` (the same values as firestore.rules; tests/uids.test.mjs
 // keeps them equal). The emails are used only to sign in, so they can move to
@@ -73,7 +65,6 @@ export const PARTNERS = {
 // and these uids are updated. Uids and emails are public identifiers; the
 // PASSWORDS are the shared secrets and live only in Firebase, never in a file.
 export const AUTH = {
-  mode: "roles",
   adminEmail: "admin@ed-hiring.app",
   committeeEmail: "committee@ed-hiring.app",
   candidateEmail: "applicant@ed-hiring.app",

@@ -14,13 +14,13 @@
 //  is kept, and 3 wrong tries on a device mean a 30-second wait (the same
 //  count as the hiring page).
 // ============================================================================
-import { firebaseConfig, PARTNERS, AUTH } from "./config.js?v=R7c";
+import { firebaseConfig, PARTNERS, AUTH } from "./config.js?v=R8";
 import { ROLES, ROLE_WORD, ACCOUNTS, accountsFor, validateCurrent, validateNew, preflight, applyChange, verify, halfDoneText,
-         makeFirebaseAdapter } from "./passwords.js?v=R7c";
-import { FirestoreStore } from "./store.js?v=R7c";
-import { entry as hEntry, toDate } from "./history.js?v=R7c";
-import { escapeHtml, flowDialog, ss, ls, storageWorks } from "./util.js?v=R7c";
-import { emailOrder, rememberKind, signInPinned } from "./signin.js?v=R7c";
+         makeFirebaseAdapter } from "./passwords.js?v=R8";
+import { FirestoreStore } from "./store.js?v=R8";
+import { entry as hEntry, toDate } from "./history.js?v=R8";
+import { escapeHtml, flowDialog, ss, ls, storageWorks } from "./util.js?v=R8";
+import { emailOrder, rememberKind, signInPinned } from "./signin.js?v=R8";
 
 const $ = (s) => document.querySelector(s);
 const isConfigured = () => !!(firebaseConfig && firebaseConfig.apiKey);

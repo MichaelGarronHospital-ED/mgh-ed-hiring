@@ -12,7 +12,7 @@
 //  account is accepted only if its uid is the pinned uid. R7d (a few weeks after
 //  the window) drops the old emails and this fallback.
 // ============================================================================
-import { ls } from "./util.js?v=R7c";
+import { ls } from "./util.js?v=R8";
 
 const KIND_KEY = { hiring: "ed_iv_emailkind", voting: "ed_iv_emailkind_voting" };
 // "old" first unless "new" worked last on this browser
