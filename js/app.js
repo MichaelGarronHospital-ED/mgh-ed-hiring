@@ -8,33 +8,33 @@
 //  enforced by the Firestore rules (see config.js and firestore.rules).
 // ============================================================================
 import { firebaseConfig, ORG_NAME, CHAIR, COMMITTEE, SLOTS, ONEDRIVE,
-         LOCAL_CODES, AUTH, SCREENING_DEADLINE, PASSWORDS_PAGE } from "./config.js?v=R10";
-import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R10";
-import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R10";
-import { autoPanels, buildPanel } from "./panels.js?v=R10";
+         LOCAL_CODES, AUTH, SCREENING_DEADLINE, PASSWORDS_PAGE } from "./config.js?v=R11";
+import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R11";
+import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R11";
+import { autoPanels, buildPanel } from "./panels.js?v=R11";
 import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell, lastKey,
-         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R10";
-import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R10";
+         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R11";
+import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R11";
 import { effectiveSlots, slotLabel, slotTimeLabel, groupByDate, checkSlot, splitRange, responseCounts,
-         newSlotId, isStructured, fmtDate } from "./slots.js?v=R10";
+         newSlotId, isStructured, fmtDate } from "./slots.js?v=R11";
 import { normalizeCommittee, interviewers as interviewersOf, pickable as pickableOf, memberName, memberStatus,
-         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R10";
+         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R11";
 import { fromLegacy, normalizeQuestions, liveQuestions, idsWithNotes, scoringStarted, checkEdit, newQuestionId,
-         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R10";
+         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R11";
 import { entry as hEntry, newHistoryId, panelUndo, shortlistUndo, screeningUndo, canUndo, undoneIds, textFor, whoFor, whenFor,
-         hashOf, toDate } from "./history.js?v=R10";
-import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R10";
-import { createRounds, pageId } from "./rounds.js?v=R10";
-import { signInPinned } from "./signin.js?v=R10";
-import { icsEvent, icsCalendar } from "./ics.js?v=R10";
-import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R10";
+         hashOf, toDate } from "./history.js?v=R11";
+import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R11";
+import { createRounds, pageId } from "./rounds.js?v=R11";
+import { signInPinned } from "./signin.js?v=R11";
+import { icsEvent, icsCalendar } from "./ics.js?v=R11";
+import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R11";
 import { STAGES, STAGE_WORD, stageOpen, stageClosedAt, roundOpen, bookingFor, thresholdOf, isOnList, closePlan, reopenPlan,
-         lockEntry } from "./stages.js?v=R10";
+         lockEntry } from "./stages.js?v=R11";
 
 // The release this page is. Must equal version.json and every "?v=" in every
 // import (tests/versions.test.mjs). A page that sees a different version.json
 // was updated underneath it (section "Reload notice" below).
-const RELEASE = "R10";
+const RELEASE = "R11";
 
 // Interview questions (H2): the saved document (interviews_meta/questions), the
 // only copy since R7 (the old encrypted js/data.js was deleted in R8).
