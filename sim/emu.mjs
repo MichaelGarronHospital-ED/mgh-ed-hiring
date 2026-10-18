@@ -1,7 +1,7 @@
 // Talk to the LOCAL Firebase emulators over REST: load the real rules, create the
 // role accounts, seed and read documents with the rules bypassed, and clear
-// everything between cases. Only ever 127.0.0.1. Used by emulator.mjs (and
-// passwords.mjs). Nothing here can reach a real project.
+// everything between cases. Only ever 127.0.0.1. Used by emulator.mjs.
+// Nothing here can reach a real project.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

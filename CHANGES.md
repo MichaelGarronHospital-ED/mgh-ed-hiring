@@ -24,6 +24,55 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## R9: the passwords page moved to the ED dashboard (built Oct 17 2026; ships after R8)
+
+Phase B of the passwords design (section B.7.1). The Leadership, ED and Guest passwords are now
+seen and changed on the ED tools passwords page in the dashboard repo,
+`https://michaelgarronhospital-ed.github.io/passwords.html` (the gear on the ED tools front page),
+which keeps them encrypted in the separate Firebase project `mgh-ed-admin`. Nothing in this tool
+changes a password any more.
+
+- **`passwords.html` is a plain redirect** to that page: a meta refresh, a tiny plain script
+  (`js/pwmoved.js`, loaded last so the message shows while the new page loads; no module, no
+  inline script) and a visible "The passwords page has moved. Open it." with a 44 px button, in
+  the ED look (light and dark). Old links and bookmarks keep working.
+- **`js/pwpage.js` is now a stub**, `location.replace(PASSWORDS_PAGE)`, for older copies of the
+  page still in a browser's cache (they load it as a module).
+- **`js/config.js`:** `PASSWORDS_PAGE`, the one address; `tests/versions.test.mjs` checks the
+  page, the plain script and the stub all use it.
+- **Setup, "Passwords for all ED tools":** "The Leadership, ED and Guest passwords are seen and
+  changed on the ED tools passwords page (the gear on the ED tools front page)." and a link. If a
+  change started on the old page never finished (`interviews_meta/passwords.pending`), the card
+  adds "An older password change started here didn't finish. Open the passwords page; it finds
+  which tools still have the old password." and its summary says so while closed. The card has
+  nothing else: no field, no button.
+- **Kept one more release** (never remove a module in the release that stops using it):
+  `js/passwords.js`, `store.updatePasswords` and `tests/passwords.test.mjs`, unused from R9 and
+  deleted in R10 (with the `.pw*` styles and the sim's `playwright-core`, used only by the old
+  page and its WebKit check). `interviews_meta/passwords` stays in backups and restore. No rules
+  change.
+- **Sims:** `sim/passwords.mjs` and `sim/passwords-webkit.mjs` (the old page against the
+  emulators) are replaced by `sim/passwords-moved.mjs`, in `npm test` on LocalStore: the redirect
+  with scripts on and off (no module, nothing fetched but the copy and a stand-in for the new
+  page), the moved line and button at 390 and 1280 px in light and dark, a cached older page sent
+  on by the stub, and the Setup card with no record, a finished change and an unfinished one.
+  `make-site.sh --emulator` no longer patches `js/pwpage.js`. `sim/foundations.mjs` checks the
+  card's new line and link.
+- README (the passwords section points to the new page; the one deliberate exception to "nothing
+  derived from a password" is the encrypted copy in `mgh-ed-admin`, outside any repo), CLAUDE.md.
+- Version `R9`.
+
+**Before deploying:** the new passwords page is live and checked on Alvin's phone (dashboard PR B,
+the gear links to it), and R8 is live. R9 ships the day after R8 at the earliest. R9 branches
+from `hiring-r8`; whichever of R8b and R9 lands second merges `main` first. The `?v=` pins,
+`version.json` and `RELEASE` conflict: give the merged result a release name after the one that
+is live (R9 lands second: `R9`; R8b lands second: `R9b`), every pin the same. On
+`passwords.html`, `js/pwpage.js` and the two deleted sims, keep R9's.
+
+Tests: see the release commit message.
+
+---
+
 ## R8: remove what R7 stopped using (built Oct 16, carries R7c; ships on or after Oct 24 2026)
 
 - **Contains R7c** (`main` merged in, Oct 17): roles by uid, rules v3, and R7c's two-email

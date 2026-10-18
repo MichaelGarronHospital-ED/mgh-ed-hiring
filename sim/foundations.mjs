@@ -114,9 +114,11 @@ const scenarios = {
     problems.push(...ok(q.includes("Restore them from a backup file") && !q.includes("old locked file") && !q.includes("Locked because scoring"), `Questions card: ${q.slice(0, 200)}`));
     await openSetupCard(page, "setPasswords");
     const pw = await page.$eval('details[data-sec="setPasswords"]', (e) => e.textContent);
-    // the change itself has its own page (passwords.html); the card only links there
+    // R9: the passwords are seen and changed on the ED dashboard's passwords
+    // page; the card only says so and links there (sim/passwords-moved.mjs has the rest)
     const href = await page.$eval('details[data-sec="setPasswords"] a', (a) => a.getAttribute("href")).catch(() => "");
-    problems.push(...ok(href === "passwords.html" && !pw.includes("Change a password"), `Passwords card: ${pw.slice(0, 200)}`));
+    problems.push(...ok(href === "https://michaelgarronhospital-ed.github.io/passwords.html" && pw.replace(/\s+/g, " ").includes("seen and changed on the ED tools passwords page")
+      && !pw.includes("Change a password") && !pw.includes("didn't finish"), `Passwords card: ${pw.slice(0, 200)}`));
     // review: notes exist but the questions are missing: not locked, and the
     // ids the notes use can be rebuilt ("0", "1")
     await openSetupCard(page, "setQuestions");
