@@ -59,6 +59,17 @@ gate, confirm, stage lock, history entry, privacy rule and saved value is as it 
   `emulator`), `adminHasNoName` now pins the tab order and where the editors are, and
   `foundations` `editorsSurviveUpdates` pins that a live update never redraws a times form
   being typed in or loses a question being typed (each guard was removed once to see it fail).
+- **After an independent review:** a long card subtitle (all stages closed, a long round
+  name) wraps on a phone instead of running off screen; Send times to applicants stays the
+  filled button whenever the schedule is locked (an unlock, edit and relock keep the old "sent"
+  stamp); while Admin types in the times form only that card is held, so the grids and counts
+  keep updating (they froze, even with the window in the background); editing a time someone
+  else removed closes with its message at once on the tab; a More menu also closes when you tab
+  out and gives focus back to its button after a pick; Remove in the Screen row's menu is red;
+  a live update no longer draws the Availability or Questions tab twice when Setup is open.
+  New checks: `stages` `infoIconsFitAPhone` and the filled Send button in `lockScheduleHolds`,
+  `foundations` `moreMenuFocus`, and `editorsSurviveUpdates` now also pins live grids while
+  the form is held and the removed-time message. The new checks fail on the build before them.
 - No module or export was removed. `firestore.rules` is unchanged.
 
 ## R10: "Leadership" is now "Admin" in every visible word (built Oct 18 2026; ships after R9)

@@ -64,15 +64,19 @@ Full design and reference data (committee, candidates, questions, rules) live in
   on the card's (i), once), then Who has screened (`data-sec="dash"`).
 - **Availability** (Admin): the **Interview times** card first (`data-sec="times"`, the same
   `timesEditor()` and `store.updateTimes` that were in Setup, closed to a one-line summary once
-  times exist), then both grids. The tab redraws on every live update, so `render()` holds it
-  while focus is in its `.tform` or a times save is in flight (`editorBusy()`, the old
-  `setupBusy`), and `flushSetup` catches up on focusout. `rerenderSettings()` redraws Setup
-  AND the Availability or Questions tab when it is on screen; every editor action calls it.
-  Pinned by `sim/foundations.mjs` `editorsSurviveUpdates`.
+  times exist), then both grids. The tab redraws on every live update; while focus is in the
+  times card's `.tform` or a times save is in flight, `renderAvailabilityInner` holds ONLY that
+  card (it replaces the nodes after it, never the card, which would blur the field) so the
+  grids stay live, and `flushSetup` (focusout) or `timesBusy` catches the card up.
+  `dropGoneEdit()` closes an edit whose time someone else removed, on the tab and in Setup.
+  `rerenderSettings()` redraws Setup AND the Availability or Questions tab when it is on screen;
+  every editor action calls it (a live update's `refreshSetup` passes `tab:false`, since
+  `render()` already drew the tab). Pinned by `sim/foundations.mjs` `editorsSurviveUpdates`.
 - **Questions** (Admin only, `#questions`, `renderQuestions`): the same `questionsEditor()`,
   draft and `store.updateQuestions`; still locked once scoring starts (the lock is the tab's
   grey line). It files nothing under a name, so Admin with no name sees it.
-- **Panels**: one filled button (Lock the schedule; once locked, Send times to applicants),
+- **Panels**: one filled button (Lock the schedule; once locked, Send times to applicants, which
+  stays filled while locked even after a send: an unlock, edit and relock keep the old stamp),
   everything else in one "More" menu; per panel two small groups, Email and Calendar.
 - **Setup** (the gear) keeps only once-a-round and rare settings, under four small headings:
   People (Committee and screeners, Panel chair), This round (Round stages, Deadlines, Screening
@@ -80,7 +84,9 @@ Full design and reference data (committee, candidates, questions, rules) live in
   rounds, Keep closed rounds for, Change history), Passwords. Every `data-sec` id is unchanged;
   `setQuestions` and `setSlots` are gone (sims open the tabs instead).
 - Explanations live on the (i) (`infoIcon`, `.tooltip`), never as paragraphs on the page; a
-  "More" menu (`details.more`) closes on a pick, an outside tap or Escape.
+  "More" menu (`details.more`) closes on a pick (focus returns to its button), an outside tap,
+  Escape or tabbing out (`sim/foundations.mjs` `moreMenuFocus`). A card's subtitle wraps on a
+  phone with only its last word and the (i) kept together (`sim/stages.mjs` `infoIconsFitAPhone`).
 
 ## Non-negotiables
 

@@ -630,10 +630,12 @@ function section(id, title, sub, bodyHtml, opts = {}) {
   const act = opts.action ? `<span class="sec-act" aria-hidden="true">${escapeHtml(opts.action)}</span>` : "";
   const chev = `<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>`;
   // the (i) stays on the line of the word before it, never alone on a phone
-  // (the subtitle moves to its own line whole if it must; sims read .sec-sub)
+  // (a long subtitle wraps like any text; sims read .sec-sub without the (i))
   const t = String(title), i = t.lastIndexOf(" ");
+  const u = String(sub || ""), j = u.lastIndexOf(" ");
+  const subHead = j < 0 ? "" : escapeHtml(u.slice(0, j + 1)), subTail = escapeHtml(j < 0 ? u : u.slice(j + 1));
   const titleHtml = sub
-    ? `${escapeHtml(t)} <span class="nobr subline"><span class="sec-sub"><span class="dot">· </span>${escapeHtml(sub)}</span>${infoIcon(opts.info)}</span>`
+    ? `${escapeHtml(t)} <span class="subline"><span class="sec-sub"><span class="dot">· </span>${subHead}<span class="nobr">${subTail}${infoIcon(opts.info)}</span></span></span>`
     : `${i < 0 ? "" : escapeHtml(t.slice(0, i + 1))}<span class="nobr">${escapeHtml(i < 0 ? t : t.slice(i + 1))}${infoIcon(opts.info)}</span>`;
   return `<details class="section" data-sec="${id}" ${open ? "open" : ""}>
     <summary>${chev}<span class="sec-title">${titleHtml}</span>${count}${act}</summary>
@@ -719,11 +721,8 @@ function renderBanner() {
 function render() {
   ["screen", "availability", "score", "panels", "questions", "ranking"].forEach((t) =>
     $("#" + t).classList.toggle("hidden", t !== ui.tab));
-  // The interview times editor lives on the Availability tab (R11). While the
-  // admin is typing in one of its forms, or a times save is in flight, a live
-  // update must not redraw it (a redraw closes pickers and drops a half-typed
-  // date); it catches up when focus leaves the form (flushSetup).
-  if (ui.tab === "availability" && editorBusy()) { ui.setupStale = true; return; }
+  // The interview times editor lives on the Availability tab (R11); while it is
+  // being typed in, renderAvailability holds that one card (see there).
   ({ screen: renderScreen, availability: renderAvailability, score: renderScore,
      panels: renderPanels, questions: renderQuestions, ranking: renderRanking }[ui.tab] || (() => {}))();
   wireSections();
@@ -1271,7 +1270,18 @@ function renderAvailabilityInner() {
   // the tab is answered against them. Same editor and the same transactional
   // store.updateTimes as when it lived in Setup; open by itself only while
   // there are no times yet.
-  if (ui.isAdmin) {
+  // While Admin is typing in one of its forms, or a times save is in flight,
+  // only the times card is held as it is (a redraw closes pickers and drops a
+  // half-typed date); the rest of the tab still redraws, so the grids and
+  // counts stay live even with the window in the background. The card catches
+  // up when focus leaves the form (flushSetup) or the save ends (timesBusy).
+  const root = $("#availability");
+  const timesSec = ui.isAdmin ? root.querySelector(':scope > details[data-sec="times"]') : null;
+  const act = document.activeElement;
+  const holdTimes = !!timesSec && (!!ui.tBusy || !!(act && timesSec.contains(act) && act.closest(".tform")));
+  if (holdTimes) ui.setupStale = true;
+  else if (ui.isAdmin) dropGoneEdit();
+  if (ui.isAdmin && !holdTimes) {
     html += section("times", "Interview times", timesSummary(slots), timesEditor(slots),
       { open: !slots.length, action: slots.length ? "Edit" : "",
         info: "The times interviewers and applicants choose from. Changes save at once and show on everyone's screen. Answers stay with a time when you edit it or add others. If people already answered for a time you change, you choose whether to keep their answers or ask them again." });
@@ -1315,7 +1325,12 @@ function renderAvailabilityInner() {
       { open: true,
         info: "Every applicant against every interview time. A grey square is not available; hover a square for the name. The ringed square is the interview each one is scheduled for now. The Usable column shows how many applicants offered that hour and whether a balanced panel could run then, which shows where to add times." });
   }
-  $("#availability").innerHTML = html;
+  if (holdTimes) {
+    // replace everything after the held card without touching the card itself
+    // (moving or rebuilding a focused field would blur it)
+    [...root.children].forEach((c) => { if (c !== timesSec) c.remove(); });
+    timesSec.insertAdjacentHTML("afterend", html);
+  } else root.innerHTML = html;
 }
 
 // ------------------------------------------------------------- 3 · Score
@@ -1747,10 +1762,11 @@ function renderPanels() {
       <button class="linky" onclick="IV.downloadIcs('all')">Calendar file for all interviews</button>
       <button class="linky" onclick="IV.copyAllInvites()">Copy all applicant emails</button>` : ""}
     </div></details>`;
-  const sent = !!(S.schedule && S.schedule.publishedAt);
+  // filled whenever locked: an unlock, a hand edit and a relock keep the old
+  // "sent" stamp, so the button must never look done (R11 review)
   html += locked()
     ? `<div class="lockbar"><span class="lockline">Schedule locked ${escapeHtml(dayOf(S.schedule.lockedAt))}. <button class="linky" onclick="IV.unlockSchedule(this)">Unlock</button></span>
-        ${res.panels.length ? `<button class="btn ${sent ? "tinted" : "filled"} small" onclick="IV.publishNotices(this)">Send times to applicants</button>${infoIcon("Shows each scheduled applicant their interview time when they sign in. You still email them yourself (More, Copy all applicant emails).")}` : ""}
+        ${res.panels.length ? `<button class="btn filled small" onclick="IV.publishNotices(this)">Send times to applicants</button>${infoIcon("Shows each scheduled applicant their interview time when they sign in. You still email them yourself (More, Copy all applicant emails).")}` : ""}
         ${more}</div>`
     : `<div class="lockbar"><button class="btn filled small" onclick="IV.lockSchedule(this)">Lock the schedule</button>${infoIcon("Freezes every panel as it is now. Later changes to anyone's availability will not move an interview. You can still edit any panel by hand.")}
         ${more}</div>`;
@@ -2552,7 +2568,7 @@ const editorBusy = () => !!ui.tBusy || !!(document.activeElement && document.act
 function refreshSetup() {
   if (!setupOpen()) return;
   if (editorBusy()) { ui.setupStale = true; return; }
-  ui.setupStale = false; rerenderSettings();
+  ui.setupStale = false; rerenderSettings({ tab: false });
 }
 function flushSetup() {
   clearTimeout(flushSetup._t);
@@ -2655,13 +2671,19 @@ function timesEditor(slots) {
 // Re-render the editors without losing focus/typing in plain fields: Setup, and
 // since R11 the tab the times or questions editor moved to (Availability,
 // Questions) when it is the one on screen. Every editor action calls this.
-function rerenderSettings() {
+// The time being edited was removed by someone else: drop the edit and say so.
+function dropGoneEdit() {
+  if (ui.tEdit && !EFF().slotIds.includes(ui.tEdit.id)) { ui.tEdit = null; toast("The time you were editing was just removed by someone else", "err"); }
+}
+function rerenderSettings({ tab = true } = {}) {
   const act = document.activeElement, id = act && act.id;
   const keep = {}; ["odIn", "dlScreening", "dlAvailability", "dlReply", "thIn", "idLoc", "idZoom", "idContact", "rnName"].forEach((k) => { const el = document.getElementById(k); if (el && el.value !== el.defaultValue) keep[k] = el.value; });
   const sel = act && typeof act.selectionStart === "number" ? [act.selectionStart, act.selectionEnd] : null;
-  if (ui.tEdit && !EFF().slotIds.includes(ui.tEdit.id)) { ui.tEdit = null; toast("The time you were editing was just removed by someone else", "err"); }
+  dropGoneEdit();
   renderSettings();
-  const appOn = $("#app") && !$("#app").classList.contains("hidden");
+  // a live update has just redrawn the tab through render(); refreshSetup
+  // passes tab:false so it is not drawn twice
+  const appOn = tab && $("#app") && !$("#app").classList.contains("hidden");
   if (appOn && ui.tab === "availability") renderAvailability();
   if (appOn && ui.tab === "questions") renderQuestions();
   wireSections();
@@ -4119,10 +4141,28 @@ document.addEventListener("scroll", hideTip, true);
 // A "More" menu closes when you pick something in it, tap anywhere else or
 // press Escape, like any menu (it is a <details>, which would stay open).
 document.addEventListener("click", (e) => {
-  document.querySelectorAll("details.more[open]").forEach((d) => {
-    const inMenu = d.contains(e.target), onSummary = e.target.closest && e.target.closest("details.more > summary");
-    if (!inMenu || (!onSummary && e.target.closest && e.target.closest("button, a"))) d.open = false;
-  });
+  const t = e.target, own = t.closest && t.closest("details.more");
+  // judged from the clicked item itself: an action may fire a click of its own
+  // first (a download link) that closes the menu before this click bubbles up
+  const picked = !!own && !t.closest("details.more > summary") && !!t.closest("button, a");
+  document.querySelectorAll("details.more[open]").forEach((d) => { if (d !== own) d.open = false; });
+  if (picked) {
+    own.open = false;
+    // after a pick, focus goes back to the menu's button (keyboard users would
+    // otherwise land on the page itself), unless the action moved it, for
+    // example to a dialog, or redrew the menu away
+    setTimeout(() => {
+      const a = document.activeElement, s = own.querySelector("summary");
+      if (s && own.isConnected && (!a || a === document.body || own.contains(a))) s.focus();
+    }, 0);
+  }
+});
+// Tabbing out of an open menu closes it. Only when focus lands somewhere else
+// (relatedTarget set): a click on a menu item in Safari blurs with no target,
+// and closing then would swallow the click.
+document.addEventListener("focusout", (e) => {
+  const d = e.target.closest && e.target.closest("details.more[open]");
+  if (d && e.relatedTarget && !d.contains(e.relatedTarget)) d.open = false;
 });
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;

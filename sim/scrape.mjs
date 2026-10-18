@@ -149,7 +149,10 @@ export async function readLoad(page) {
       else if (/free only at times/.test(t)) idle.wrongTimes.push(...who);
       else if (/every panel they could have joined/.test(t)) idle.squeezed.push(...who);
     });
-    return { summary: sec.querySelector(".sec-sub") ? sec.querySelector(".sec-sub").textContent : "", chips, idle,
+    // the subtitle's text without its (i) badge, which sits inside it since R11
+    const sub = sec.querySelector(".sec-sub"), subCopy = sub ? sub.cloneNode(true) : null;
+    if (subCopy) subCopy.querySelectorAll(".info").forEach((i) => i.remove());
+    return { summary: subCopy ? subCopy.textContent : "", chips, idle,
              unusedWarning: /Not on any panel/.test(sec.textContent) };
   });
 }

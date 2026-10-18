@@ -103,11 +103,10 @@ code, pre { font-size:.88em; }
   padding:0; text-align:left; }
 .linky:hover { text-decoration:underline; }
 .linky.danger { color:var(--ed-red); }
-/* Seventeen red "Remove" links down a list read as seventeen problems. The
-   action stays exactly where it was and keeps its confirm dialog; it just
-   stops shouting until you reach for it. */
-.collist .linky.danger { color:var(--ed-ink-2); }
-.collist .linky.danger:hover, .collist .linky.danger:focus-visible { color:var(--ed-red); }
+/* Seventeen red "Remove" links down a list read as seventeen problems, so since
+   R11 Remove sits inside each row's "More" menu (same confirm). Inside the menu
+   it is red, like every destructive item there. */
+.collist .moremenu .linky.danger { color:var(--ed-red); }
 
 /* header icon button (Setup gear) and the sheet's close button */
 .iconbtn { background:transparent; border:0; color:var(--ed-ink-2); cursor:pointer;
@@ -786,9 +785,10 @@ details.adder[open] > summary { background:var(--ed-fill); color:var(--ed-ink); 
 .adderbox { margin-top:10px; }
 .adderbox textarea { margin-top:6px; }
 .nobr { white-space:nowrap; }
-/* on a phone a card's grey subtitle is its own line under the title */
+/* on a phone a card's grey subtitle is its own line under the title, and a
+   long one wraps (only its last word and the (i) are kept together) */
 @media (max-width:640px) {
-  details.section > summary .subline { display:block; margin-top:1px; }
+  details.section > summary .subline { display:block; margin-top:1px; overflow-wrap:anywhere; }
   details.section > summary .subline .dot { display:none; }
 }
 /* a field heading with its (i) beside it, not under it */
