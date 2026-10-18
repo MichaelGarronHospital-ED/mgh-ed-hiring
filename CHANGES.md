@@ -24,6 +24,60 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## R11: tabs in the order of the work, a quieter page (built Oct 18 2026)
+
+Alvin asked for "as minimal and simple as possible, anyone can pick it up" (spec:
+`../designs/ux-pass-2026-10-18.md`). Only how things look and where they sit changed. Every
+gate, confirm, stage lock, history entry, privacy rule and saved value is as it was.
+
+- **Admin tabs are Screen, Availability, Panels, Questions, Ranking**, the order a round is
+  run in. Members keep Screen, Availability, Score; screeners keep Screen.
+- **Interview times moved from Setup to the top of the Availability tab** (same editor, same
+  safe save). Once times exist it folds to one line, "2 times on Tue, Nov 17", with Edit.
+- **The interview questions moved from Setup to a new Questions tab** (Admin only). They still
+  lock once scoring starts; only the wording can change then.
+- **Screen tab:** "+ Add applicants" is the first thing on the tab, opening the form in place.
+  The cards are now called **Shortlist** (was "Collation & shortlist") and **Who has screened**
+  (was "Coordinator dashboard"); the sort button "Avg priority" is now "Rating". Each applicant
+  row has one quiet "More" holding Remove (same confirm) or Restore, Rename, Merge and Delete,
+  and what Auto/On/Off means is on the Shortlist card's (i) once instead of on every row.
+- **Shorter lines:** the reviewer's Screen and Score hints are one sentence each (the rest is on
+  the (i)); the applicant grid's shortfall lines are shorter; the committee editor's F/M (i)
+  is on the card once instead of on every person; the Panels More menu says "Not locked yet:
+  may still change." while the schedule is not locked.
+- **Panels tab:** one main button (Lock the schedule, then Send times to applicants); Export
+  CSV, Print, Reset hand-made panels, the calendar file for all interviews and Copy all
+  applicant emails are in one More menu. Each panel has two small groups, Email (applicant,
+  panel) and Calendar (panel, applicant), instead of four long links.
+- **Setup is shorter and grouped:** People, This round, Records, Passwords.
+- **Fewer words on the page:** long explanations moved behind the (i) next to what they
+  explain (the interviewer load, the backup card, the times editor, Offers, the legends under
+  the grids). "Everyone has answered" style lines that only say all is well are gone.
+- Small tap targets (Auto/On/Off, 1 room/2 rooms, question order) grew to 40px on phones; the
+  More menus close when you pick something, tap elsewhere or press Escape.
+- Sims follow the moves (`scenarios`, `editors`, `foundations`, `notices`, `applicants`,
+  `emulator`), `adminHasNoName` now pins the tab order and where the editors are, and
+  `foundations` `editorsSurviveUpdates` pins that a live update never redraws a times form
+  being typed in or loses a question being typed (each guard was removed once to see it fail).
+- **After an independent review:** a long card subtitle (all stages closed, a long round
+  name) wraps on a phone instead of running off screen; Send times to applicants stays the
+  filled button whenever the schedule is locked (an unlock, edit and relock keep the old "sent"
+  stamp); while Admin types in the times form only that card is held, so the grids and counts
+  keep updating (they froze, even with the window in the background); editing a time someone
+  else removed closes with its message at once on the tab; a More menu also closes when you tab
+  out and gives focus back to its button after a pick; Remove in the Screen row's menu is red;
+  a live update no longer draws the Availability or Questions tab twice when Setup is open.
+  New checks: `stages` `infoIconsFitAPhone` and the filled Send button in `lockScheduleHolds`,
+  `foundations` `moreMenuFocus`, and `editorsSurviveUpdates` now also pins live grids while
+  the form is held and the removed-time message. The new checks fail on the build before them.
+- **Second review:** the times card is held only for a live update, never for the editor's
+  own Edit, Cancel and Save, which on iOS leave focus in the field and so looked like they did
+  nothing (`foundations` `timesButtonsWithFocusInField`, fails on the build before). A dialog
+  opened from a More menu gives focus back to that menu's button on Cancel. A subtitle is
+  trimmed before its last word is kept with the (i), and each card wires its open/close
+  listener once.
+- No module or export was removed. `firestore.rules` is unchanged.
+
 ## R10: "Leadership" is now "Admin" in every visible word (built Oct 18 2026; ships after R9)
 
 Alvin's decision (Oct 18 2026): the shared password and access level called "Leadership" is

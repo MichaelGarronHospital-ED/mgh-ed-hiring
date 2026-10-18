@@ -6,8 +6,8 @@
 <meta name="color-scheme" content="light dark" />
 <title>Physician Hiring</title>
 <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
-<link rel="stylesheet" href="css/ed-ui.css?v=R10" />
-<link rel="stylesheet" href="css/styles.css?v=R10" />
+<link rel="stylesheet" href="css/ed-ui.css?v=R11" />
+<link rel="stylesheet" href="css/styles.css?v=R11" />
 </head>
 <body>
 <!-- login gate: the ED, Admin or Guest password; the role is whichever account accepts it (R7) -->
@@ -46,7 +46,7 @@
   <div class="brandrow">
     <div class="brandmark" aria-hidden="true">ED</div>
     <div class="grow"><h1 id="orgName">Physician Hiring</h1></div>
-    <button id="setupBtn" class="iconbtn hidden" title="Setup: committee, chair, times, applications folder" aria-label="Setup">
+    <button id="setupBtn" class="iconbtn hidden" title="Setup" aria-label="Setup">
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     </button>
     <button id="logout" class="linky">Log out</button>
@@ -72,6 +72,7 @@
   <section id="availability" class="hidden" role="tabpanel"></section>
   <section id="score" class="hidden" role="tabpanel"></section>
   <section id="panels" class="hidden" role="tabpanel"></section>
+  <section id="questions" class="hidden" role="tabpanel"></section>
   <section id="ranking" class="hidden" role="tabpanel"></section>
 </main>
 
@@ -144,6 +145,6 @@
   });
 })();
 </script>
-<script type="module" src="js/app.js?v=R10"></script>
+<script type="module" src="js/app.js?v=R11"></script>
 </body>
 </html>

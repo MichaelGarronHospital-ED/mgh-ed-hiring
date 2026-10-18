@@ -71,6 +71,125 @@ const scenarios = {
     await other.close();
     return problems;
   },
+  // R11: the times editor moved from Setup to the Availability tab and the
+  // questions editor to the Questions tab. Both tabs redraw on every live
+  // update, so what Setup did for them must still hold: a live update never
+  // redraws a times form while Admin is typing in it (it catches up once focus
+  // leaves), and a question being typed keeps its text, focus and caret.
+  async editorsSurviveUpdates(page, url) {
+    const problems = [];
+    // Ekwueme has not answered yet, so the grid reads 4 of 5 until the update
+    const b0 = base(); b0.availIv = { ...b0.availIv, Ekwueme: {} };
+    await load(page, url, b0, "adminpw"); await landAsAdmin(page);
+    await tab(page, "availability");
+    await page.evaluate(() => { const d = document.querySelector('#availability details[data-sec="times"]'); d.open = true; d.dispatchEvent(new Event("toggle")); });
+    await sleep(100);
+    await page.evaluate(() => { const el = document.querySelector("#tAddFrom"); el.__mark = 1; el.focus(); });
+    const other = await page.browser().newPage();
+    await other.goto(url, { waitUntil: "domcontentloaded" });
+    const bump = (who) => other.evaluate((who) => {
+      const s = JSON.parse(localStorage.getItem("ed_interviews_v1"));
+      s.availIv = { ...s.availIv, [who]: { t0: "ip", t1: "ip" } };
+      localStorage.setItem("ed_interviews_v1", JSON.stringify(s));
+      new BroadcastChannel("ed_interviews").postMessage(1);
+    }, who);
+    await bump("Ekwueme"); await sleep(400);
+    await page.bringToFront();
+    const held = await page.evaluate(() => { const el = document.querySelector("#tAddFrom"); return { same: !!(el && el.__mark), focused: document.activeElement === el,
+      grid: (document.querySelector('#availability details[data-sec="avgrid"] .sec-sub') || {}).textContent || "" }; });
+    problems.push(...ok(held.same && held.focused, `a live update redrew the times form while it was being typed in: ${JSON.stringify(held)}`));
+    // R11 review: only the times card is held; the grids below stay live (they
+    // used to freeze while focus sat in the form, even with the window away)
+    problems.push(...ok(/5 of 5/.test(held.grid), `the rest of the Availability tab stopped updating while the times form had focus: ${held.grid}`));
+    await page.evaluate(() => document.activeElement.blur()); await sleep(500);
+    const caught = await page.evaluate(() => { const el = document.querySelector("#tAddFrom"); return { redrawn: !!el && !el.__mark,
+      grid: (document.querySelector('#availability details[data-sec="avgrid"] .sec-sub') || {}).textContent || "" }; });
+    problems.push(...ok(caught.redrawn && /5 of 5/.test(caught.grid), `the tab didn't catch up once focus left the form: ${JSON.stringify(caught)}`));
+    // R11 review: someone else removes the time being edited: the edit closes
+    // with the "removed by someone else" message straight away, on the tab
+    await page.evaluate(() => window.IV.tEdit("t1")); await sleep(150);
+    await page.evaluate(() => document.activeElement && document.activeElement.blur()); await sleep(350);
+    await other.evaluate(() => {
+      const s = JSON.parse(localStorage.getItem("ed_interviews_v1"));
+      s.settings = { ...s.settings, times: s.settings.times.filter((t) => t.id !== "t1") };
+      localStorage.setItem("ed_interviews_v1", JSON.stringify(s));
+      new BroadcastChannel("ed_interviews").postMessage(1);
+    });
+    await sleep(400); await page.bringToFront();
+    const gone = await page.evaluate(() => ({ toast: document.querySelector("#toast").textContent, editing: !!document.querySelector("#tEdStart") }));
+    problems.push(...ok(/removed by someone else/.test(gone.toast) && !gone.editing, `editing a time someone else removed: ${JSON.stringify(gone)}`));
+    // the Questions tab: typing survives an update
+    await tab(page, "questions");
+    await page.click("#qText-1"); await page.keyboard.press("End"); await page.keyboard.type(" (typed)");
+    await other.bringToFront(); await bump("Dufour"); await sleep(400); await page.bringToFront();
+    const q = await page.evaluate(() => ({ v: document.querySelector("#qText-1").value, f: document.activeElement && document.activeElement.id }));
+    problems.push(...ok(q.v === "A difficult case (typed)" && q.f === "qText-1", `a live update lost a question being typed: ${JSON.stringify(q)}`));
+    await other.close();
+    return problems;
+  },
+
+  // R11 review: iOS leaves focus in the field after a button is tapped. The
+  // times editor's own buttons must still redraw the card then (only a live
+  // update may hold it): Cancel closes the edit, Edit opens another time, and
+  // Save with nothing changed closes the edit.
+  async timesButtonsWithFocusInField(page, url) {
+    const problems = [];
+    await load(page, url, base(), "adminpw"); await landAsAdmin(page);
+    await tab(page, "availability"); await sleep(400);
+    await page.evaluate(() => { const d = document.querySelector('#availability details[data-sec="times"]'); d.open = true; d.dispatchEvent(new Event("toggle")); });
+    // the handlers are called with focus left in the field, as an iOS tap does
+    const step = (focusSel, act) => page.evaluate(async (focusSel, act) => {
+      const f = document.querySelector(focusSel); if (!f) return { error: `no ${focusSel}` };
+      f.focus();
+      await eval(act);
+      await new Promise((r) => setTimeout(r, 150));
+      const ed = document.querySelector("#availability .trow.editing");
+      return { editing: !!document.querySelector("#tEdDate"),
+        editRow: ed ? ed.querySelector("#tEdStart").value : "" };
+    }, focusSel, act);
+    await page.evaluate(() => window.IV.tEdit("t0")); await sleep(150);
+    let r = await step("#tEdDate", "window.IV.tEditCancel()");
+    problems.push(...ok(!r.error && !r.editing, `Cancel with focus in the date field left the edit open: ${JSON.stringify(r)}`));
+    r = await step("#tAddFrom", "window.IV.tEdit('t1')");
+    problems.push(...ok(!r.error && r.editing && r.editRow === "10:00", `Edit with focus in Add times didn't open t1: ${JSON.stringify(r)}`));
+    r = await step("#tEdDate", "window.IV.tSave(null)");
+    problems.push(...ok(!r.error && !r.editing, `Save with nothing changed left the edit open: ${JSON.stringify(r)}`));
+    return problems;
+  },
+
+  // R11 review: a More menu closes when focus tabs out of it, and after a pick
+  // focus goes back to its button instead of the page.
+  async moreMenuFocus(page, url) {
+    const problems = [];
+    await load(page, url, base(), "adminpw"); await landAsAdmin(page); await tab(page, "panels");
+    await sleep(600);   // let the sign-in's own writes land (a redraw would close the menu)
+    await page.focus("details.panelmore > summary"); await page.keyboard.press("Enter"); await sleep(100);
+    const opened = await page.$eval("details.panelmore", (d) => d.open);
+    problems.push(...ok(opened, "Enter on More didn't open the menu"));
+    const items = await page.$$eval("details.panelmore .moremenu button", (b) => b.length);
+    for (let i = 0; i <= items; i++) await page.keyboard.press("Tab");
+    await sleep(100);
+    const st = await page.evaluate(() => ({ open: document.querySelector("details.panelmore").open,
+      inside: document.querySelector("details.panelmore").contains(document.activeElement) }));
+    problems.push(...ok(!st.inside && !st.open, `tabbing out left the menu open: ${JSON.stringify(st)}`));
+    await page.evaluate(() => { const d = document.querySelector("details.panelmore"); d.open = true; });
+    await page.evaluate(() => { window.__dl = 0; URL.createObjectURL = () => { window.__dl++; return "blob:stub"; }; });
+    await page.click("details.panelmore .moremenu button"); await sleep(200);   // Export CSV
+    const after = await page.evaluate(() => ({ open: document.querySelector("details.panelmore").open,
+      focus: document.activeElement && document.activeElement.matches("details.panelmore > summary") }));
+    problems.push(...ok(!after.open && after.focus, `after a pick: ${JSON.stringify(after)}`));
+    // a pick that opens a dialog (Remove on a Screen row): Cancel gives focus to
+    // that row's More button, not the page
+    await tab(page, "screen"); await sleep(200);
+    await page.evaluate(() => { document.querySelector("#screen .collrow details.more").open = true; });
+    await page.click('#screen .collrow details.more button[onclick^="IV.removeCand("]');
+    await page.waitForSelector("#confirmWrap:not(.hidden)", { timeout: 5000 });
+    await page.click("#confirmNo"); await sleep(200);
+    const back = await page.evaluate(() => !!(document.activeElement && document.activeElement.matches("#screen .collrow details.more > summary")));
+    problems.push(...ok(back, "after Cancel on a menu's Remove, focus fell to the page"));
+    return problems;
+  },
+
   // Members keyed by id: a member whose id is not her name shows by name
   // everywhere, and her input (keyed by id) is found.
   async membersById(page, url) {
@@ -100,7 +219,7 @@ const scenarios = {
   },
 
   // R7: nothing is decrypted or copied any more. With no questions document the
-  // Admin sign-in writes nothing, the Questions card says how to add them,
+  // Admin sign-in writes nothing, the Questions tab says how to add them,
   // and the Passwords card waits for them (design 5.2).
   async noQuestionCopySinceR7(page, url) {
     const problems = [];
@@ -109,8 +228,8 @@ const scenarios = {
     const st = await dumpState(page);
     problems.push(...ok(!st.questions, "a questions document appeared after the Admin sign-in"));
     problems.push(...ok(!Object.values(st.history || {}).some((h) => h.action === "questions.migrate"), "a questions copy was recorded"));
-    await openSetupCard(page, "setQuestions");
-    const q = await page.$eval('details[data-sec="setQuestions"]', (e) => e.textContent);
+    await tab(page, "questions");   // R11: the questions editor has its own tab
+    const q = await page.$eval("#questions", (e) => e.textContent);
     problems.push(...ok(q.includes("Restore them from a backup file") && !q.includes("old locked file") && !q.includes("Locked because scoring"), `Questions card: ${q.slice(0, 200)}`));
     await openSetupCard(page, "setPasswords");
     const pw = await page.$eval('details[data-sec="setPasswords"]', (e) => e.textContent);
@@ -121,10 +240,11 @@ const scenarios = {
       && !pw.includes("Change a password") && !pw.includes("didn't finish"), `Passwords card: ${pw.slice(0, 200)}`));
     // review: notes exist but the questions are missing: not locked, and the
     // ids the notes use can be rebuilt ("0", "1")
-    await openSetupCard(page, "setQuestions");
+    await page.evaluate(() => document.querySelector("#setupClose").click());
+    await tab(page, "questions");
     await page.evaluate(() => window.IV.qFromNotes()); await sleep(200);
     await page.type("#qText-0", "Tell us about yourself"); await page.type("#qText-1", "A difficult case");
-    await page.evaluate(() => [...document.querySelectorAll("#settings button")].find((b) => b.textContent.trim() === "Save questions").click());
+    await page.evaluate(() => [...document.querySelectorAll("#questions button")].find((b) => b.textContent.trim() === "Save questions").click());
     await sleep(500);
     const sq = (await dumpState(page)).questions;
     problems.push(...ok(sq && sq.questions.map((x) => x.id).join() === "0,1", `rebuilt ids: ${JSON.stringify(sq)}`));

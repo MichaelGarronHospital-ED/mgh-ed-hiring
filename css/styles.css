@@ -103,11 +103,10 @@ code, pre { font-size:.88em; }
   padding:0; text-align:left; }
 .linky:hover { text-decoration:underline; }
 .linky.danger { color:var(--ed-red); }
-/* Seventeen red "Remove" links down a list read as seventeen problems. The
-   action stays exactly where it was and keeps its confirm dialog; it just
-   stops shouting until you reach for it. */
-.collist .linky.danger { color:var(--ed-ink-2); }
-.collist .linky.danger:hover, .collist .linky.danger:focus-visible { color:var(--ed-red); }
+/* Seventeen red "Remove" links down a list read as seventeen problems, so since
+   R11 Remove sits inside each row's "More" menu (same confirm). Inside the menu
+   it is red, like every destructive item there. */
+.collist .moremenu .linky.danger { color:var(--ed-red); }
 
 /* header icon button (Setup gear) and the sheet's close button */
 .iconbtn { background:transparent; border:0; color:var(--ed-ink-2); cursor:pointer;
@@ -408,7 +407,8 @@ label.chip { font-size:var(--ed-text-sm); padding:6px 12px; }
   font-weight:600; font-size:var(--ed-text-sm); color:var(--ed-ink-2); }
 .slotgrid > .slotday:first-child, .slotgrid .h + .h + .slotday { border-top:none; margin-top:0; padding-top:0; }
 .tgroup { margin:4px 0 16px; }
-.tgroup-h { display:flex; align-items:baseline; gap:6px; padding:6px 0; border-bottom:1px solid var(--ed-line); }
+.tgroup-h { display:flex; align-items:baseline; gap:2px 6px; padding:6px 0; border-bottom:1px solid var(--ed-line); flex-wrap:wrap; }
+.tgroup-h .muted, .tgroup-h .linky { white-space:nowrap; }
 .tgroup-h .linky { margin-left:auto; font-size:var(--ed-text-sm); }
 .trow { display:flex; align-items:center; gap:6px 16px; padding:8px 0; border-bottom:1px solid var(--ed-line-soft); flex-wrap:wrap; }
 .trow .grow { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; min-width:0; }
@@ -684,8 +684,9 @@ td.adj { font-variant-numeric:tabular-nums; color:var(--ed-ink-2); }
 .stagerow:first-child { border-top:none; padding-top:2px; }
 .numin { width:4.5rem; display:inline-block; min-height:36px; margin:0 4px; text-align:center; font:inherit; color:var(--ed-ink);
   border:1px solid transparent; border-radius:var(--ed-r-md); background:var(--ed-surface-2); padding:4px 8px; }
-.lockbar { display:flex; align-items:center; gap:8px; margin:0 0 6px; }
+.lockbar { display:flex; align-items:center; gap:8px 10px; margin:0 0 10px; flex-wrap:wrap; }
 .lockline { margin:0 0 6px; font-size:var(--ed-text-sm); color:var(--ed-ink-2); }
+.lockbar .lockline { margin:0; }
 .listseg { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px; }
 .listseg .seg button { min-height:32px; padding:0 12px; }
 .notesh { margin:8px 0 2px; }
@@ -704,8 +705,12 @@ details.more > summary { list-style:none; cursor:pointer; color:var(--ed-accent-
 details.more > summary::-webkit-details-marker { display:none; }
 .moremenu { position:absolute; right:0; top:calc(100% + 6px); z-index:20; min-width:220px; display:grid; gap:2px;
   background:var(--ed-surface); border-radius:var(--ed-r-md); box-shadow:var(--ed-shadow-lg); padding:8px; text-align:left; }
-.moremenu .linky { text-align:left; padding:8px 10px; min-height:40px; }
+.moremenu .linky { text-align:left; padding:8px 10px; min-height:40px; margin:0; }
 .moremenu > span { padding:8px 10px; }
+/* the Panels tab's More: a ghost button with a dots icon */
+details.panelmore { margin-left:auto; }
+details.panelmore > summary { gap:4px; }
+.moremenu .menunote { margin:6px 10px 0; padding-top:8px; border-top:1px solid var(--ed-line-soft); max-width:16rem; }
 .candlabel { display:block; text-align:left; margin-top:10px; }
 .candlabel input { margin-top:6px; }
 
@@ -715,7 +720,11 @@ details.more > summary::-webkit-details-marker { display:none; }
 .daychair select { margin:0; width:auto; min-height:36px; padding:4px 10px; font-size:var(--ed-text-sm); }
 .roomseg { margin-left:6px; vertical-align:middle; }
 .roomseg button { min-height:30px; padding:0 10px; font-size:var(--ed-text-xs); }
-.panelacts { display:flex; flex-wrap:wrap; gap:4px 14px; margin-top:6px; }
+/* R11: two compact groups per panel, "Email: Applicant Panel" and
+   "Calendar: Panel Applicant", instead of four long links in a row */
+.panelacts { display:flex; flex-wrap:wrap; gap:2px 22px; margin-top:6px; }
+.panelacts .actgrp { display:inline-flex; align-items:center; gap:12px; }
+.panelacts .actlab { display:inline-flex; align-items:center; gap:6px; color:var(--ed-ink-2); font-size:var(--ed-text-sm); }
 .panelacts .linky { padding:4px 0; min-height:32px; }
 .scoretoggle { margin-top:8px; }
 .noticecard p { margin:0 0 10px; }
@@ -724,10 +733,7 @@ details.more > summary::-webkit-details-marker { display:none; }
 @media (max-width:640px) {
   .replybtns { flex-direction:column; }
   .replybtns .replybtn, .noticecard > .replybtn { width:100%; }
-  /* on a phone the four message links live in the panel's expanded view */
-  .prow:not(.open) > .panelacts { display:none; }
-  .panelacts { flex-direction:column; gap:2px; }
-  .panelacts .linky { min-height:40px; text-align:left; }
+  .panelacts .linky { min-height:40px; }
 }
 
 /* ---- close the round, past rounds, restore (H1) ------------------------------ */
@@ -758,6 +764,52 @@ body.closing-elsewhere #app, body.closing-elsewhere #settings { opacity:.6; }
   .mrow .mtoggle { display:inline-flex; min-height:40px; align-items:center; flex:none; }
   .mrow .msum { display:block; margin-top:-4px; }
   .mrow:not(.open) .mopts, .mrow:not(.open) input[type=email], .mrow:not(.open) > .linky.danger { display:none; }
+}
+
+/* ---- R11 UX pass: Setup groups, small icon buttons, menus ------------------ */
+/* Setup's four small headings (People, This round, Records, Passwords). */
+.setgroup { margin:22px 4px 4px; font:600 var(--ed-text-sm)/1.3 var(--ed-font); letter-spacing:normal; color:var(--ed-ink-2); }
+.modal-body > .setgroup:first-child { margin-top:14px; }
+/* a closed card's quiet "Edit" on the right; the whole row opens it */
+details.section > summary .sec-act { flex:none; font-size:var(--ed-text-sm); font-weight:500; color:var(--ed-accent-ink); }
+details.section[open] > summary .sec-act { display:none; }
+/* icon buttons in a row (move up, move down, more): 40px, accent ink */
+.iconbtn.sm { width:40px; height:40px; border-radius:10px; color:var(--ed-accent-ink); }
+.iconbtn:disabled { opacity:.35; cursor:default; background:transparent; }
+.tadd.first { margin-top:0; padding-top:0; border-top:none; }
+/* Screen tab: "+ Add applicants" opens the form in place */
+details.adder { margin:4px 0 12px; }
+details.adder > summary { list-style:none; width:max-content; max-width:100%; }
+details.adder > summary::-webkit-details-marker { display:none; }
+details.adder[open] > summary { background:var(--ed-fill); color:var(--ed-ink); }
+.adderbox { margin-top:10px; }
+.adderbox textarea { margin-top:6px; }
+.nobr { white-space:nowrap; }
+/* on a phone a card's grey subtitle is its own line under the title, and a
+   long one wraps (only its last word and the (i) are kept together) */
+@media (max-width:640px) {
+  details.section > summary .subline { display:block; margin-top:1px; overflow-wrap:anywhere; }
+  details.section > summary .subline .dot { display:none; }
+}
+/* a field heading with its (i) beside it, not under it */
+div.ed-label { flex-direction:row; align-items:center; flex-wrap:wrap; }
+.ed-label .info { margin-left:0; }
+/* repeated remove links in an editor list stay grey until reached for */
+.trow .linky.danger, .tgroup-h .linky.danger, .qedbtns .btn.danger { color:var(--ed-ink-2); }
+.trow .linky.danger:hover, .trow .linky.danger:focus-visible, .tgroup-h .linky.danger:hover, .tgroup-h .linky.danger:focus-visible,
+.qedbtns .btn.danger:hover, .qedbtns .btn.danger:focus-visible { color:var(--ed-red); }
+/* Questions tab: each question with its move and remove controls beside it */
+.qcard .qedrow { display:flex; align-items:flex-start; gap:8px; }
+.qcard .qedrow textarea { flex:1; min-width:0; }
+.qcard .qedbtns { margin-top:0; flex:none; align-items:center; gap:2px; }
+@media (max-width:640px) {
+  .qcard .qedrow { flex-direction:column; align-items:stretch; }
+  .qcard .qedbtns { margin-top:4px; }
+}
+.panelmore .moremenu { min-width:max-content; }
+/* small segmented controls grow to a full tap target on touch screens */
+@media (max-width:640px), (pointer: coarse) {
+  .listseg .seg button, .roomseg button, .mopts .seg button { min-height:40px; }
 }
 
 /* ---- mobile field sizing: MUST STAY LAST ---------------------------------

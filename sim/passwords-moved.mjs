@@ -207,7 +207,7 @@ const cases = {
         await p.evaluate(() => { const d = document.querySelector('details[data-sec="setPasswords"]'); d.open = true; d.dispatchEvent(new Event("toggle")); }); await sleep(200);
         const c = await p.$eval('details[data-sec="setPasswords"]', (d) => {
           const body = d.querySelector(".sec-body"), norm = (t) => t.replace(/\s+/g, " ").trim();
-          return { body: norm(body.textContent), sub: norm((d.querySelector(".sec-sub") || {}).textContent || ""),
+          return { body: norm(body.textContent), sub: norm((() => { const x = d.querySelector(".sec-sub"); if (!x) return ""; const c = x.cloneNode(true); c.querySelectorAll(".info").forEach((i) => i.remove()); return c.textContent; })()),
             links: [...body.querySelectorAll("a")].map((a) => [a.getAttribute("href"), norm(a.textContent)]),
             controls: body.querySelectorAll("input, button, select, textarea").length,
             sideways: document.documentElement.scrollWidth > window.innerWidth };

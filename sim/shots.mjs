@@ -57,8 +57,8 @@ const shots = {
     const st = { ...STATE, scores: {} };
     await shoot("setup-committee", async (p) => { await landAsAdmin(p); await openCard(p, "setCommittee");
       await p.evaluate(() => window.IV.mSet(3, "active", "false")); }, { state: st });
-    await shoot("setup-questions", async (p) => { await landAsAdmin(p); await sleep(300); await openCard(p, "setQuestions"); }, { state: st });
-    await shoot("setup-questions-locked", async (p) => { await landAsAdmin(p); await sleep(300); await openCard(p, "setQuestions"); },
+    await shoot("questions-tab", async (p) => { await landAsAdmin(p); await sleep(300); await tab(p, "questions"); }, { state: st });
+    await shoot("questions-tab-locked", async (p) => { await landAsAdmin(p); await sleep(300); await tab(p, "questions"); },
       { state: { ...STATE, scores: { "Chen~c-1": { overall: 4.2 } } } });
     await shoot("name-list", async (p) => { await p.waitForSelector("#memberpick:not(.hidden)"); }, { code: "staffpw" });
   },
@@ -96,7 +96,8 @@ const shots = {
       notices: { ashcombe: { date: STATE.settings.times[0].date, start: "09:00", end: "10:00", label: "", format: "ip", room: 1, location: "ED admin office, 2nd floor", zoomLink: "", replyBy: daysAhead(10) } },
       replies: { kim: { reply: "withdrawn", replyAt: new Date().toISOString() } } };
     await shoot("panels-notices", async (p) => { await landAsAdmin(p); await tab(p, "panels"); }, { state: lockedSt });
-    await shoot("setup-times-rooms", async (p) => { await landAsAdmin(p); await openCard(p, "setSlots"); }, { state: lockedSt });
+    await shoot("availability-times-rooms", async (p) => { await landAsAdmin(p); await tab(p, "availability");
+      await p.evaluate(() => { const d = document.querySelector('details[data-sec="times"]'); d.open = true; d.dispatchEvent(new Event("toggle")); }); }, { state: lockedSt });
     await shoot("score-my-panels", async (p) => { await pickMember(p, "Bruns"); await tab(p, "score"); }, { code: "staffpw", state: lockedSt });
     await shoot("applicant-notice", async (p) => { await p.waitForSelector("#candName"); await p.type("#candFirst", "Rosalind"); await p.type("#candName", "Ashcombe");
       await p.click("#candGo"); await p.waitForSelector(".noticecard"); }, { code: "guestpw", state: lockedSt });

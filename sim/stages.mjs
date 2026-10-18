@@ -142,12 +142,17 @@ const scenarios = {
     const p1 = st.schedule.panels["c-1"];
     const who = p1.members.find((m) => m !== "Abara");
     st.availIv[who] = { ...st.availIv[who] }; delete st.availIv[who].t0;
+    st.schedule.publishedAt = new Date(Date.now() - 86400e3).toISOString();   // times were sent before
     await page.evaluate((s) => localStorage.setItem("ed_interviews_v1", JSON.stringify(s)), st);
     await page.reload({ waitUntil: "domcontentloaded" }); await page.waitForFunction("window.__edReady === true"); await sleep(400);
     await tab(page, "panels");
     const after = await readPanels(page);
     const was = before.schedule.find((p) => p.name.includes("Ashcombe")), now = after.schedule.find((p) => p.name.includes("Ashcombe"));
     problems.push(...ok(now && was && now.members.join() === was.members.join() && now.slot === was.slot, `panel moved: ${JSON.stringify(was)} -> ${JSON.stringify(now)}`));
+    // R11 review: while locked, Send times stays the filled button even after an
+    // earlier send (an unlock, edit and relock keep that stamp)
+    const sendCls = await page.evaluate(() => { const b = [...document.querySelectorAll("#panels button")].find((x) => x.textContent.trim() === "Send times to applicants"); return b ? b.className : "(none)"; });
+    problems.push(...ok(/\bfilled\b/.test(sendCls), `Send times looks done while locked: ${sendCls}`));
     const att = await page.$eval("#panels", (e) => e.textContent);
     problems.push(...ok(att.includes(`${who} is on`) && att.includes("no longer says they are free then"), "Needs attention doesn't name them"));
     // unlock: back to following availability
@@ -157,6 +162,36 @@ const scenarios = {
     problems.push(...ok(a2 && !a2.members.includes(who), `after unlock ${who} is still on the panel: ${JSON.stringify(a2)}`));
     st = await dumpState(page);
     problems.push(...ok(st.schedule.locked === false, "not unlocked"));
+    return problems;
+  },
+
+  // R11 review: on a 390px phone every (i) stays on screen, in Setup and on the
+  // tabs, even with the longest subtitles (all three stages closed, a long
+  // round name, a long chair name).
+  async infoIconsFitAPhone(page, url) {
+    const problems = [];
+    const at = new Date().toISOString();
+    const st = base({ meta: { interviewsComplete: false, roundName: "Emergency physician hiring round, spring and summer 2027, second intake",
+      stages: { screening: { closed: true, at }, availability: { closed: true, at }, scoring: { closed: true, at } } } });
+    await page.setViewport({ width: 390, height: 844 });
+    try {
+      await load(page, url, st, "adminpw"); await landAsAdmin(page);
+      const outside = () => page.evaluate(() => [...document.querySelectorAll(".info")].filter((e) => {
+        const r = e.getBoundingClientRect(); if (!r.width) return false;
+        return r.right > window.innerWidth + 0.5 || r.left < -0.5;
+      }).map((e) => `${(e.closest("[data-sec]") || {}).dataset ? e.closest("[data-sec]").dataset.sec : "?"}@${Math.round(e.getBoundingClientRect().right)}`));
+      for (const t of ["screen", "availability", "panels", "questions", "ranking"]) {
+        await tab(page, t); await sleep(150);
+        const bad = await outside();
+        problems.push(...ok(!bad.length, `${t}: (i) off screen at 390px: ${bad.join(", ")}`));
+      }
+      await page.evaluate(() => document.querySelector("#setupBtn").click()); await sleep(250);
+      const bad = await outside();
+      problems.push(...ok(!bad.length, `Setup: (i) off screen at 390px: ${bad.join(", ")}`));
+      const sideways = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+      problems.push(...ok(!sideways, "the page scrolls sideways at 390px"));
+      await closeSetup(page);
+    } finally { await page.setViewport({ width: 1280, height: 900 }); }
     return problems;
   },
 

@@ -102,8 +102,11 @@ const scenarios = {
     // the next round shows no times
     await page.evaluate(() => document.querySelector("#flowBtns button").click()); await sleep(200);
     await tab(page, "availability");
-    const av = await page.$eval("#availability", (e) => e.textContent);
-    problems.push(...ok(av.includes("No interview times yet"), "the next round still shows times"));
+    // R11: Admin's Availability tab opens its Interview times card when there
+    // are none (it was an empty-state line pointing at Setup)
+    const av = await page.evaluate(() => { const d = document.querySelector('#availability details[data-sec="times"]');
+      return { open: !!(d && d.open), rows: document.querySelectorAll("#availability .trow").length, grid: !!document.querySelector("#availability .avgrid") }; });
+    problems.push(...ok(av.open && av.rows === 0 && !av.grid, `the next round still shows times: ${JSON.stringify(av)}`));
     return problems;
   },
 
