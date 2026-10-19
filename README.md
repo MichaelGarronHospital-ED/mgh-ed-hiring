@@ -367,8 +367,9 @@ it, so every Admin save would fail.
   changes (it asks before throwing any away), then clears this browser's copy of your scores.
 - **With no connection** (R13), a change waits in the open page and saves when the connection is
   back. After 10 seconds the page says "Not saved yet. Waiting for the connection. Keep this page
-  open and it will save." until it does; closing the page before then loses it. An applicant's
-  name check gives up after 10 seconds with "Couldn't reach the server".
+  open and it will save." until it does; closing the page before then loses it. Admin settings
+  saves are not held: with no connection they fail after a few seconds and say so. An
+  applicant's name check gives up after 20 seconds with "Couldn't reach the server".
 - **When a new version goes live**, an open page notices within 10 minutes and shows "This
   page was updated. Reload to get the latest version." An Admin page reloads itself
   instead, but only when nothing typed could be lost.

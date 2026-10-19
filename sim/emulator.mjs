@@ -676,7 +676,7 @@ export const cases = {
   // said "Checking…" for good, with no message (the old TODO "offline saves can
   // hang"). Now, after 10 seconds, the page says the change is not saved yet and
   // to keep the page open (it also shows for a very slow save, which is true
-  // then too); the line goes once it lands. The name check gives up
+  // then too); the line goes once it lands. The name check gives up after 20 s
   // and says it couldn't reach the server (it writes nothing, so that is safe).
   // Both fail on R12.
   async offlineSavesSaySo() {
@@ -704,8 +704,8 @@ export const cases = {
     await offline(a);
     await a.type("#candFirst", "Rosalind"); await a.type("#candName", "Ashcombe");
     await a.click("#candGo");
-    const told = await until(async () => /Couldn't reach the server/.test(await a.$eval("#candErr", (e) => e.textContent)), 16000, 500);
-    problems.push(...ok(told, `offline name check: still "${await a.$eval("#candGo", (b) => b.textContent)}" after 16 s`));
+    const told = await until(async () => /Couldn't reach the server/.test(await a.$eval("#candErr", (e) => e.textContent)), 26000, 500);
+    problems.push(...ok(told, `offline name check: still "${await a.$eval("#candGo", (b) => b.textContent)}" after 26 s`));
     problems.push(...ok(!(await a.$eval("#candGo", (b) => b.disabled)), "the Continue button stayed disabled"));
     await online(a);
     await sleep(1500);
@@ -713,6 +713,40 @@ export const cases = {
     const inside = await until(async () => !!(await a.$("#candview .slotgrid")), 20000, 300);
     problems.push(...ok(inside, "once back online the same name didn't get in"));
     await closePage(a);
+    // R13 review: a transaction is never held for later (offline it fails after
+    // about 4 to 12 s), so it must never say "it will save". (1) Its server
+    // calls left unanswered, so it stays pending past 10 s every time (this
+    // fails on the first R13 build): no line, no toast. (2) Really offline: it
+    // ends with its own failure toast, and the line never shows.
+    const ad = await freshPage({ log: [] });
+    await asLeadership(ad);
+    const toastNow = (p) => p.$eval("#toast", (e) => (e.classList.contains("hide") ? "" : e.textContent.trim())).catch(() => "");
+    const watchQuiet = async (p, ms) => {   // every "it will save" seen while a transaction is out
+      const seen = new Set(); const t0 = Date.now();
+      while (Date.now() - t0 < ms) {
+        for (const s of [await line(p), await toastNow(p)]) if (/Not saved yet|it will save/.test(s)) seen.add(s);
+        await sleep(300);
+      }
+      return [...seen];
+    };
+    await ad.setRequestInterception(true);
+    ad.on("request", (r) => {
+      if (r.isInterceptResolutionHandled()) return;
+      if (/:(beginTransaction|commit|batchGet|runQuery)\b/.test(r.url())) return;   // left unanswered
+      r.continue();
+    });
+    await ad.evaluate(() => { window.IV.saveDeadlines(null); });
+    const stalled = await watchQuiet(ad, 14000);
+    problems.push(...ok(!stalled.length, `a transaction left unanswered said: ${stalled.join(" / ")}`));
+    await closePage(ad);
+    const ad2 = await freshPage({ log: [] });
+    await asLeadership(ad2);
+    await offline(ad2);
+    await ad2.evaluate(() => { window.IV.saveDeadlines(null); });
+    const quiet = await watchQuiet(ad2, 16000);
+    problems.push(...ok(!quiet.length, `an offline transaction said: ${quiet.join(" / ")}`));
+    await online(ad2);
+    await closePage(ad2);
     return [...problems, ...log];
   },
 };

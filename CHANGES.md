@@ -51,11 +51,13 @@ for Windows high contrast.
   the page says "Not saved yet. Waiting for the connection. Keep this page
   open and it will save." (a toast, and a line under the header until it lands). Nothing is
   thrown away and nothing is resent: the change still saves once the connection is back, as
-  before. The applicant's name check gives up after 10 seconds with "Couldn't reach the server.
+  before. The applicant's name check gives up after 20 seconds with "Couldn't reach the server.
   Check your connection and try again." (it writes nothing, so a late one is harmless). An
   applicant's time picks and confirm or withdraw now count as unsaved changes too, so Log out
-  waits for them like the committee's. Transactions (Admin's settings, stages, times, panels)
-  already failed after about 9 seconds with "Couldn't save".
+  waits for them like the committee's. Transactions (Admin's settings, stages, times, panels,
+  questions, undo) are never held for later: offline they fail by themselves after about 4 to
+  12 seconds with their own message, so they never say "it will save" (review); neither does a
+  restore, whose chunks can take over 10 seconds online and show their own progress line.
 - **Windows high contrast:** the focus ring is a box shadow, which high contrast mode hides, and
   the outline was removed. Fields and buttons now keep a transparent 2px outline, which high
   contrast mode draws (`css/ed-ui.css` copied from the dashboard master; `css/styles.css` the same

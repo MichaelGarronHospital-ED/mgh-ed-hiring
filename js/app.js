@@ -2443,7 +2443,7 @@ async function applyRestore(plan, backup, label) {
   const el = () => $("#rsProgress");
   await track(store.applyPlan({ writes }, hEntry(plan.mode === "replace" ? "round.restore" : "backup.restore",
     `${label} (${n} item${n === 1 ? "" : "s"})`, { by: byWho(), ...(meta.replacedQuestions && meta.replacedQuestions.length ? { undo: { kind: "reference", questions: meta.replacedQuestions } } : {}) }),
-    { onProgress: (done, all) => { if (el()) el().textContent = `Restoring... ${done} of ${all}`; } }));
+    { onProgress: (done, all) => { if (el()) el().textContent = `Restoring... ${done} of ${all}`; } }), { queued: false });
   return n;
 }
 
@@ -2750,10 +2750,14 @@ function renderCandidate() {
       err.textContent = ""; btn.disabled = true; btn.textContent = "Checking…";
       let k = null;
       // Offline the check never answers (Firestore holds the write until the
-      // connection is back), so give up after SLOW_SAVE_MS. It writes nothing,
-      // so one that lands later changes nothing (R13).
-      const check = (t) => Promise.race([store.checkName(t),
-        new Promise((_, no) => setTimeout(() => no(new Error("no answer")), SLOW_SAVE_MS))]);
+      // connection is back), so give up after NAME_CHECK_MS (generous: a slow
+      // phone online must not be told it is offline). It writes nothing, so one
+      // that lands later changes nothing (R13).
+      const check = (t) => {
+        let timer;
+        const giveUp = new Promise((_, no) => { timer = setTimeout(() => no(new Error("no answer")), NAME_CHECK_MS); });
+        return Promise.race([store.checkName(t), giveUp]).finally(() => clearTimeout(timer));
+      };
       try {
         for (const t of tries) { if (await check(t)) { k = t; break; } }
       } catch { // offline or misconfigured: don't accuse them of a wrong name
@@ -2933,21 +2937,29 @@ async function saved(promise, stage) {
 // them; the self-reload after a new release never happens while any are open).
 // Offline, Firestore keeps a write in this page and sends it when the connection
 // is back: its promise neither resolves nor fails until then (only transactions
-// give up, after about 9 seconds). So once a write has waited SLOW_SAVE_MS, the
+// give up, after about 4 to 12 seconds). So once a write has waited SLOW_SAVE_MS, the
 // page says so (a toast, and a line under the header until every such write has
 // landed or failed) instead of a "Saving…" that looks stuck forever (R13).
 const SLOW_SAVE_MS = 10000;
+const NAME_CHECK_MS = 20000;   // an applicant's name check (renderCandidate)
 const SLOW_SAVE = "Not saved yet. Waiting for the connection. Keep this page open and it will save.";
 let pendingWrites = 0, slowWrites = 0;
-function track(promise) {
+// `queued: false` for a save that is NOT held for later and says how it ends by
+// itself: a transaction (offline it fails after about 4 to 12 s, 5 tries with
+// a random wait, and "it will save" would be wrong) and a restore, whose chunks
+// can take over 10 s online and show their own progress line (R13 review).
+function track(promise, { queued = true } = {}) {
   pendingWrites++;
   let slow = false;
-  const t = setTimeout(() => { slow = true; if (!slowWrites++) { toast(SLOW_SAVE, "err"); renderUpdateLine(); } }, SLOW_SAVE_MS);
+  const t = queued ? setTimeout(() => { slow = true; if (!slowWrites++) { toast(SLOW_SAVE, "err"); renderUpdateLine(); } }, SLOW_SAVE_MS) : null;
   return Promise.resolve(promise).finally(() => {
     clearTimeout(t); pendingWrites--;
     if (slow && !--slowWrites) renderUpdateLine();
   });
 }
+// every transaction (store.updateConfig, updateTimes, updateQuestions, updateState,
+// updateSchedule, txDoc, and applyUndo, which uses them)
+const trackTx = (promise) => track(promise, { queued: false });
 const unconfirmed = () => pendingWrites > 0 || Object.keys(inflight).length > 0;
 window.IV = {
   mToggle: (i) => { ui.mOpen = ui.mOpen || {}; ui.mOpen[i] = !ui.mOpen[i]; rerenderSettings(); },
@@ -3068,7 +3080,7 @@ window.IV = {
         if (!ok) return;
       }
     }
-    return withBusy(btn, () => track(store.updateState((st) => ({ interviewsComplete: v,
+    return withBusy(btn, () => trackTx(store.updateState((st) => ({ interviewsComplete: v,
       ...(alsoClose ? { stages: { ...(st.stages || {}), scoring: { closed: true, at: store.now() } } } : {}) }),
       hEntry(v ? "ranking.reveal" : "ranking.hide", v ? (alsoClose ? "Revealed the ranking and closed scoring" : "Revealed the ranking") : "Hid the ranking again", { by: byWho() }))));
   },
@@ -3087,7 +3099,7 @@ window.IV = {
       extra.public = { booking: "closed" };
     } else msg = "Close scoring? Interviewers can no longer change scores or notes.";
     if (!(await confirmDialog(msg, { title: `Close ${name}`, yes: `Close ${name}`, danger: false }))) return;
-    await withBusy(btn, () => track(store.updateState((st) => ({ stages: { ...(st.stages || {}), [name]: { closed: true, at: store.now() } } }),
+    await withBusy(btn, () => trackTx(store.updateState((st) => ({ stages: { ...(st.stages || {}), [name]: { closed: true, at: store.now() } } }),
       hEntry("stage.close", `Closed ${name}`, { by: byWho() }), extra)), `${STAGE_WORD[name]} closed`).catch(() => {});
     rerenderSettings();
   },
@@ -3096,7 +3108,7 @@ window.IV = {
     const extra = {};
     if (name === "availability") extra.public = { booking: bookingFor({ ...S.meta, stages: { ...(S.meta.stages || {}), availability: { closed: false } } }) };
     if (name === "screening") extra.candidates = Object.fromEntries(reopenPlan(S.candidates).map((id) => [id, { shortlist: DEL, shortlistBy: DEL, shortlistAt: DEL }]));
-    await withBusy(btn, () => track(store.updateState((st) => ({ stages: { ...(st.stages || {}), [name]: { closed: false } } }),
+    await withBusy(btn, () => trackTx(store.updateState((st) => ({ stages: { ...(st.stages || {}), [name]: { closed: false } } }),
       hEntry("stage.reopen", `Reopened ${name}`, { by: byWho() }), extra)), `${STAGE_WORD[name]} reopened`).catch(() => {});
     rerenderSettings();
   },
@@ -3104,13 +3116,13 @@ window.IV = {
     const v = (id) => (($("#" + id) || {}).value || "").trim();
     const deadlines = { screening: v("dlScreening"), availability: v("dlAvailability"), reply: v("dlReply") };
     Object.keys(deadlines).forEach((k) => { if (!deadlines[k]) delete deadlines[k]; });
-    await track(store.updateConfig(() => ({ deadlines }), hEntry("settings.save", "Changed the deadlines", { by: byWho() })));
+    await trackTx(store.updateConfig(() => ({ deadlines }), hEntry("settings.save", "Changed the deadlines", { by: byWho() })));
     renderBanner();
   }, "Dates saved").catch(() => {}),
   saveThreshold: (btn) => withBusy(btn, async () => {
     const n = Number(($("#thIn") || {}).value);
     if (!Number.isInteger(n) || n < 0 || n > 20) throw new Error("Use a whole number from 0 to 20");
-    await track(store.updateConfig(() => ({ flagThreshold: n }),
+    await trackTx(store.updateConfig(() => ({ flagThreshold: n }),
       hEntry("settings.save", n ? `Set the screening rule to ${n} concern${n === 1 ? "" : "s"}` : "Set the screening rule to decide each applicant by hand", { by: byWho() })));
   }, "Rule saved").catch(() => {}),
   // ---- H7: leadership decides the shortlist
@@ -3141,7 +3153,7 @@ window.IV = {
       note: [d.note, d.reason].map((x) => String(x || "").trim()).filter(Boolean).join("\n\n") });
     const after = toNote(cur);
     try {
-      await track(store.txDoc("interviews_screening", k, (before) => {
+      await trackTx(store.txDoc("interviews_screening", k, (before) => {
         if (!before || hashOf(before) !== hashOf(cur)) throw new Error("That concern just changed. Look again.");
         return toNote(before);
       }, hEntry("screening.toNote", `Moved ${nm}'s concern about {cand} to a note`, { by: byWho(), cand: cid, member: memberId,
@@ -3152,7 +3164,7 @@ window.IV = {
   // ---- H13: day chairs and two-room times
   setDayChair: async (date, v) => {
     try {
-      await track(store.updateConfig((c) => {
+      await trackTx(store.updateConfig((c) => {
         const days = { ...(c.days || {}) }, d = { ...(days[date] || {}) };
         const usual = c.chair || CHAIR;
         const old = d.chair === "none" ? null : d.chair || usual;
@@ -3177,7 +3189,7 @@ window.IV = {
   },
   setDayLead: async (date, v) => {
     try {
-      await track(store.updateConfig((c) => {
+      await trackTx(store.updateConfig((c) => {
         const days = { ...(c.days || {}) }, d = { ...(days[date] || {}) };
         if (!v || v === "none") delete d.room2Chair; else d.room2Chair = v;
         days[date] = d; if (!Object.keys(d).length) delete days[date];
@@ -3189,7 +3201,7 @@ window.IV = {
   setRooms: async (id, n) => {
     const t = EFF().slots.find((x) => x.id === id); if (!t || (t.rooms === 2) === (n === 2)) return;
     try {
-      await timesBusy(() => track(store.updateTimes(SLOTS, (times, overrides) => {
+      await timesBusy(() => trackTx(store.updateTimes(SLOTS, (times, overrides) => {
         const out = times.map((x) => { if (x.id !== id) return x; const y = { ...x }; if (n === 2) y.rooms = 2; else delete y.rooms; return y; });
         if (n !== 2) Object.keys(overrides).forEach((c) => { if (String(overrides[c].slot) === id && overrides[c].room === 2) { const o = { ...overrides[c] }; delete o.room; overrides[c] = o; } });
         return { times: out, overrides };
@@ -3199,7 +3211,7 @@ window.IV = {
   saveInfo: (btn) => withBusy(btn, async () => {
     const v = (id) => (($("#" + id) || {}).value || "").trim();
     const info = { location: v("idLoc"), zoomLink: v("idZoom"), contact: v("idContact") };
-    await track(store.updateConfig(() => ({ interviewInfo: info }), hEntry("settings.save", "Changed the interview details", { by: byWho() })));
+    await trackTx(store.updateConfig(() => ({ interviewInfo: info }), hEntry("settings.save", "Changed the interview details", { by: byWho() })));
   }, "Details saved").catch(() => {}),
   // ---- H8: messages and calendar files (no email service; nothing stored)
   copyInvite: async (cid, kind) => {
@@ -3279,13 +3291,13 @@ window.IV = {
       + (un ? `\n\n${un} applicant${un === 1 ? " has" : "s have"} no interview yet and will not be scheduled while locked.` : "");
     if (!(await confirmDialog(msg, { title: "Lock the schedule", yes: "Lock the schedule", danger: false }))) return;
     const panels = Object.fromEntries(res.panels.map((p) => [p.cand, lockEntry(p, EFF().chair)]));
-    await withBusy(btn, () => track(store.updateSchedule((sch) => ({ ...(sch || {}), locked: true, lockedAt: store.now(), panels }),
+    await withBusy(btn, () => trackTx(store.updateSchedule((sch) => ({ ...(sch || {}), locked: true, lockedAt: store.now(), panels }),
       hEntry("schedule.lock", `Locked the schedule (${n} interview${n === 1 ? "" : "s"})`, { by: byWho() }))), "Schedule locked").catch(() => {});
   },
   unlockSchedule: async (btn) => {
     if (!(await confirmDialog("Unlock the schedule? Panels go back to following everyone's availability. Panels you set by hand before locking stay.",
       { title: "Unlock the schedule", yes: "Unlock", danger: false }))) return;
-    await withBusy(btn, () => track(store.updateSchedule((sch) => { const o = { ...(sch || {}), locked: false, panels: {} }; delete o.lockedAt; return o; },
+    await withBusy(btn, () => trackTx(store.updateSchedule((sch) => { const o = { ...(sch || {}), locked: false, panels: {} }; delete o.lockedAt; return o; },
       hEntry("schedule.unlock", "Unlocked the schedule", { by: byWho() }))), "Schedule unlocked").catch(() => {});
   },
   // panels
@@ -3332,7 +3344,7 @@ window.IV = {
     if (locked()) {
       // H4: while locked, Edit edits the locked panel itself
       try {
-        await withBusy(btn, () => track(store.updateSchedule((sch) => ({ ...(sch || {}), panels: { ...((sch || {}).panels || {}),
+        await withBusy(btn, () => trackTx(store.updateSchedule((sch) => ({ ...(sch || {}), panels: { ...((sch || {}).panels || {}),
           [cid]: { ...entry, room, chair: EFF().chairFor(slot, room) } } }),
           hEntry("schedule.edit", "Changed the locked panel for {cand}", { by: byWho(), cand: cid }))), "Panel saved");
       } catch { return; }
@@ -3341,7 +3353,7 @@ window.IV = {
       return;
     }
     try {
-      await withBusy(btn, () => track(store.updateConfig((c) => ({ panelOverrides: { ...(c.panelOverrides || {}), [cid]: entry } }),
+      await withBusy(btn, () => trackTx(store.updateConfig((c) => ({ panelOverrides: { ...(c.panelOverrides || {}), [cid]: entry } }),
         (before, patch) => hEntry("panel.save", "Saved a hand-made panel for {cand}",
           { by: byWho(), cand: cid, undo: panelUndo(before.panelOverrides, patch.panelOverrides, [cid]) }))), "Panel saved");
     } catch { return; }
@@ -3350,7 +3362,7 @@ window.IV = {
   },
   clearOverride: async (cid) => {
     try {
-      await track(store.updateConfig((c) => { const ov = { ...(c.panelOverrides || {}) }; delete ov[cid]; return { panelOverrides: ov }; },
+      await trackTx(store.updateConfig((c) => { const ov = { ...(c.panelOverrides || {}) }; delete ov[cid]; return { panelOverrides: ov }; },
         (before, patch) => hEntry("panel.reset", "Went back to the suggested panel for {cand}",
           { by: byWho(), cand: cid, undo: panelUndo(before.panelOverrides, patch.panelOverrides, [cid]) })));
     } catch { toast("Couldn't save. Check your connection", "err"); return; }
@@ -3370,7 +3382,7 @@ window.IV = {
     const hid = newHistoryId();
     let made = null;
     try {
-      await withBusy(btn, () => track(store.updateConfig((c) => ({ panelOverrides: {} }), (before, patch) => {
+      await withBusy(btn, () => trackTx(store.updateConfig((c) => ({ panelOverrides: {} }), (before, patch) => {
         const keys = Object.keys(before.panelOverrides || {});
         made = hEntry("panel.resetAll", `Reset ${keys.length} hand-made panel${keys.length === 1 ? "" : "s"}`,
           { by: byWho(), id: hid, undo: panelUndo(before.panelOverrides, patch.panelOverrides, keys) });
@@ -3379,7 +3391,7 @@ window.IV = {
     } catch { return; }
     renderPanels();
     toast("Hand-made panels reset.", "ok", { label: "Undo", run: async () => {
-      try { await track(applyUndo({ ...made, id: hid })); toast("Hand-made panels are back.", "ok"); renderPanels(); }
+      try { await trackTx(applyUndo({ ...made, id: hid })); toast("Hand-made panels are back.", "ok"); renderPanels(); }
       catch (e) { toast((e && e.message) || "Couldn't undo. Check your connection", "err"); }
     } });
   },
@@ -3395,7 +3407,7 @@ window.IV = {
     } else {
       if (!(await confirmDialog("Keep these answers for reference and ask both applicants to choose their times again? They will each answer under their own name.",
         { title: "Ask both again", yes: "Ask both again", danger: false }))) return;
-      try { await track(store.updateConfig((c) => ({ keptSurnameDocs: [...new Set([...(c.keptSurnameDocs || []), key])] }),
+      try { await trackTx(store.updateConfig((c) => ({ keptSurnameDocs: [...new Set([...(c.keptSurnameDocs || []), key])] }),
         hEntry("roster.rename", "Kept answers under a shared last name for reference; both applicants asked again", { by: byWho() }))); }
       catch { toast("Couldn't save. Check your connection", "err"); }
     }
@@ -3472,7 +3484,7 @@ window.IV = {
   // ---- R6: this round, past rounds, retention, restore
   saveRoundName: (btn) => withBusy(btn, async () => {
     const v = (($("#rnName") || {}).value || "").trim().slice(0, 120);
-    await track(store.updateState(() => ({ roundName: v }), hEntry("settings.save", "Changed the round name", { by: byWho() })));
+    await trackTx(store.updateState(() => ({ roundName: v }), hEntry("settings.save", "Changed the round name", { by: byWho() })));
   }, "Name saved").catch(() => {}),
   closeRound: () => { closeSetup(); rounds.begin(); },
   roundTakeover: (action) => rounds.takeoverAnd(action, S.meta || {}),
@@ -3561,7 +3573,7 @@ window.IV = {
   setRetention: async (v) => {
     const months = Number(v) || 0;
     try {
-      await track(store.updateConfig(() => ({ retentionMonths: months || null }),
+      await trackTx(store.updateConfig(() => ({ retentionMonths: months || null }),
         hEntry("settings.save", `Set how long to keep closed rounds: ${(RETENTION.find(([m]) => m === months) || [0, ""])[1].toLowerCase()}`, { by: byWho() })));
     } catch { toast("Couldn't save. Check your connection", "err"); return; }
     let list = []; try { list = (await store.listArchive()).filter((a) => a.status === "closed"); } catch { /* offline */ }
@@ -3624,7 +3636,7 @@ window.IV = {
     const e = ((ui.hist || {}).entries || []).find((x) => x.id === id);
     if (!e) return;
     if (!canUndo(e, S, undoneIds(ui.hist.entries)).ok) throw new Error("Can't undo: changed since.");
-    await track(applyUndo(e));
+    await trackTx(applyUndo(e));
     await IV.loadHistory();
   }, "Undone"),
   printSchedule: () => window.print(),
@@ -3772,7 +3784,7 @@ window.IV = {
       if (w.role !== r.role) n.role++; });
     const bits = [n.added && `${n.added} added`, n.renamed && `${n.renamed} renamed`, n.left && `${n.left} left`,
       n.back && `${n.back} back`, n.role && `${n.role} changed role`, n.removed && `${n.removed} removed`].filter(Boolean);
-    await track(store.updateConfig((c) => {
+    await trackTx(store.updateConfig((c) => {
       // merge by id onto the LATEST saved list: edits win for the people in this
       // draft, anyone added elsewhere meanwhile is kept, removals are explicit
       const saved = normalizeCommittee(c.committee && c.committee.length ? c.committee : COMMITTEE);
@@ -3822,7 +3834,7 @@ window.IV = {
     if (locked && !(await confirmDialog("Interviewers have already written notes under these questions. Only fix spelling or small wording. "
       + "To ask something different, wait for the next round.", { title: "Change the wording?", yes: "Save questions", danger: false }))) return;
     const n = after.questions.length;
-    await track(store.updateQuestions((cur) => {
+    await trackTx(store.updateQuestions((cur) => {
       // keep archived questions (they hold the text for notes the list no longer shows)
       const curN = normalizeQuestions(cur);
       const archived = curN ? curN.questions.filter((q) => q.archived && !after.questions.some((x) => x.id === q.id)) : [];
@@ -3835,7 +3847,7 @@ window.IV = {
   setChair: async (v) => {
     // swap the old chair for the new one in every saved override, keep chair present
     try {
-      await track(store.updateConfig((c) => {
+      await trackTx(store.updateConfig((c) => {
         const old = c.chair || CHAIR;
         return { chair: v, panelOverrides: pruneOverrides(c.panelOverrides, (mem) => {
           const set = new Set(mem.filter((n) => n !== old)); set.add(v);
@@ -3871,7 +3883,7 @@ window.IV = {
     if (warns.size && !(await confirmDialog([...warns].join("\n\n") + "\n\nAdd anyway?", { title: "Check these times", yes: "Add anyway", danger: false }))) return;
     let added = 0;
     try {
-      await timesBusy(() => withBusy(btn, () => track(store.updateTimes(SLOTS, (times, overrides) => {
+      await timesBusy(() => withBusy(btn, () => trackTx(store.updateTimes(SLOTS, (times, overrides) => {
         added = 0; // re-run safe: a transaction may retry this function
         const out = times.slice();
         fresh.forEach((t) => { if (!checkSlot(t, out).errors.length) { out.push(t); added++; } });
@@ -3910,7 +3922,7 @@ window.IV = {
     }
     // timesBusy holds live re-renders until ui.tEdit is cleared below, so our own
     // "Ask again" (which retires this id) isn't mistaken for someone else's removal
-    await timesBusy(() => withBusy(btn, () => track(store.updateTimes(SLOTS, (times, overrides) => {
+    await timesBusy(() => withBusy(btn, () => trackTx(store.updateTimes(SLOTS, (times, overrides) => {
       const i = times.findIndex((x) => x.id === d.id);
       if (i < 0) throw new Error("That time was just removed by someone else");
       const next = { ...t, id: reask ? newSlotId() : d.id };
@@ -3941,7 +3953,7 @@ window.IV = {
     const gone = new Set(cur.map((t) => t.id));
     try {
       await timesBusy(async () => {
-        await track(store.updateTimes(SLOTS, (times, overrides) => {
+        await trackTx(store.updateTimes(SLOTS, (times, overrides) => {
           Object.keys(overrides).forEach((c) => { if (gone.has(String(overrides[c].slot))) delete overrides[c]; });
           return { times: times.filter((t) => !gone.has(t.id)), overrides };
         }, hEntry("times.remove", `Removed ${what}`, { by: byWho() })));

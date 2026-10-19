@@ -143,11 +143,14 @@ Full design and reference data (committee, candidates, questions, rules) live in
   remove a module or an export in the release that stops using it; remove it one release later.
 - **Offline, a Firestore write waits; it never fails (R13).** The page keeps no offline copy, but
   Firestore holds an unsent write in memory and sends it when the connection is back, so its
-  promise stays pending (transactions alone give up, after about 9 s). Send every write through
-  `track()`: after 10 s it says "Not saved yet. Waiting for the connection..." (toast and `#updateLine`) until
-  the write lands or fails, and Log out waits for it. Never put a timeout that rejects on a real
-  write: it may still land later, and the rollback would then show it as not saved. Only a probe
-  that writes nothing (`checkName`) may give up. Pinned by `sim/emulator.mjs` `offlineSavesSaySo`.
+  promise stays pending. Send every write through `track()`: after 10 s it says "Not saved yet.
+  Waiting for the connection..." (toast and `#updateLine`) until the write lands or fails, and
+  Log out waits for it. Transactions are never held: offline they fail after about 4 to 12 s
+  (5 tries, random waits) and report it themselves, so they go through `trackTx()` (no "it will
+  save"); so does the restore (`track(p, { queued: false })`), whose chunks can pass 10 s online
+  and show their own progress. Never put a timeout that rejects on a real write: it may still
+  land later, and the rollback would then show it as not saved. Only a probe that writes nothing
+  (`checkName`, 20 s) may give up. Pinned by `sim/emulator.mjs` `offlineSavesSaySo`.
 - **Backups read the server fresh (`store.snapshotRaw`); never build one from page state.**
   The Admin page mixes this browser's echo into its state and fills in defaults. The
   Excel workbook is built from the same fresh read (`toState` + `withState`).
