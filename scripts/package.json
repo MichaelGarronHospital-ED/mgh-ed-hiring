@@ -12,7 +12,7 @@
   "type": "module",
   "private": "true",
   "dependencies": {
-    "firebase": "^12.19.0"
+    "firebase": "^13.0.0"
   },
   "overrides": {
     "@grpc/grpc-js": "^1.14.5"
