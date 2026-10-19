@@ -24,6 +24,40 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## R15: "Leave page?" while a save is waiting; no offline backup from memory (Oct 19 2026)
+
+The open TODO item "closing the tab while a save is still waiting loses it; an offline Admin
+backup can come from the page's memory". Page only: no rules, stored values or data change.
+
+- **"Leave page?" only while a save is waiting.** Offline, Firestore holds an unsent write in
+  this page's memory only (R13), so closing the tab then lost it with no word. Now the browser
+  asks its own "Leave page?" question (`beforeunload`) while any save is unconfirmed (the same
+  test Log out uses, `unconfirmed()`); a note or score still waiting out its pause is sent first
+  and counts. With nothing waiting it never asks.
+- **The page's own reloads never ask.** Every reload or navigation the page makes goes through
+  `leavePage()`, which turns the question off first: Log out (it has asked "Log out?" already,
+  so "Log out anyway" gets no second question), a sign-in that ended (its saves can't land now),
+  the self-reload after a new release (only when nothing is waiting) and the "Open email" link
+  (the page stays open, so the question comes back a second later). The one left to the browser
+  is the "Reload" link under the header, which the person taps themselves, like the browser's
+  reload button.
+- **A backup reflects the server, or is not made.** `store.snapshotRaw` read with `getDocs`,
+  which offline answers from what the page's listeners hold in memory, so an offline backup (and
+  the Excel file) looked complete but was this page's copy. It now reads with
+  `getDocsFromServer`, refuses an answer from the cache (an older cached page that hands over
+  only `getDocs`), and doesn't read at all while the browser says it is offline. The Admin sees
+  "Backup not made: you seem to be offline. Connect and try again." (or "Excel file not made:
+  ..."), and nothing downloads. Restore and "Bring back" say "You seem to be offline. Connect and
+  try again."; the close's saved copy already stopped with "Saving the copy didn't work".
+- **Tests.** NEW `tests/leave.test.mjs` (5), `tests/store.snapshot.test.mjs` +6 (the server read,
+  offline refused, cache refused, other errors passed on), `tests/logout.test.mjs` follows the new
+  reload; `sim/logout.mjs` + `leaveAsksOnlyWhileSaving` (the event and the browser's real
+  question on a reload, a rating and an applicant's pick) and `ownReloadsDontAsk` (Log out
+  anyway, the new-release reload); `sim/emulator.mjs` + `leaveAndBackupOffline` (real Firestore:
+  an offline save asks, the reload when the sign-in ends doesn't, an offline backup and Excel file
+  are refused, also when the browser still thinks it is online, and made once back online). The
+  new checks fail on R14.
+
 ## R14: Log out the same way as every ED tool (Oct 19 2026)
 
 The ED tools now share one Log out standard (words, look, place, behaviour). This release brings

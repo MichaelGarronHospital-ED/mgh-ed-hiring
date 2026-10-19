@@ -8,33 +8,33 @@
 //  enforced by the Firestore rules (see config.js and firestore.rules).
 // ============================================================================
 import { firebaseConfig, ORG_NAME, CHAIR, COMMITTEE, SLOTS, ONEDRIVE,
-         LOCAL_CODES, AUTH, SCREENING_DEADLINE, PASSWORDS_PAGE } from "./config.js?v=R14";
-import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R14";
-import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R14";
-import { autoPanels, buildPanel } from "./panels.js?v=R14";
+         LOCAL_CODES, AUTH, SCREENING_DEADLINE, PASSWORDS_PAGE } from "./config.js?v=R15";
+import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R15";
+import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R15";
+import { autoPanels, buildPanel } from "./panels.js?v=R15";
 import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell, lastKey,
-         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R14";
-import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R14";
+         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R15";
+import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R15";
 import { effectiveSlots, slotLabel, slotTimeLabel, groupByDate, checkSlot, splitRange, responseCounts,
-         newSlotId, isStructured, fmtDate } from "./slots.js?v=R14";
+         newSlotId, isStructured, fmtDate } from "./slots.js?v=R15";
 import { normalizeCommittee, interviewers as interviewersOf, pickable as pickableOf, memberName, memberStatus,
-         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R14";
+         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R15";
 import { fromLegacy, normalizeQuestions, liveQuestions, idsWithNotes, scoringStarted, checkEdit, newQuestionId,
-         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R14";
+         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R15";
 import { entry as hEntry, newHistoryId, panelUndo, shortlistUndo, screeningUndo, canUndo, undoneIds, textFor, whoFor, whenFor,
-         hashOf, toDate } from "./history.js?v=R14";
-import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R14";
-import { createRounds, pageId } from "./rounds.js?v=R14";
-import { signInPinned, roleOrderFor, isAdminHash } from "./signin.js?v=R14";
-import { icsEvent, icsCalendar } from "./ics.js?v=R14";
-import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R14";
+         hashOf, toDate } from "./history.js?v=R15";
+import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R15";
+import { createRounds, pageId } from "./rounds.js?v=R15";
+import { signInPinned, roleOrderFor, isAdminHash } from "./signin.js?v=R15";
+import { icsEvent, icsCalendar } from "./ics.js?v=R15";
+import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R15";
 import { STAGES, STAGE_WORD, stageOpen, stageClosedAt, roundOpen, bookingFor, thresholdOf, isOnList, closePlan, reopenPlan,
-         lockEntry } from "./stages.js?v=R14";
+         lockEntry } from "./stages.js?v=R15";
 
 // The release this page is. Must equal version.json and every "?v=" in every
 // import (tests/versions.test.mjs). A page that sees a different version.json
 // was updated underneath it (section "Reload notice" below).
-const RELEASE = "R14";
+const RELEASE = "R15";
 
 // Interview questions (H2): the saved document (interviews_meta/questions), the
 // only copy since R7 (the old encrypted js/data.js was deleted in R8).
@@ -235,7 +235,7 @@ function watchSignOut() {
     if (!had || ui.loggingOut) return;
     ss.del("ed_iv_signedin");
     ss.set("ed_iv_signedout", "1");
-    location.reload();
+    leavePage(() => location.reload());   // its saves can't land now: no "Leave page?" (R15)
   });
 }
 
@@ -448,7 +448,7 @@ async function loadFirestore() {
     db, collection: f.collection, doc: f.doc,
     setDoc: f.setDoc, updateDoc: f.updateDoc, onSnapshot: f.onSnapshot, runTransaction: f.runTransaction,
     deleteField: f.deleteField, writeBatch: f.writeBatch, serverTimestamp: f.serverTimestamp,
-    getDoc: f.getDoc, getDocs: f.getDocs, deleteDoc: f.deleteDoc, Timestamp: f.Timestamp,
+    getDoc: f.getDoc, getDocs: f.getDocs, getDocsFromServer: f.getDocsFromServer, deleteDoc: f.deleteDoc, Timestamp: f.Timestamp,
     query: f.query, orderBy: f.orderBy, limit: f.limit, startAfter: f.startAfter,
   };
 }
@@ -2962,6 +2962,36 @@ function track(promise, { queued = true } = {}) {
 // updateSchedule, txDoc, and applyUndo, which uses them)
 const trackTx = (promise) => track(promise, { queued: false });
 const unconfirmed = () => pendingWrites > 0 || Object.keys(inflight).length > 0;
+// R15: closing the tab, or leaving the page, while a save is still waiting
+// loses it (Firestore holds an unsent write in this page's memory only). So
+// the browser asks its own "Leave page?" question then, and only then: a note
+// or score still waiting out its pause is sent first and counts. The page's
+// own reloads and its email link go through leavePage(), which turns the
+// question off first: Log out has already asked (no second question), a
+// sign-in that ended can't save anyway, and the self-reload after a new
+// release only happens when nothing is waiting. The one reload left to the
+// browser's question is the "Reload" link under the header: the person chose
+// it, like the browser's own reload button, and a waiting save is worth the
+// question then. Never call location.reload() or set location.href anywhere
+// else (tests/leave.test.mjs).
+let leaving = false;
+function leavePage(go, { stays = false } = {}) {
+  leaving = true;
+  try { go(); } finally {
+    // an email link opens the mail app and this page stays: the question
+    // comes back once the browser has had its chance to ask
+    if (stays) setTimeout(() => { leaving = false; }, 1000);
+  }
+}
+window.addEventListener("beforeunload", (e) => {
+  if (leaving) return;
+  flushPending();
+  if (!unconfirmed()) return;
+  e.preventDefault();
+  e.returnValue = "";   // older browsers ask only when this is set too
+});
+// back to this page from the back/forward cache: it asks again from now on
+window.addEventListener("pageshow", (e) => { if (e.persisted) leaving = false; });
 window.IV = {
   mToggle: (i) => { ui.mOpen = ui.mOpen || {}; ui.mOpen[i] = !ui.mOpen[i]; rerenderSettings(); },
   toggleFlag: (id) => { if (!isOpen("screening")) return; const cur = (S.screening[key(ui.member, id)] || {}).flag; saved(store.setScreening(ui.member, id, { flag: !cur, reason: cur ? "" : (S.screening[key(ui.member, id)] || {}).reason || "" }), "screening"); },
@@ -3250,7 +3280,7 @@ window.IV = {
           ${withEmail.length && !link ? `<p class="small">Too many people for one email link. Copy the message and the addresses instead.</p>` : ""}`,
         buttons: [{ label: "Close", kind: "ghost", run: (k) => k.close() },
           { label: "Copy the message", kind: "tinted", run: async (k) => { if (await copyText(asText(msg) + (withEmail.length ? `\n\nBcc: ${withEmail.map((m) => m.email).join(", ")}` : "")) === "copied") toast("Copied", "ok"); } },
-          ...(withEmail.length && link ? [{ label: "Open email", kind: "filled", run: (k) => { window.location.href = link; k.close(); } }] : [])] }));
+          ...(withEmail.length && link ? [{ label: "Open email", kind: "filled", run: (k) => { leavePage(() => { window.location.href = link; }, { stays: true }); k.close(); } }] : [])] }));
       return;
     }
     const list = kind === "confirm"
@@ -3681,12 +3711,13 @@ window.IV = {
   // The Excel workbook is built from a FRESH server read too (not page state,
   // which mixes in this browser's echo), so it matches the backup file.
   exportCycle: (btn) => withBusy(btn, async () => {
-    downloadExcel(toState(await store.snapshotRaw()));
+    downloadExcel(toState(await serverRead("Excel file")));
   }, "Excel downloaded"),
   // H1a: the restorable backup, from a fresh one-shot read of every round
-  // collection (store.snapshotRaw), never from page memory.
+  // collection (store.snapshotRaw), never from page memory. Offline it is not
+  // made, and says so (R15).
   downloadBackup: (btn) => withBusy(btn || null, async () => {
-    const raw = await store.snapshotRaw();
+    const raw = await serverRead("Backup");
     const b = await buildBackup(raw, { exportedBy: "leadership", build: RELEASE });
     const name = backupFileName(b.round.name || `Hiring round ${new Date().getFullYear()}`);
     downloadFile(name, JSON.stringify(b, null, 1), "application/json");
@@ -4051,7 +4082,8 @@ async function logOut(keys) {
       await Promise.race([fbAuth.authFns.signOut(fbAuth.auth), new Promise((r) => setTimeout(r, 3000))]);
     } catch (e) { console.warn("Firebase signOut failed:", e && e.code); }
   }
-  location.reload();
+  // it has asked already (above): the browser must not ask again (R15)
+  leavePage(() => location.reload());
 }
 // Every Log out on the page (the header, "Who are you?", the applicant's
 // screens) is the shared plain text button, marked data-logout, the last item
@@ -4111,6 +4143,17 @@ function renderRoundLine() {
 // the stale view needs re-checking even when no snapshot arrives
 setInterval(() => { if (ui.role === "admin" && S && S.meta && S.meta.roundStatus === "closing") renderRoundLine(); }, 10000);
 
+// R15: the backup file and the Excel workbook come from the server or are not
+// made. Offline, store.snapshotRaw refuses (it never hands over this page's
+// memory), and this says plainly which file wasn't made.
+async function serverRead(what) {
+  try { return await store.snapshotRaw(); }
+  catch (e) {
+    if (e && e.code === "offline-read") throw new Error(`${what} not made: you seem to be offline. Connect and try again.`);
+    throw e;
+  }
+}
+
 // The Excel workbook from any state (a fresh read, or an archived round).
 function downloadExcel(st) {
   const t = withState(st, cycleTables);
@@ -4162,7 +4205,7 @@ function nothingToLose() {
 function tryReload() {
   clearTimeout(tryReload._t);
   if (!ui.newVersion || ss.get("ed_iv_reloaded_for") === ui.newVersion) return;
-  if (nothingToLose()) { ss.set("ed_iv_reloaded_for", ui.newVersion); location.reload(); return; }
+  if (nothingToLose()) { ss.set("ed_iv_reloaded_for", ui.newVersion); leavePage(() => location.reload()); return; }
   tryReload._t = setTimeout(tryReload, 30000);
 }
 // One line under the header for page-level news: a new release, and the

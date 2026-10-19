@@ -749,6 +749,74 @@ export const cases = {
     await closePage(ad2);
     return [...problems, ...log];
   },
+
+  // R15, with the real Firestore: (1) a save held offline makes the browser
+  // ask "Leave page?", and once it lands it doesn't; (2) the page's own reload
+  // when the sign-in ends, with a save still waiting, doesn't ask (that save
+  // can't land now); (3) an Admin backup or Excel file offline is not made from
+  // the page's memory: it says "Backup not made: you seem to be offline.
+  // Connect and try again." and downloads nothing, also when the browser still
+  // thinks it is online (the server read itself fails); back online it is made.
+  // (1) and (3) fail on R14 (no question; the backup came from memory).
+  async leaveAndBackupOffline() {
+    const problems = [];
+    const offline = (p) => p.setOfflineMode(true), online = (p) => p.setOfflineMode(false);
+    const asks = (p) => p.evaluate(() => { const e = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(e); return e.defaultPrevented; });
+    // (1)
+    const p = await freshPage({ log: [] });   // offline, the browser logs every failed request
+    await asED(p, "Bruns");
+    problems.push(...ok(!(await asks(p)), "asks with nothing waiting"));
+    await offline(p);
+    await p.evaluate(() => window.IV.rate("c-1", 5)); await sleep(300);
+    problems.push(...ok(await asks(p), "doesn't ask while an offline rating is waiting"));
+    await online(p);
+    const landed = await until(async () => { const d = await emu.getDocument("interviews_screening/Bruns~c-1"); return d && d.rating === 5; }, 20000, 500);
+    problems.push(...ok(landed, "the offline rating never landed"));
+    problems.push(...ok(await until(async () => !(await asks(p)), 5000, 200), "still asks after the rating landed"));
+    // (2) the sign-in ends (as a password change elsewhere does) while a save is
+    // held: the Write stream's requests are left unanswered
+    await p.setRequestInterception(true);
+    p.on("request", (r) => { if (r.isInterceptResolutionHandled()) return; if (/\/Write\/channel/.test(r.url())) return; r.continue(); });
+    await p.evaluate(() => window.IV.rate("c-2", 3)); await sleep(500);
+    problems.push(...ok(await asks(p), "doesn't ask while a held rating is waiting"));
+    const seen = [];
+    p.on("dialog", (d) => { seen.push(d.type()); d.accept().catch(() => {}); });
+    await p.evaluate(() => { sessionStorage.removeItem("__asked");
+      window.addEventListener("beforeunload", (e) => sessionStorage.setItem("__asked", String(e.defaultPrevented))); });
+    await Promise.all([p.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 15000 }),
+      p.evaluate((SDK) => { Promise.all([import(SDK + "firebase-auth.js"), import(SDK + "firebase-app.js")])
+        .then(([fbm, appm]) => fbm.signOut(fbm.getAuth(appm.getApp()))); }, SDK)]);
+    await p.waitForFunction("window.__edReady === true", { timeout: 15000 }); await sleep(500);
+    const asked = await p.evaluate(() => sessionStorage.getItem("__asked"));
+    problems.push(...ok(asked === "false" && !seen.length, `the reload when the sign-in ended asked "Leave page?" (${asked}, ${seen.join(",")})`));
+    problems.push(...ok(/You were logged out\. Please log in again\./.test(await p.$eval("#gerr", (e) => e.textContent)), "no \"You were logged out\" after the sign-in ended"));
+    await closePage(p);
+    // (3)
+    const a = await freshPage({ log: [] });
+    await asLeadership(a);
+    await a.evaluate(() => { window.__files = 0; const o = URL.createObjectURL; URL.createObjectURL = (b) => { window.__files++; return o.call(URL, b); };
+      HTMLAnchorElement.prototype.click = function () {}; });
+    const tryFile = (p, fn) => p.evaluate(async (fn) => {
+      const before = window.__files;
+      try { await window.IV[fn](document.createElement("button")); } catch { /* the page says why */ }
+      return { files: window.__files - before, toast: document.getElementById("toast").textContent.trim() };
+    }, fn);
+    const NOT = (what) => `${what} not made: you seem to be offline. Connect and try again.`;
+    await offline(a);
+    for (const [fn, what] of [["downloadBackup", "Backup"], ["exportCycle", "Excel file"]]) {
+      const r = await tryFile(a, fn);
+      problems.push(...ok(r.files === 0 && r.toast === NOT(what), `offline ${fn}: ${r.files} file(s), "${r.toast}"`));
+    }
+    // the browser still thinks it is online: the server read itself must fail
+    await a.evaluate(() => { Object.defineProperty(Navigator.prototype, "onLine", { get: () => true, configurable: true }); });
+    const r2 = await tryFile(a, "downloadBackup");
+    problems.push(...ok(r2.files === 0 && r2.toast === NOT("Backup"), `offline (browser says online) backup: ${r2.files} file(s), "${r2.toast}"`));
+    await online(a);
+    const made = await until(async () => { const r = await tryFile(a, "downloadBackup"); return r.files === 1 && r.toast === "Backup downloaded" ? r : null; }, 20000, 1000);
+    problems.push(...ok(made, "back online, the backup was not made"));
+    await closePage(a);
+    return problems;
+  },
 };
 
 // ---- R6 helpers -------------------------------------------------------------------
