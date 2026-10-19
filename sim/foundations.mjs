@@ -29,6 +29,16 @@ async function load(page, url, state, code) {
   await page.waitForFunction("window.__edReady === true", { timeout: 15000 });
   await signIn(page, code);
 }
+// load(), but always a real page load: going to the same address with only a
+// different #hash does not reload, so the state would never be read.
+async function loadFresh(page, url, state, code) {
+  await page.goto(url.split("#")[0], { waitUntil: "domcontentloaded" });   // this origin, so its storage can be set
+  await page.evaluate((s) => { localStorage.clear(); sessionStorage.clear(); localStorage.setItem("ed_interviews_v1", JSON.stringify(s)); }, state);
+  await page.goto("about:blank");
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction("window.__edReady === true", { timeout: 15000 });
+  await signIn(page, code);
+}
 async function confirmYes(page) {
   await page.waitForSelector("#confirmWrap:not(.hidden)", { timeout: 5000 });
   const text = await page.$eval("#confirmMsg", (el) => el.textContent);
@@ -49,6 +59,42 @@ async function openSetupCard(page, sec) {
 }
 
 const scenarios = {
+  // R12: the Admin link (index.html#admin, on the ED tools front page) shows an
+  // Admin sign-in screen; the plain link keeps the plain one; any password still
+  // works on either, and log out comes back to the same screen.
+  async adminLink(page, url) {
+    const problems = [];
+    const gate = () => page.evaluate(() => ({ title: document.querySelector("#gateTitle").textContent,
+      label: document.querySelector("#gate .gatelabel").firstChild.textContent.trim(), tab: document.title }));
+    await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
+    await page.goto("about:blank");   // arrive fresh, as from the front page (a hash change alone does not reload)
+    await page.goto(url + "#admin", { waitUntil: "domcontentloaded" });
+    await page.waitForFunction("window.__edReady === true", { timeout: 15000 });
+    let g = await gate();
+    problems.push(...ok(g.title === "Admin console", `Admin link title: ${g.title}`));
+    problems.push(...ok(g.label === "Admin password", `Admin link label: ${g.label}`));
+    problems.push(...ok(/Admin/.test(g.tab), `Admin link tab title: ${g.tab}`));
+    await loadFresh(page, url + "#admin", base(), "adminpw");
+    await landAsAdmin(page);
+    await Promise.all([page.waitForNavigation({ waitUntil: "domcontentloaded" }), page.click("#logout")]);
+    await page.waitForFunction("window.__edReady === true", { timeout: 15000 });
+    g = await gate();
+    const after = await page.evaluate(() => ({ hash: location.hash, gate: !document.querySelector("#gate").classList.contains("hidden")
+      && getComputedStyle(document.querySelector("#gate")).display !== "none" }));
+    problems.push(...ok(g.title === "Admin console" && after.hash === "#admin" && after.gate,
+      `after log out: ${g.title}, hash ${after.hash}, gate shown ${after.gate}`));
+    await loadFresh(page, url + "#admin", base(), "staffpw");   // an ED password on the Admin link still works
+    await page.waitForSelector("#memberpick:not(.hidden)", { timeout: 5000 }).catch(() => problems.push("ED password on the Admin link did not reach the name list"));
+    await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
+    await page.goto("about:blank");
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction("window.__edReady === true", { timeout: 15000 });
+    g = await gate();
+    problems.push(...ok(g.title === "Physician Hiring", `plain link title: ${g.title}`));
+    await load(page, url, base(), "adminpw");   // Admin on the plain link still works
+    await landAsAdmin(page).catch((e) => problems.push(e.message));
+    return problems;
+  },
   // review: the applicant's name form is never redrawn under them (a redraw
   // wiped what they had typed, or what the browser filled in)
   async nameFormSurvivesUpdates(page, url) {

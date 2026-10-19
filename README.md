@@ -234,7 +234,7 @@ What this enforces (server-side, not just UI):
 - The ED password (every ED physician has it) can **save but never delete**: no
   document in any collection, and it **cannot change the applicant list**. Adding,
   removing and deleting are Admin's.
-- Applicant availability can only hold `slots` (time id → in person / Zoom / either),
+- Applicant availability can only hold `slots` (time id → in person / virtual / either; virtual is stored as `zoom`),
   at most 200 times.
 - A sign-in lasts for that browser tab only. **Log out** signs out of Firebase too.
 - **Rules v2 (Oct 2026).** When Admin closes a stage (screening, availability or
@@ -332,7 +332,7 @@ it, so every Admin save would fail.
 - **Messages and calendar files (Panels).** For each panel: Email (to the applicant, to the
   panel) and Calendar (.ics for the panel, for the applicant); in the tab's More menu, "Calendar
   file for all interviews" and "Copy all applicant emails". Setup, Interview details holds the
-  location, Zoom link and contact used in them. Availability: "Email who we're waiting on"
+  location, virtual meeting link and contact used in them. Availability: "Email who we're waiting on"
   opens your mail app with the interviewers' work emails (from Setup) in Bcc; for applicants it
   copies a reminder (applicant emails are never stored). Nothing is sent by the tool itself.
 - **Applicants see their confirmed time (Panels, Send times to applicants, once locked).** An

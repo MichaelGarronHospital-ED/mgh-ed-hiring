@@ -32,7 +32,7 @@ export async function readPanels(page) {
       if (!cand) return;
       const meta = txtOf(head.querySelector(".muted"));          // "<time> · in person · edited"
       const bits = meta.split(" · ");
-      const modality = /in person/.test(meta) ? "ip" : /Zoom/i.test(meta) ? "zoom" : null;
+      const modality = /in person/.test(meta) ? "ip" : /virtual/i.test(meta) ? "zoom" : null;
       panels.push({
         cand,
         name: txtOf(head.querySelector(".name")),

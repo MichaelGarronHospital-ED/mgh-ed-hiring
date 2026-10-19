@@ -43,7 +43,7 @@ export function salutation(name) {
 }
 
 const whereText = (p, ctx, forPanel) => {
-  if (p.modality === "zoom") return ctx.zoomLink ? `By Zoom: ${ctx.zoomLink}` : "By Zoom. We will send the Zoom link before the interview.";
+  if (p.modality === "zoom") return ctx.zoomLink ? `Virtual: ${ctx.zoomLink}` : "Virtual. We will send the link before the interview.";
   const place = ctx.location || "the Emergency Department";
   return forPanel ? place + (p.room === 2 ? ", room 2" : "") : `In person: ${place}`;
 };
@@ -68,7 +68,7 @@ export function panelInvite(p, ctx) {
   const lines = [
     `You are on the interview panel for ${p.name}.`, "",
     `When: ${whenText(p.slot)}${p.room === 2 ? " (room 2)" : ""}`,
-    `Where: ${p.modality === "zoom" ? (ctx.zoomLink ? `Zoom, ${ctx.zoomLink}` : "Zoom (the link will follow)") : whereText(p, ctx, true)}`,
+    `Where: ${p.modality === "zoom" ? (ctx.zoomLink ? `Virtual, ${ctx.zoomLink}` : "Virtual (the link will follow)") : whereText(p, ctx, true)}`,
     `Panel: ${panel}`, "",
     `Score in Physician Hiring: ${ctx.staffLink}. Use the ED password.`,
   ];

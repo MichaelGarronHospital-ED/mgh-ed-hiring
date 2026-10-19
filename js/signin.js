@@ -8,7 +8,7 @@
 //  an email that ever pointed at another account is refused like a wrong
 //  password.
 // ============================================================================
-import { ls } from "./util.js?v=R11";
+import { ls } from "./util.js?v=R12";
 
 // R7c kept which email kind worked last here; nothing reads it any more
 ls.del("ed_iv_emailkind"); ls.del("ed_iv_emailkind_voting");
@@ -16,6 +16,20 @@ ls.del("ed_iv_emailkind"); ls.del("ed_iv_emailkind_voting");
 export const isRefusal = (e) => /wrong-password|invalid-credential|user-not-found|invalid-login-credentials|INVALID_LOGIN_CREDENTIALS|INVALID_PASSWORD|EMAIL_NOT_FOUND/i
   .test(String((e && (e.code || e.message)) || ""));
 export const refusal = (msg = "refused") => Object.assign(new Error(msg), { code: "auth/invalid-credential" });
+
+// The Admin link (index.html#admin, on the ED tools front page since R12).
+export const isAdminHash = (hash) => /^#admin\b/.test(String(hash || ""));
+
+// Which role account the gate tries first: Guest on an applicant link (every
+// applicant-facing link is index.html#apply), Admin on the Admin link, else the
+// role that last worked on this browser (`last`, not secret), else ED, then
+// Guest, then Admin. So nearly every sign-in costs no refused attempt, and the
+// worst case two. Every role is always tried: any password works on any link.
+export function roleOrderFor(hash, last) {
+  const order = ["committee", "candidate", "admin"];
+  const first = /^#apply/.test(String(hash || "")) ? "candidate" : isAdminHash(hash) ? "admin" : last;
+  return order.includes(first) ? [first, ...order.filter((r) => r !== first)] : order;
+}
 
 // signIn(email, password) -> credential (throws {code} on failure).
 // acct: { email, uid }.

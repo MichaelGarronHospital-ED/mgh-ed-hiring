@@ -89,6 +89,13 @@ Full design and reference data (committee, candidates, questions, rules) live in
   "More" menu (`details.more`) closes on a pick (focus returns to its button), an outside tap,
   Escape or tabbing out (`sim/foundations.mjs` `moreMenuFocus`). A card's subtitle wraps on a
   phone with only its last word and the (i) kept together (`sim/stages.mjs` `infoIconsFitAPhone`).
+- **The Admin link (R12)** is `index.html#admin`, the "Admin console" link on the ED tools
+  front page: same page, an Admin-worded sign-in screen, Admin tried first (`isAdminHash` and
+  `roleOrderFor` in `js/signin.js`, unit tested in `tests/signin.test.mjs`). Any password must keep working on it and on the plain link (`sim/foundations.mjs`
+  `adminLink`). Never make it a separate page or a separate role.
+- **Interviews are "virtual", never "Zoom", in visible words (R12, Alvin).** The stored value
+  stays `"zoom"` (rules, availability maps, panels, backups), as do `zoomLink`, `idZoom` and the
+  `.zoom` CSS classes; never rename those. `tests/wording.test.mjs` pins the visible words.
 
 ## Non-negotiables
 

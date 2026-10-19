@@ -6,6 +6,6 @@
 //  redirect and does not load it. The rules of the old change (js/passwords.js)
 //  were deleted in R10.
 // ============================================================================
-import { PASSWORDS_PAGE } from "./config.js?v=R11";
+import { PASSWORDS_PAGE } from "./config.js?v=R12";
 
 location.replace(PASSWORDS_PAGE);
