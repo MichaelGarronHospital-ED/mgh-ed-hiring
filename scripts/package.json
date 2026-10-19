@@ -13,5 +13,8 @@
   "private": "true",
   "dependencies": {
     "firebase": "^12.19.0"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.5"
   }
 }

@@ -169,7 +169,7 @@ async function runSeed(seed, b, srv) {
     if (roll < 0.22) {
       act = "score";
       await ensureBox();
-      await page.click("#overallIn", { clickCount: 3 }); await page.keyboard.press("Backspace");
+      await page.click("#overallIn", { count: 3 }); await page.keyboard.press("Backspace");
       M.box = ""; M.pending = null;
       const valid = r() < 0.75;
       const s = valid ? `${int(r, 1, 4)}${r() < 0.2 ? "," : "."}${c.fp + 1}` : pick(r, INVALID);
@@ -192,7 +192,7 @@ async function runSeed(seed, b, srv) {
       await page.keyboard.press("Tab"); commit(c); M.focus = null;
     } else if (roll < 0.56) {
       act = "clear"; await ensureBox();
-      await page.click("#overallIn", { clickCount: 3 }); await page.keyboard.press("Backspace");
+      await page.click("#overallIn", { count: 3 }); await page.keyboard.press("Backspace");
       M.box = ""; M.pending = null; await page.keyboard.press("Enter"); commit(c); M.focus = null;
     } else if (roll < 0.70) {
       const how = pick(r, ["click", "select", "ios"]);

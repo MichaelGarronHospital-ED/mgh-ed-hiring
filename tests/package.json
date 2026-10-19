@@ -8,8 +8,20 @@
     "test": "firebase emulators:exec --only firestore --project mgh-ed-hiring-test \"node --test\""
   },
   "devDependencies": {
-    "@firebase/rules-unit-testing": "^4.0.1",
-    "firebase": "^11.3.0",
-    "firebase-tools": "^13.29.1"
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "firebase": "^12.19.0",
+    "firebase-tools": "^15.34.0"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.5",
+    "firebase-tools": {
+      "chokidar": "^4.0.3"
+    },
+    "@google-cloud/pubsub": {
+      "@opentelemetry/core": "^2.8.0"
+    },
+    "gaxios": {
+      "uuid": "^11.1.1"
+    }
   }
 }

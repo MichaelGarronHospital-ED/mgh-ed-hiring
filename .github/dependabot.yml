@@ -1,0 +1,63 @@
+# Dependabot: once a month, one pull request per folder (every update in that
+# folder grouped together), so the tests run once on the whole set.
+#
+# Nothing here is shipped: the site has no build step and no npm dependencies.
+# tests/ and sim/ are the test tools, scripts/ the maintenance scripts. The
+# Firebase SDK the site loads from gstatic (js/app.js) is updated by hand, as a
+# release (tests/versions.test.mjs). GitHub Actions stay pinned by commit hash;
+# Dependabot updates the hash and the version comment together.
+# Security updates still come as soon as they are found, outside this schedule,
+# also grouped (one pull request per folder).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2
+    groups:
+      actions:
+        applies-to: version-updates
+        patterns: ["*"]
+      actions-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: "/tests"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2
+    groups:
+      tests:
+        applies-to: version-updates
+        patterns: ["*"]
+      tests-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: "/sim"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2
+    groups:
+      sim:
+        applies-to: version-updates
+        patterns: ["*"]
+      sim-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: "/scripts"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2
+    groups:
+      scripts:
+        applies-to: version-updates
+        patterns: ["*"]
+      scripts-security:
+        applies-to: security-updates
+        patterns: ["*"]

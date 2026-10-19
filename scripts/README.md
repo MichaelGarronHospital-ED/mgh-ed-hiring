@@ -15,6 +15,9 @@ the password for `admin@ed-hiring.app` (the Admin account; the script checks its
 admin code typed into the app. Admin is required to *read* `interviews_scores`
 and `interviews_screening` at all, so the committee code will not work here.
 
+`package.json` overrides `@grpc/grpc-js` to 1.14 (Firestore's Node build asks for 1.9, which has
+known security issues; same as `../tests`), so `npm audit` is clean.
+
 **Every script that writes is a dry run by default.** None of them writes
 anything until you add `--apply`, and each prints exactly what it would do
 first. Firestore has no per-document history, so there is no undo: read the dry
