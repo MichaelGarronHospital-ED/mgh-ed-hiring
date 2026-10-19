@@ -153,6 +153,20 @@ header.page .muted { margin:2px 0 0; }
 .who b { color:var(--ed-ink); }
 .tag { background:var(--ed-fill); color:var(--ed-ink); border-radius:999px; padding:3px 10px;
   font:600 var(--ed-text-xs)/1.4 var(--ed-font); }
+/* Log out (R14, the ED tools standard): the shared `ed-btn ed-btn-plain`, the
+   last item at the top right of every signed-in screen. It never shrinks or
+   wraps; the title beside it gives way first. The negative margin lines its
+   words up with the page edge, as the old text link's were. */
+[data-logout] { flex:none; white-space:nowrap; margin-right:-8px; }
+/* On the narrowest phones (320 px) Admin's header holds the gear too, and the
+   title went onto two lines: the ED badge beside it is only decoration, so it
+   goes first. */
+@media (max-width:360px) { #appHeader .brandmark { display:none; } }
+/* Signed-in screens drawn as a card ("Who are you?", the applicant's name and
+   paused screens) have no header, so Log out sits in a bar at the top right,
+   in the same place as the header's (same width and edge). */
+.overlay.withbar { flex-direction:column; align-items:center; }
+.gatebar { width:100%; max-width:calc(var(--ed-maxw) - 2 * var(--ed-gutter)); display:flex; justify-content:flex-end; flex:none; }
 
 /* ---- deadline banner ------------------------------------------------------
    The state modifier is `past`, NOT `info`. renderBanner sets the whole
@@ -391,7 +405,7 @@ label.chip { font-size:var(--ed-text-sm); padding:6px 12px; }
   details.raters > summary { padding:11px 0; margin:-11px 0; }
 }
 @media print {
-  nav.tabs, .primary, .btn, .flagbtn, .savebtn, .linky, #toast, .banner, .note.tip,
+  nav.tabs, .primary, .btn, .flagbtn, .savebtn, .linky, [data-logout], #toast, .banner, .note.tip,
   .hint, .tooltip { display:none !important; }
   body { background:var(--ed-bg); }
   .card, details.section { box-shadow:none; border:1px solid var(--ed-line); break-inside:avoid; }

@@ -56,7 +56,7 @@ no fixed version; the emulator only watches one rules file), `uuid` 11 for `gaxi
 Drop an override once `npm ls <name>` shows the parent asks for a fixed version itself.
 Dependabot (`../.github/dependabot.yml`) proposes updates once a month, one pull request here.
 
-**Last run: Oct 19 2026 (R13, new tool versions): 325 tests, 325 pass.** On Oct 16 2026 (rules v2): 190 tests, 190 pass. The 109 from before v2 run
+**Last run: Oct 19 2026 (R14, Log out): 333 tests, 333 pass** (R13, new tool versions: 325). On Oct 16 2026 (rules v2): 190 tests, 190 pass. The 109 from before v2 run
 unchanged, which is the proof the page that was live before v2 still works;
 [`rules-v2.test.mjs`](rules-v2.test.mjs) adds 81 for stages, the round close, the
 applicant reply and notices, change history, the close-round archive and its lease

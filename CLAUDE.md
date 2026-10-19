@@ -28,14 +28,14 @@ Full design and reference data (committee, candidates, questions, rules) live in
 - **Run locally:** `python3 -m http.server 8000`, then open http://localhost:8000.
   This talks to the **live** Firebase project and real applicant data: look, don't edit.
   For a safe copy with Firebase switched off, use `sim/make-site.sh` (builds `sim/site/`).
-- **Rules tests:** `cd tests && npm install && npm test` (Firestore emulator; needs Java). 325 tests
-  on R13 (rules tests and the unit tests of the pure modules).
+- **Rules tests:** `cd tests && npm install && npm test` (Firestore emulator; needs Java). 333 tests
+  on R14 (rules tests and the unit tests of the pure modules).
 - **Real page against the emulators:** `cd sim && npm run emulator` (needs `tests/` installed
   and Java). Runs the real FirestoreStore and Firebase Auth against local emulators with the
   real `firestore.rules` (`sim/emulator.mjs`); the patch that points the copy at the emulators
   lives only in `make-site.sh --emulator`, never in the repo's own files.
 - **UI simulations:** `cd sim && npm install && npm test`. Any Chrome works; set `$CHROME`
-  to pick one. All pass (15/15 scenarios, e2e, score, auth, fuzz; R13, 2026-10-19; emulator 20/20). Fixture
+  to pick one. All pass (15/15 scenarios, e2e, score, auth, logout 5/5, fuzz; R14, 2026-10-19; emulator 20/20). Fixture
   interview dates come from `daysAhead()` in `sim/drive.mjs`: never hard-code a
   date, because once it passes the tool adds a "date is in the past" dialog and the
   time-edit scenarios fail (that, not macOS, was the old 13/15).
@@ -174,10 +174,22 @@ Full design and reference data (committee, candidates, questions, rules) live in
 - **Sign-ins last one tab, and Log out signs out of Firebase.** `tabOnly()` sets
   `browserSessionPersistence` (memory only if sessionStorage is blocked) before the first
   attempt; a reload in the same tab resumes from it (`resume()`, `auth.authStateReady()`),
-  and a sign-in that ends while the page is open returns to the gate with "You were signed
-  out. Please sign in again." Both Log out buttons call `logOut()`, which
+  and a sign-in that ends while the page is open returns to the gate with "You were logged
+  out. Please log in again." Every Log out button calls `logOut()`, which
   signs out before reloading. Firebase's default kept the sign-in in the browser for good and
   let a second tab switch the first tab's account. Pinned by `sim/auth.mjs`.
+- **Log out follows the ED tools standard (R14).** Every signed-in screen has exactly one Log out:
+  `ed-btn ed-btn-plain`, `type="button"`, `data-logout`, the words "Log out", the last item at the
+  top right. The header has `#logout`; "Who are you?" (`#pickLogout`) and the applicant's name and
+  paused screens (`logoutBar()`) have no header, so a `.gatebar` puts it in the same place; the
+  applicant's times page uses `logoutBtn()`. Never draw one by hand: `logoutBtn()` and
+  `paintLogout()` read `ui.logoutBusy`, so it says "Logging out…" (disabled) while `logOut()`
+  waits, even after a redraw. The question after 5 s is "Log out?" with Stay and Log out anyway,
+  focus on Stay (`focus: "no"`, only there: Enter must never throw away unsaved work);
+  the gate then says "You are logged out." (`ed_iv_bye`: `"1"` adds the scores line, as R13 set
+  it; `"plain"` none). At 320 px the header's ED badge is hidden so the title stays on one line.
+  The header says "Logged in as" (R14). Pinned by `tests/logout.test.mjs` and `sim/logout.mjs`
+  (320, 390 and 1280 px).
 - **The access level is called "Admin" in every word anyone sees (R10, Alvin, Oct 18 2026).**
   It was "Leadership" until R9. Only visible words changed: the account emails (`admin@`,
   voting's `leadership@`), uids, stored values (`by: "leadership"`, `shortlistBy: "leadership"`,
