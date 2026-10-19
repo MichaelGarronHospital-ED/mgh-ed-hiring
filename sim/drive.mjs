@@ -110,7 +110,8 @@ export async function tab(page, t) {
   await sleep(60);
 }
 
-// Click one segment button ("In person" / "Zoom" / "Either") for a time id.
+// Click one segment button ("In person" / "Virtual" / "Either") for a time id
+// (value "ip" / "zoom" / "either": virtual is still stored as "zoom").
 // Matches the inline handler the app actually renders, so a rename of the
 // handler breaks the sim loudly instead of silently clicking nothing.
 export async function setSlot(page, handler, id, value) {

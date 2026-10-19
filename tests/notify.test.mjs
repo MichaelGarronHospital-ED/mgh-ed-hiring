@@ -16,7 +16,8 @@ test("the applicant email", () => {
   assert.ok(m.body.includes("Wednesday, March 3, 9:00 to 10:00 am\nIn person: ED admin office, 2nd floor"));
   assert.ok(m.body.includes("Please confirm by Saturday, February 27. You can confirm, or tell us you can no longer come, here: " + ctx.applicantLink));
   const z = applicantInvite({ ...p, modality: "zoom" }, ctx);
-  assert.ok(z.body.includes("We will send the Zoom link before the interview."));
+  assert.ok(z.body.includes("Virtual. We will send the link before the interview."));
+  assert.ok(!/zoom/i.test(z.body), "the applicant email says virtual, never Zoom");
 });
 
 test("the panel email", () => {

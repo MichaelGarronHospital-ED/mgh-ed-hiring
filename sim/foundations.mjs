@@ -49,6 +49,39 @@ async function openSetupCard(page, sec) {
 }
 
 const scenarios = {
+  // R12: the Admin link (index.html#admin, on the ED tools front page) shows an
+  // Admin sign-in screen; the plain link keeps the plain one; any password still
+  // works on either, and log out comes back to the same screen.
+  async adminLink(page, url) {
+    const problems = [];
+    const gate = () => page.evaluate(() => ({ title: document.querySelector("#gateTitle").textContent,
+      label: document.querySelector("#gate .gatelabel").firstChild.textContent.trim(), tab: document.title }));
+    await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
+    await page.goto("about:blank");   // arrive fresh, as from the front page (a hash change alone does not reload)
+    await page.goto(url + "#admin", { waitUntil: "domcontentloaded" });
+    await page.waitForFunction("window.__edReady === true", { timeout: 15000 });
+    let g = await gate();
+    problems.push(...ok(g.title === "Admin console", `Admin link title: ${g.title}`));
+    problems.push(...ok(g.label === "Admin password", `Admin link label: ${g.label}`));
+    problems.push(...ok(/Admin/.test(g.tab), `Admin link tab title: ${g.tab}`));
+    await load(page, url + "#admin", base(), "adminpw");
+    await landAsAdmin(page);
+    await page.click("#logout"); await sleep(400);
+    await page.waitForFunction("window.__edReady === true", { timeout: 15000 });
+    g = await gate();
+    problems.push(...ok(g.title === "Admin console", `after log out: ${g.title}`));
+    await load(page, url + "#admin", base(), "staffpw");   // an ED password on the Admin link still works
+    await page.waitForSelector("#memberpick:not(.hidden)", { timeout: 5000 }).catch(() => problems.push("ED password on the Admin link did not reach the name list"));
+    await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
+    await page.goto("about:blank");
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction("window.__edReady === true", { timeout: 15000 });
+    g = await gate();
+    problems.push(...ok(g.title === "Physician Hiring", `plain link title: ${g.title}`));
+    await load(page, url, base(), "adminpw");   // Admin on the plain link still works
+    await landAsAdmin(page).catch((e) => problems.push(e.message));
+    return problems;
+  },
   // review: the applicant's name form is never redrawn under them (a redraw
   // wiped what they had typed, or what the browser filled in)
   async nameFormSurvivesUpdates(page, url) {

@@ -24,6 +24,24 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## R12: an Admin link on the ED tools front page; "virtual" instead of "Zoom" (Oct 19 2026)
+
+Alvin asked for both. Page only: no rules, stored values or data change.
+
+- **Admin link.** `index.html#admin` (the "Admin console" link under Physician Hiring on the
+  ED tools front page) shows a sign-in screen titled "Admin console" with an "Admin password"
+  box, like Motion Voting's console, and tries the Admin account first. Any password still
+  works there, and the plain link is unchanged, so no bookmark or applicant link breaks. Log
+  out comes back to the same screen. Pinned by `sim/foundations.mjs` `adminLink`.
+- **Virtual, not Zoom, in every word anyone sees:** the in person / virtual / either buttons,
+  both availability grids (the letter is now V), Panels, Setup's "Virtual meeting link", the
+  applicant's confirmed-time card, both emails, calendar files and the Excel and print
+  exports. The stored value is still `"zoom"` (rules, saved answers, backups), and so are
+  `zoomLink`, the `idZoom` box and the CSS classes. `tests/wording.test.mjs` fails on any
+  "Zoom" left in a page or script outside a comment.
+
+---
+
 ## R11: tabs in the order of the work, a quieter page (built Oct 18 2026)
 
 Alvin asked for "as minimal and simple as possible, anyone can pick it up" (spec:

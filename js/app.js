@@ -8,33 +8,33 @@
 //  enforced by the Firestore rules (see config.js and firestore.rules).
 // ============================================================================
 import { firebaseConfig, ORG_NAME, CHAIR, COMMITTEE, SLOTS, ONEDRIVE,
-         LOCAL_CODES, AUTH, SCREENING_DEADLINE, PASSWORDS_PAGE } from "./config.js?v=R11";
-import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R11";
-import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R11";
-import { autoPanels, buildPanel } from "./panels.js?v=R11";
+         LOCAL_CODES, AUTH, SCREENING_DEADLINE, PASSWORDS_PAGE } from "./config.js?v=R12";
+import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R12";
+import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R12";
+import { autoPanels, buildPanel } from "./panels.js?v=R12";
 import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell, lastKey,
-         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R11";
-import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R11";
+         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R12";
+import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R12";
 import { effectiveSlots, slotLabel, slotTimeLabel, groupByDate, checkSlot, splitRange, responseCounts,
-         newSlotId, isStructured, fmtDate } from "./slots.js?v=R11";
+         newSlotId, isStructured, fmtDate } from "./slots.js?v=R12";
 import { normalizeCommittee, interviewers as interviewersOf, pickable as pickableOf, memberName, memberStatus,
-         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R11";
+         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R12";
 import { fromLegacy, normalizeQuestions, liveQuestions, idsWithNotes, scoringStarted, checkEdit, newQuestionId,
-         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R11";
+         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R12";
 import { entry as hEntry, newHistoryId, panelUndo, shortlistUndo, screeningUndo, canUndo, undoneIds, textFor, whoFor, whenFor,
-         hashOf, toDate } from "./history.js?v=R11";
-import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R11";
-import { createRounds, pageId } from "./rounds.js?v=R11";
-import { signInPinned } from "./signin.js?v=R11";
-import { icsEvent, icsCalendar } from "./ics.js?v=R11";
-import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R11";
+         hashOf, toDate } from "./history.js?v=R12";
+import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R12";
+import { createRounds, pageId } from "./rounds.js?v=R12";
+import { signInPinned } from "./signin.js?v=R12";
+import { icsEvent, icsCalendar } from "./ics.js?v=R12";
+import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R12";
 import { STAGES, STAGE_WORD, stageOpen, stageClosedAt, roundOpen, bookingFor, thresholdOf, isOnList, closePlan, reopenPlan,
-         lockEntry } from "./stages.js?v=R11";
+         lockEntry } from "./stages.js?v=R12";
 
 // The release this page is. Must equal version.json and every "?v=" in every
 // import (tests/versions.test.mjs). A page that sees a different version.json
 // was updated underneath it (section "Reload notice" below).
-const RELEASE = "R11";
+const RELEASE = "R12";
 
 // Interview questions (H2): the saved document (interviews_meta/questions), the
 // only copy since R7 (the old encrypted js/data.js was deleted in R8).
@@ -115,13 +115,17 @@ const ROLE_EMAIL = { admin: AUTH.adminEmail, committee: AUTH.committeeEmail, can
 const roleOfUser = (u) => (u && Object.keys(AUTH.uids).find((r) => AUTH.uids[r] === u.uid)) || null;
 const isRefusal = (e) => /wrong-password|invalid-credential|user-not-found|invalid-login-credentials/.test(String((e && e.code) || ""));
 const SIGNED_OUT_MSG = "You were signed out. Please sign in again.";
+// The Admin link (index.html#admin, on the ED tools front page since R12) opens
+// the same page with an Admin sign-in screen. Any password still works there
+// and on the plain link, so an old bookmark never locks anyone out.
+const isAdminLink = () => /^#admin\b/.test(location.hash);
 // Guest first on an applicant link (every applicant-facing link is
-// index.html#apply); else the role that last worked on this browser (not
-// secret); else ED, then Guest, then Admin. So nearly every sign-in costs
-// no refused attempt, and the worst case two.
+// index.html#apply), Admin first on the Admin link; else the role that last
+// worked on this browser (not secret); else ED, then Guest, then Admin. So
+// nearly every sign-in costs no refused attempt, and the worst case two.
 function roleOrder() {
   const order = ["committee", "candidate", "admin"];
-  const first = /^#apply/.test(location.hash) ? "candidate" : ls.get("ed_iv_lastrole");
+  const first = /^#apply/.test(location.hash) ? "candidate" : isAdminLink() ? "admin" : ls.get("ed_iv_lastrole");
   return order.includes(first) ? [first, ...order.filter((r) => r !== first)] : order;
 }
 async function unlock(typed) {
@@ -1079,7 +1083,7 @@ function slotRows(slots, map, handler, disabled = false) {
   const seg = (id, v, l, cur) => `<button class="${cur === v ? "on " + v : ""}" aria-pressed="${cur === v}" onclick="${handler}('${id}','${v}')"${dis}>${l}</button>`;
   return groupByDate(slots).map((g) => `<div class="slotday">${escapeHtml(g.title)}</div>` + g.items.map((t) => {
     const cur = map[t.id], label = slotTimeLabel(t);
-    return `<div class="slabel">${escapeHtml(label)}</div><div><span class="seg" role="group" aria-label="${escapeHtml(slotLabel(t))}">${seg(t.id, "ip", "In person", cur)}${seg(t.id, "zoom", "Zoom", cur)}${seg(t.id, "either", "Either", cur)}</span></div>`;
+    return `<div class="slabel">${escapeHtml(label)}</div><div><span class="seg" role="group" aria-label="${escapeHtml(slotLabel(t))}">${seg(t.id, "ip", "In person", cur)}${seg(t.id, "zoom", "Virtual", cur)}${seg(t.id, "either", "Either", cur)}</span></div>`;
   }).join("")).join("");
 }
 
@@ -1089,7 +1093,8 @@ function slotRows(slots, map, handler, disabled = false) {
 //
 // Three things are encoded per cell, deliberately not by colour alone (a letter
 // carries the same information for anyone who can't separate the hues):
-//   P in person · Z Zoom · E either · blank not available
+//   P in person · V virtual · E either · blank not available
+// (the stored value for virtual stays "zoom", and so do the CSS classes)
 //
 // The right-hand column answers the question the grid is actually for: can a
 // panel run at this time? That is computed with buildPanel — the same function
@@ -1107,8 +1112,8 @@ function availGrid() {
   const ivMap = {};
   for (const m of committee) ivMap[m.id] = { g: m.gender, avail: S.availIv[m.id] || {} };
 
-  const GLYPH = { ip: "P", zoom: "Z", either: "E" };
-  const WORD = { ip: "in person", zoom: "Zoom", either: "either" };
+  const GLYPH = { ip: "P", zoom: "V", either: "E" };
+  const WORD = { ip: "in person", zoom: "virtual", either: "either" };
 
   const head = `<tr><th class="tlab">Time</th>` +
     people.map((m) => `<th class="ivcol"><span data-tip="${escapeHtml(m.name)}${m.id === chair ? " (chair)" : ""}">` +
@@ -1141,7 +1146,7 @@ function availGrid() {
   // R11: the short key only; "grey is not available, hover a square for the
   // name" is on the card's (i)
   const legend = `<div class="glegend">
-    <span><i class="sw ip">P</i> in person</span><span><i class="sw zoom">Z</i> Zoom</span>
+    <span><i class="sw ip">P</i> in person</span><span><i class="sw zoom">V</i> virtual</span>
     <span><i class="sw either">E</i> either</span><span>★ chair</span></div>`;
 
   return `<div class="gridwrap" tabindex="0" role="region" aria-label="Interviewer availability (scrolls sideways)"><table class="avgrid"><thead>${head}</thead><tbody>${body}</tbody></table></div>${legend}`;
@@ -1182,8 +1187,8 @@ function candGrid() {
     why = res.why || {};
   } catch { bookedAt = {}; scheduled = 0; why = {}; }
 
-  const GLYPH = { ip: "P", zoom: "Z", either: "E" };
-  const WORD = { ip: "in person", zoom: "Zoom", either: "either" };
+  const GLYPH = { ip: "P", zoom: "V", either: "E" };
+  const WORD = { ip: "in person", zoom: "virtual", either: "either" };
   const answers = (c) => liveAnswers(availForCand(c)).length;
 
   const head = `<tr><th class="tlab">Time</th>` +
@@ -1248,7 +1253,7 @@ function candGrid() {
     : "";
 
   const legend = `<div class="glegend">
-    <span><i class="sw ip">P</i> in person</span><span><i class="sw zoom">Z</i> Zoom</span>
+    <span><i class="sw ip">P</i> in person</span><span><i class="sw zoom">V</i> virtual</span>
     <span><i class="sw either">E</i> either</span><span><i class="sw either booked">E</i> interviewing then</span></div>`;
 
   return `${capacity}
@@ -1629,7 +1634,7 @@ function idleInterviewers(unused, res) {
   return `<p class="small" style="margin-top:.55rem"><b class="warn">${ICON.warn} Not on any panel:</b></p>
     ${line(group.silent, "no availability sent yet.")}
     ${line(group.wrongTimes, `free only at times nobody is being interviewed in, or only in a format
-      (in person / Zoom) the interviews booked then aren't running in.`)}
+      (in person / virtual) the interviews booked then aren't running in.`)}
     ${line(group.squeezed, `free while interviews are running, but every panel they could have joined
       is full, and taking a seat there would either unbalance that panel or leave somebody else with
       nothing. Another interview time at a time they are free is what fixes this.`)}`;
@@ -1750,7 +1755,7 @@ function replyBadge(cid) {
 function renderPanels() {
   const { interviewers: committee, chair, slots, overrides, nameOf: memName } = EFF();
   const nameOf = (id) => (cand(id) || {}).name || id;
-  const modPill = (m) => `<span class="pill ${m === "ip" ? "ip" : "zoom"}">${m === "ip" ? "In-person" : "Zoom"}</span>`;
+  const modPill = (m) => `<span class="pill ${m === "ip" ? "ip" : "zoom"}">${m === "ip" ? "In-person" : "Virtual"}</span>`;
   const res = computePanels();
 
   let html = hint(locked() ? "The locked schedule. Edit any panel by hand." : "Suggested panels, one applicant per time. Edit any by hand.");
@@ -1821,7 +1826,7 @@ function renderPanels() {
     let row = `<div class="prow${editing ? " open" : ""}">
       <div class="row center"><div class="grow">
           <div class="name">${escapeHtml(nameOf(p.cand))}</div>
-          <div class="small muted">${escapeHtml(slotName(p.slot))}${p.room === 2 ? " · Room 2" : ""} · ${p.modality === "ip" ? "in person" : "Zoom"}${p.manual && !p.locked ? " · edited" : ""}</div>
+          <div class="small muted">${escapeHtml(slotName(p.slot))}${p.room === 2 ? " · Room 2" : ""} · ${p.modality === "ip" ? "in person" : "virtual"}${p.manual && !p.locked ? " · edited" : ""}</div>
         </div>
         <button class="btn ghost small" onclick="IV.editPanel('${p.cand}')">${editing ? "Done" : "Edit"}</button></div>
       <div class="small members">${p.members.map((m) => escapeHtml(memName(m))).join(" · ")}</div>
@@ -1888,7 +1893,7 @@ function panelEditor(p) {
   const roomSel = EFF().rooms[String(p.slot)] === 2 ? `<span class="muted small">Room</span><span class="seg" role="group" aria-label="Room">
     ${[1, 2].map((r) => `<button type="button" class="${curRoom === r ? "on" : ""}" aria-pressed="${curRoom === r}" onclick="IV.setOvRoom('${p.cand}',${r},this)">Room ${r}</button>`).join("")}</span>` : "";
   const modSel = `<span class="seg" id="ovmod-${p.cand}" role="group" aria-label="Modality">
-    ${["ip", "zoom"].map((mv) => `<button type="button" class="${curMod === mv ? "on" : ""}" aria-pressed="${curMod === mv}" onclick="IV.setOvMod('${p.cand}','${mv}',this)">${mv === "ip" ? "In person" : "Zoom"}</button>`).join("")}</span>`;
+    ${["ip", "zoom"].map((mv) => `<button type="button" class="${curMod === mv ? "on" : ""}" aria-pressed="${curMod === mv}" onclick="IV.setOvMod('${p.cand}','${mv}',this)">${mv === "ip" ? "In person" : "Virtual"}</button>`).join("")}</span>`;
   // pass the committee INDEX (not the name) so names with quotes/apostrophes
   // (e.g. O'Brien) can't break the inline handler.
   const memToggles = committee.map((m, idx) => {
@@ -2112,7 +2117,7 @@ function listStatus(c) {
 }
 
 // One place builds every table, so the workbook and the printout cannot drift.
-const MOD_WORD = { ip: "In person", zoom: "Zoom", either: "Either" };
+const MOD_WORD = { ip: "In person", zoom: "Virtual", either: "Either" };
 function cycleTables() {
   const { committee, chair, slots, nameOf } = EFF();
   // Everyone on the list plus anyone else whose input is saved (people who left
@@ -2211,7 +2216,7 @@ function renderSettings() {
     <button class="btn tinted small" onclick="IV.saveThreshold(this)">Save rule</button>`;
   const ii = EFF().interviewInfo;
   const infoBody = `<label class="ed-label" for="idLoc">In-person location</label><input id="idLoc" type="text" value="${escapeHtml(ii.location || "")}" placeholder="ED admin office, 2nd floor"/>
-    <label class="ed-label" for="idZoom" style="margin-top:10px">Zoom link</label><input id="idZoom" type="text" value="${escapeHtml(ii.zoomLink || "")}" placeholder="https://..."/>
+    <label class="ed-label" for="idZoom" style="margin-top:10px">Virtual meeting link</label><input id="idZoom" type="text" value="${escapeHtml(ii.zoomLink || "")}" placeholder="https://..."/>
     <label class="ed-label" for="idContact" style="margin-top:10px">Contact for applicants</label><input id="idContact" type="text" value="${escapeHtml(ii.contact || "")}" placeholder="MGHEmergencyDepartmentAdministration@tehn.ca"/>
     <div style="margin-top:.6rem"><button class="btn tinted small" onclick="IV.saveInfo(this)">Save details</button></div>`;
   const committeeBody = committeeEditor();
@@ -2502,7 +2507,7 @@ function icsFor(p, forApplicant) {
   const t = EFF().slots.find((x) => x.id === String(p.slot));
   if (!t || !isStructured(t)) return null;
   const m = panelMsg(p), ctx = msgCtx();
-  const where = p.modality === "zoom" ? (ctx.zoomLink || "Zoom") : [ctx.location, p.room === 2 ? "room 2" : ""].filter(Boolean).join(", ");
+  const where = p.modality === "zoom" ? (ctx.zoomLink || "Virtual") : [ctx.location, p.room === 2 ? "room 2" : ""].filter(Boolean).join(", ");
   return icsEvent({ uid: `${p.slot}-${p.room || 1}-${p.cand}@mgh-ed-hiring`, date: t.date, start: t.start, end: t.end,
     summary: forApplicant ? "Interview with the MGH Emergency Department" : `ED physician interview: ${salutation(m.name)}`,
     description: forApplicant ? "" : `Panel: ${[m.chairName ? `${m.chairName} (chair)` : null, ...m.memberNames.filter((x) => x !== m.chairName)].filter(Boolean).join(", ")}`,
@@ -2803,7 +2808,7 @@ function renderCandidate() {
       ${notice === undefined ? `<p class="hint">Loading…</p>` : notice ? noticeCard(notice)
         : booking === "closed" ? `<div class="card">${empty(ICON.calendar, "Booking is closed", "If you need to change your times, reply to our email.")}</div>`
         : slots.length ? `<h2 class="pagetitle">When can you interview?</h2>
-        ${hint("Choose in person, Zoom or either for every time you can make. In person is preferred.")}
+        ${hint("Choose in person, virtual or either for every time you can make. In person is preferred.")}
         <div class="card"><div class="slotgrid">${slotRows(slots, map, "CAND.set")}</div></div>
         <p class="hint">Saved as you tap. Come back and change it any time. We'll confirm your final time by email.</p>`
         : `<div class="card">${empty(ICON.calendar, "Times not posted yet", "The interview times haven't been published yet. Please check back soon.")}</div>`}
@@ -2815,7 +2820,7 @@ function renderCandidate() {
 function noticeCard(n) {
   const when = whenText({ date: n.date, start: n.start, end: n.end, label: n.label });
   const where = n.format === "zoom"
-    ? (n.zoomLink ? `By Zoom. Link: <a href="${escapeHtml(n.zoomLink)}" target="_blank" rel="noopener">${escapeHtml(n.zoomLink)}</a>` : "By Zoom. We will send the Zoom link before the interview.")
+    ? (n.zoomLink ? `Virtual. Link: <a href="${escapeHtml(n.zoomLink)}" target="_blank" rel="noopener">${escapeHtml(n.zoomLink)}</a>` : "Virtual. We will send the link before the interview.")
     : `In person at ${escapeHtml(n.location || "the Emergency Department")}.`;
   const r = store.replyEcho(ui.candLast) || {};
   const past = n.replyBy && daysUntil(n.replyBy) < 0;
@@ -4179,6 +4184,13 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ------------------------------------------------------------------- boot
+// The Admin link says so on its sign-in screen, like Motion Voting's console.
+if (isAdminLink()) {
+  $("#gateTitle").textContent = "Admin console";
+  const lead = $("#gate .overlay-box > p.muted"); if (lead) lead.textContent = "Physician Hiring";
+  const label = $("#gate .gatelabel"); if (label && label.firstChild) label.firstChild.textContent = "Admin password";
+  document.title = "Physician Hiring · Admin";
+}
 $("#gateForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const btn = $("#gbtn"), val = $("#gpw").value.trim();
