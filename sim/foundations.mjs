@@ -29,6 +29,16 @@ async function load(page, url, state, code) {
   await page.waitForFunction("window.__edReady === true", { timeout: 15000 });
   await signIn(page, code);
 }
+// load(), but always a real page load: going to the same address with only a
+// different #hash does not reload, so the state would never be read.
+async function loadFresh(page, url, state, code) {
+  await page.goto(url.split("#")[0], { waitUntil: "domcontentloaded" });   // this origin, so its storage can be set
+  await page.evaluate((s) => { localStorage.clear(); sessionStorage.clear(); localStorage.setItem("ed_interviews_v1", JSON.stringify(s)); }, state);
+  await page.goto("about:blank");
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction("window.__edReady === true", { timeout: 15000 });
+  await signIn(page, code);
+}
 async function confirmYes(page) {
   await page.waitForSelector("#confirmWrap:not(.hidden)", { timeout: 5000 });
   const text = await page.$eval("#confirmMsg", (el) => el.textContent);
@@ -64,13 +74,16 @@ const scenarios = {
     problems.push(...ok(g.title === "Admin console", `Admin link title: ${g.title}`));
     problems.push(...ok(g.label === "Admin password", `Admin link label: ${g.label}`));
     problems.push(...ok(/Admin/.test(g.tab), `Admin link tab title: ${g.tab}`));
-    await load(page, url + "#admin", base(), "adminpw");
+    await loadFresh(page, url + "#admin", base(), "adminpw");
     await landAsAdmin(page);
-    await page.click("#logout"); await sleep(400);
+    await Promise.all([page.waitForNavigation({ waitUntil: "domcontentloaded" }), page.click("#logout")]);
     await page.waitForFunction("window.__edReady === true", { timeout: 15000 });
     g = await gate();
-    problems.push(...ok(g.title === "Admin console", `after log out: ${g.title}`));
-    await load(page, url + "#admin", base(), "staffpw");   // an ED password on the Admin link still works
+    const after = await page.evaluate(() => ({ hash: location.hash, gate: !document.querySelector("#gate").classList.contains("hidden")
+      && getComputedStyle(document.querySelector("#gate")).display !== "none" }));
+    problems.push(...ok(g.title === "Admin console" && after.hash === "#admin" && after.gate,
+      `after log out: ${g.title}, hash ${after.hash}, gate shown ${after.gate}`));
+    await loadFresh(page, url + "#admin", base(), "staffpw");   // an ED password on the Admin link still works
     await page.waitForSelector("#memberpick:not(.hidden)", { timeout: 5000 }).catch(() => problems.push("ED password on the Admin link did not reach the name list"));
     await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
     await page.goto("about:blank");

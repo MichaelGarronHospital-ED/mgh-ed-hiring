@@ -25,7 +25,7 @@ import { entry as hEntry, newHistoryId, panelUndo, shortlistUndo, screeningUndo,
          hashOf, toDate } from "./history.js?v=R12";
 import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R12";
 import { createRounds, pageId } from "./rounds.js?v=R12";
-import { signInPinned } from "./signin.js?v=R12";
+import { signInPinned, roleOrderFor, isAdminHash } from "./signin.js?v=R12";
 import { icsEvent, icsCalendar } from "./ics.js?v=R12";
 import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R12";
 import { STAGES, STAGE_WORD, stageOpen, stageClosedAt, roundOpen, bookingFor, thresholdOf, isOnList, closePlan, reopenPlan,
@@ -118,16 +118,9 @@ const SIGNED_OUT_MSG = "You were signed out. Please sign in again.";
 // The Admin link (index.html#admin, on the ED tools front page since R12) opens
 // the same page with an Admin sign-in screen. Any password still works there
 // and on the plain link, so an old bookmark never locks anyone out.
-const isAdminLink = () => /^#admin\b/.test(location.hash);
-// Guest first on an applicant link (every applicant-facing link is
-// index.html#apply), Admin first on the Admin link; else the role that last
-// worked on this browser (not secret); else ED, then Guest, then Admin. So
-// nearly every sign-in costs no refused attempt, and the worst case two.
-function roleOrder() {
-  const order = ["committee", "candidate", "admin"];
-  const first = /^#apply/.test(location.hash) ? "candidate" : isAdminLink() ? "admin" : ls.get("ed_iv_lastrole");
-  return order.includes(first) ? [first, ...order.filter((r) => r !== first)] : order;
-}
+const isAdminLink = () => isAdminHash(location.hash);
+// Which account to try first (signin.js roleOrderFor, unit tested).
+const roleOrder = () => roleOrderFor(location.hash, ls.get("ed_iv_lastrole"));
 async function unlock(typed) {
   if (!isConfigured()) {
     // local mode (sim/make-site.sh fills LOCAL_CODES in its copy; blank in the repo)
@@ -1499,7 +1492,8 @@ function validatePanel(members, slot, modality, room = 1) {
   if (slot != null) present.forEach((m) => {
     const av = (S.availIv[m] || {})[String(slot)];
     if (av === undefined) warns.push(`${nameOf(m)} hasn't said they can do that time`);
-    else if (modality && !(av === "either" || av === modality)) warns.push(`${nameOf(m)} can't do ${modality} that time`);
+    else if (modality && !(av === "either" || av === modality))
+      warns.push(`${nameOf(m)} ${modality === "zoom" ? "can't join virtually" : "can't be there in person"} at that time`);
   });
   return { ok: sizeOk && chairOk && balanced && members.length === present.length && !warns.length, sizeOk, chairOk, balanced, size, warns };
 }
@@ -3702,8 +3696,10 @@ window.IV = {
   },
   exportSchedule: () => {
     const res = computePanels();
-    const rows = [["Candidate", "Time", "Modality", "Panel"]];
-    res.panels.forEach((p) => rows.push([(cand(p.cand) || {}).name || p.cand, slotName(p.slot), p.modality, p.members.join(" / ")]));
+    const { nameOf } = EFF();
+    const rows = [["Candidate", "Time", "Format", "Panel"]];
+    res.panels.forEach((p) => rows.push([(cand(p.cand) || {}).name || p.cand, slotName(p.slot), MOD_WORD[p.modality] || p.modality,
+      p.members.map(nameOf).join(" / ")]));
     res.unschedulable.forEach((id) => rows.push([(cand(id) || {}).name || id, "UNSCHEDULED", "", ""]));
     downloadFile("schedule.csv", rows.map((r) => r.map(csvCell).join(",")).join("\r\n")); toast("Schedule exported", "ok");
   },

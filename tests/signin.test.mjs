@@ -68,3 +68,23 @@ test("a network error or a pause is passed on as it is", async () => {
   await assert.rejects(() => signInPinned(signIn, ACCT, "x"), (e) => e.code === "auth/too-many-requests");
   assert.equal(calls.length, 1);
 });
+
+// R12: which account the gate tries first. Every role is always in the list, so
+// any password works on any link; only the order changes.
+test("roleOrderFor: Guest first on #apply, Admin first on #admin, else the last role, else ED", () => {
+  const { roleOrderFor, isAdminHash } = signin;
+  assert.deepEqual(roleOrderFor("#apply", "admin"), ["candidate", "committee", "admin"]);
+  assert.deepEqual(roleOrderFor("#admin", "committee"), ["admin", "committee", "candidate"]);
+  assert.deepEqual(roleOrderFor("#admin", null), ["admin", "committee", "candidate"]);
+  assert.deepEqual(roleOrderFor("", "candidate"), ["candidate", "committee", "admin"]);
+  assert.deepEqual(roleOrderFor("", "admin"), ["admin", "committee", "candidate"]);
+  assert.deepEqual(roleOrderFor("", null), ["committee", "candidate", "admin"]);
+  assert.deepEqual(roleOrderFor("", "nonsense"), ["committee", "candidate", "admin"]);
+  assert.deepEqual(roleOrderFor("#administrator", null), ["committee", "candidate", "admin"]);
+  for (const h of ["#apply", "#admin", "", "#x"]) for (const l of [null, "admin", "committee", "candidate"])
+    assert.deepEqual([...roleOrderFor(h, l)].sort(), ["admin", "candidate", "committee"]);
+  assert.equal(isAdminHash("#admin"), true);
+  assert.equal(isAdminHash("#admin-x"), true);
+  assert.equal(isAdminHash("#administrator"), false);
+  assert.equal(isAdminHash(""), false);
+});

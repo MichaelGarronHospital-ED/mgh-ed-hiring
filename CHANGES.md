@@ -38,7 +38,13 @@ Alvin asked for both. Page only: no rules, stored values or data change.
   applicant's confirmed-time card, both emails, calendar files and the Excel and print
   exports. The stored value is still `"zoom"` (rules, saved answers, backups), and so are
   `zoomLink`, the `idZoom` box and the CSS classes. `tests/wording.test.mjs` fails on any
-  "Zoom" left in a page or script outside a comment.
+  "Zoom" left in a page or script outside a comment, or a word map that says otherwise.
+- Review fixes: a hand-made panel's warning read "can't do zoom that time" (now "can't join
+  virtually at that time" / "can't be there in person at that time"); the Panels Export CSV
+  printed the stored value and member ids (now a Format column, In person / Virtual, and
+  names, like the Excel workbook). Which account is tried first moved to `signin.js`
+  (`roleOrderFor`, unit tested); the `adminLink` sim waits for log out's reload and checks
+  the gate and `#admin` come back.
 
 ---
 

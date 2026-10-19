@@ -21,3 +21,15 @@ test("no page or script shows the word Zoom", () => {
   }
   assert.deepEqual(bad, []);
 });
+
+// Words made at run time from the stored value: every word map says virtual, and
+// no message prints the stored modality itself (a Panels warning once read
+// "can't do zoom that time", the schedule CSV "zoom").
+test("word maps say virtual, and no message prints the stored modality", () => {
+  const app = readFileSync(root + "js/app.js", "utf8");
+  const maps = [...app.matchAll(/\bzoom:\s*"([^"]*)"/g)].map((m) => m[1]);
+  assert.ok(maps.length >= 3, "the word maps were not found");
+  for (const w of maps) if (w.length > 1) assert.match(w, /^virtual$/i);
+  assert.doesNotMatch(app, /can't do \$\{modality\}/);
+  assert.doesNotMatch(app, /slotName\(p\.slot\), p\.modality,/);
+});
