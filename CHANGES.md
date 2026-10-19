@@ -43,25 +43,28 @@ the hiring tool to it. No rules, stored values or data change.
   redraws underneath it). A second tap does nothing more.
 - **The question, in the standard words.** If changes are still unsaved after 5 seconds: "Log out?"
   / "Some changes haven't been saved yet. If you log out now they will be lost." with **Stay** and
-  **Log out anyway**. Stay gives the button back (and the focus, if it had it). What counts as
+  **Log out anyway**. The first focus is on Stay, so Enter never throws away unsaved work (only
+  this question: every other dialog still opens on its main button). Stay gives the button back
+  (and the focus, if it had it). What counts as
   unsaved, the 5 seconds, the 3 second cap on the Firebase sign-out and the reload are unchanged.
-  The confirm dialog takes a label for its cancel button (`confirmDialog(msg, { no })`, "Cancel"
-  otherwise).
+  The confirm dialog takes a label for its cancel button and where focus starts
+  (`confirmDialog(msg, { no, focus: "no" })`; "Cancel" and the main button otherwise).
 - **After logging out** the sign-in screen says "You are logged out." (before, it said something
   only when this device held scores). When it did, the second sentence stays, reworded: "Your
   scores are saved, but this device won't show them to you again when you log back in."
 - **Words.** "You were signed out. Please sign in again." (a sign-in that ends while the page is
   open) is now "You were logged out. Please log in again." Code names (`SIGNED_OUT_MSG`,
   `ed_iv_signedout`, `signOut`) and the gate's Enter button are unchanged. The header's "Signed in
-  as" is unchanged (outside this standard's scope).
+  as" now says "Logged in as" (`#whoLine` unchanged).
 - No module or export was removed. `firestore.rules` is unchanged.
 
-Tests: NEW `tests/logout.test.mjs` (7: the button, its place, the dialog words and Stay, the
-"Logging out…" label, the safety logic kept, no "Sign out" or "Logout" in visible words); rules and
-unit tests 332/332. NEW `sim/logout.mjs` (in `npm test`, 5 scenarios on LocalStore with saves held
+Tests: NEW `tests/logout.test.mjs` (8: the button, its place, the dialog words, Stay and its focus,
+the "Logging out…" label, the safety logic kept, "Logged in as", no "Sign out" or "Logout" in
+visible words); rules and unit tests 333/333. NEW `sim/logout.mjs` (in `npm test`, 5 scenarios on LocalStore with saves held
 back in its own copy): one Log out on every signed-in screen (ED and Admin "Who are you?", ED,
 Admin and Admin-as-member headers, the applicant's name, times and paused screens) at 320, 390
-and 1280 px; "Logging out…" then the question after 5 seconds, Stay, Log out anyway; a save that
+and 1280 px; "Logging out…" then the question after 5 seconds, opening on Stay (Enter stays), the
+next dialog opening on its main button again, Log out anyway; a save that
 lands in time logs out with no question; a redraw while waiting; the scores line. `sim/auth.mjs`
 (stub Firebase) adds Log out on "Who are you?" and on the applicant's name screen, both signing
 out of Firebase, and "You are logged out." on the gate. All new checks fail on R13. The header was

@@ -174,7 +174,7 @@ edited or removed, or a whole day at once; changes show on everyone's screen liv
 ## One link, three audiences
 The same `index.html` serves everyone; what you can do depends on the password you type:
 - **ED physician / committee**: the ED password → Screen · Availability · Score.
-- **Admin**: the (independent) Admin password → signed in as "Admin" with no name to
+- **Admin**: the (independent) Admin password → logged in as "Admin" with no name to
   pick: the collation, both availability grids, Panels · Ranking · Setup. An admin who
   also reviews taps **review as a member** in the header to pick their name, which
   adds their own screening, availability and the Score tab.
@@ -365,7 +365,7 @@ it, so every Admin save would fail.
   was deleted in R8), and every backup file carries it. Notes stay attached to their question.
 - **Log out** (top right of every signed-in screen) first saves anything still pausing and waits
   up to 5 seconds for unsaved changes, reading "Logging out…" meanwhile. If some are still
-  unsaved it asks ("Log out?", Stay or Log out anyway) before throwing any away, then clears this
+  unsaved it asks ("Log out?", Stay or Log out anyway, Stay focused) before throwing any away, then clears this
   browser's copy of your scores. The sign-in screen then says "You are logged out." (R14)
 - **With no connection** (R13), a change waits in the open page and saves when the connection is
   back. After 10 seconds the page says "Not saved yet. Waiting for the connection. Keep this page

@@ -9,7 +9,8 @@
 //   - while it waits for saves the button is disabled and reads "Logging out…",
 //     also after the applicant's page redraws underneath it;
 //   - saves still unconfirmed after 5 seconds ask "Log out?" with "Stay" and
-//     "Log out anyway"; Stay gives the button back and logs nothing out;
+//     "Log out anyway", focus on Stay (Enter stays); Stay gives the button back
+//     and logs nothing out;
 //   - saves that land in time log out with no question;
 //   - the gate then says "You are logged out." (plus the scores line when this
 //     device held scores).
@@ -166,7 +167,12 @@ const scenarios = {
     d = await dialog(page);
     problems.push(...ok(d.shown && d.title === "Log out?" && d.msg === LOST && d.no === "Stay" && d.yes === "Log out anyway",
       `the question: ${JSON.stringify(d)}`));
-    await page.click("#confirmNo"); await sleep(200);
+    // the first focus is on Stay, so Enter keeps the unsaved work
+    const focused = await page.evaluate(() => document.activeElement && document.activeElement.id);
+    problems.push(...ok(focused === "confirmNo", `the question opens with focus on ${focused}, not Stay`));
+    await page.keyboard.press("Enter"); await sleep(200);
+    problems.push(...ok(!(await dialog(page)).shown, "Enter did not close the question"));
+    problems.push(...ok(await page.$eval("#app", (e) => !e.classList.contains("hidden")), "Enter logged out (it should Stay)"));
     m = await logoutAt(page);
     problems.push(...ok(m.text === "Log out" && !m.disabled, `after Stay: "${m.text}", disabled ${m.disabled}`));
     problems.push(...ok(await page.$eval("#app", (e) => !e.classList.contains("hidden")), "Stay left the page"));
@@ -177,6 +183,8 @@ const scenarios = {
     await page.evaluate((rel) => { import(`./js/util.js?v=${rel}`).then((u) => { u.confirmDialog("x"); }); }, rel); await sleep(200);
     d = await dialog(page);
     problems.push(...ok(d.shown && d.no === "Cancel", `the next dialog's cancel button says "${d.no}"`));
+    const nextFocus = await page.evaluate(() => document.activeElement && document.activeElement.id);
+    problems.push(...ok(nextFocus === "confirmYes", `the next dialog opens with focus on ${nextFocus} (other dialogs unchanged: yes)`));
     await page.keyboard.press("Escape"); await sleep(100);
     // again, and this time log out anyway
     await page.click("#logout");

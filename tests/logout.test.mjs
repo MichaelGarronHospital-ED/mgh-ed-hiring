@@ -48,7 +48,8 @@ test("while it waits it reads Logging out…, and the question is the standard o
   assert.match(app, /function logoutLabel\(\) \{ return ui\.logoutBusy \? "Logging out…" : "Log out"; \}/);
   const fn = app.match(/async function logOut\(keys\) \{[\s\S]*?\n\}\n/)[0];
   assert.match(fn, /ui\.logoutBusy = true; paintLogout\(\);[\s\S]*flushPending\(\)/, "the button changes before the wait starts");
-  assert.match(fn, /confirmDialog\("Some changes haven't been saved yet\. If you log out now they will be lost\.",\s*\{ title: "Log out\?", yes: "Log out anyway", no: "Stay" \}\)/);
+  assert.match(fn, /confirmDialog\("Some changes haven't been saved yet\. If you log out now they will be lost\.",\s*(?:\/\/[^\n]*\n\s*)?\{ title: "Log out\?", yes: "Log out anyway", no: "Stay", focus: "no" \}\)/,
+    "the question, with the first focus on Stay (Enter must never throw away unsaved work)");
   assert.match(fn, /if \(!ok\) \{\s*\/\/[^\n]*\n\s*ui\.logoutBusy = false; paintLogout\(\);/, "Stay gives the button back");
   // the safety logic stays as it was (H12, R13): the 5 s wait, the 3 s cap on signOut, the reload
   assert.match(fn, /while \(unconfirmed\(\) && Date\.now\(\) - t0 < 5000\)/);
@@ -56,6 +57,9 @@ test("while it waits it reads Logging out…, and the question is the standard o
   assert.match(fn, /location\.reload\(\);\n\}/);
   // the confirm dialog takes the cancel button's label, and puts "Cancel" back for every other dialog
   assert.match(util, /no\.textContent = opts\.no \|\| "Cancel";/);
+  // focus on the cancel button only when asked: every other dialog keeps its focus on yes (or alt)
+  assert.match(util, /\(opts\.focus === "no" \? no : opts\.alt && alt \? alt : yes\)\.focus\(\);/);
+  assert.equal([...app.matchAll(/focus: "no"/g)].length, 1, "only Log out's question focuses its cancel button");
 });
 
 test("the gate says \"You are logged out.\" after Log out", () => {
@@ -67,6 +71,11 @@ test("the gate says \"You are logged out.\" after Log out", () => {
 test("Log out never shrinks or wraps, and on a 320 px phone the decoration goes first", () => {
   assert.match(css, /\[data-logout\] \{ flex:none; white-space:nowrap;/);
   assert.match(css, /@media \(max-width:360px\) \{ #appHeader \.brandmark \{ display:none; \} \}/);
+});
+
+test("the header says \"Logged in as\", not \"Signed in as\"", () => {
+  assert.match(html, /<span>Logged in as <b id="whoLine"><\/b><\/span>/);
+  for (const f of files) assert.doesNotMatch(read(f).replace(/<!--[\s\S]*?-->/g, ""), />\s*Signed in as\b|"Signed in as\b/, f);
 });
 
 test("no visible words say Sign out, Signed out or Logout", () => {

@@ -4029,7 +4029,8 @@ async function logOut(keys) {
   while (unconfirmed() && Date.now() - t0 < 5000) await new Promise((r) => setTimeout(r, 100));
   if (unconfirmed()) {
     const ok = await confirmDialog("Some changes haven't been saved yet. If you log out now they will be lost.",
-      { title: "Log out?", yes: "Log out anyway", no: "Stay" });
+      // focus on Stay: Enter must never throw away unsaved work
+      { title: "Log out?", yes: "Log out anyway", no: "Stay", focus: "no" });
     if (!ok) {
       // Stay: the button is back as it was, with focus on it if it had it
       ui.logoutBusy = false; paintLogout();

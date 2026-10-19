@@ -163,6 +163,8 @@ export async function copyText(text, { title = "Copy this text" } = {}) {
 // Styled confirm dialog → Promise<boolean>. Falls back to window.confirm if the
 // dialog markup isn't present. `opts` = { title, yes, no, danger, alt }. `no` is
 // the cancel button's label ("Cancel" unless given; Log out's says "Stay", R14).
+// `focus: "no"` puts the first focus on that button, so Enter keeps what is there
+// (Log out's question, R14); otherwise it is on `yes` (or `alt`), as before.
 // With `alt` (a label) a third button appears and resolves to the string "alt".
 export function confirmDialog(msg, opts = {}) {
   const wrap = document.getElementById("confirmWrap");
@@ -177,7 +179,7 @@ export function confirmDialog(msg, opts = {}) {
   if (alt) { alt.textContent = opts.alt || ""; alt.hidden = !opts.alt; }
   const prevFocus = document.activeElement;
   wrap.classList.remove("hidden");
-  (opts.alt && alt ? alt : yes).focus();
+  (opts.focus === "no" ? no : opts.alt && alt ? alt : yes).focus();
   return new Promise((resolve) => {
     const done = (v) => {
       wrap.classList.add("hidden");

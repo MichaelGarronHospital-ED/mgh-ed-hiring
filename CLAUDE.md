@@ -28,7 +28,7 @@ Full design and reference data (committee, candidates, questions, rules) live in
 - **Run locally:** `python3 -m http.server 8000`, then open http://localhost:8000.
   This talks to the **live** Firebase project and real applicant data: look, don't edit.
   For a safe copy with Firebase switched off, use `sim/make-site.sh` (builds `sim/site/`).
-- **Rules tests:** `cd tests && npm install && npm test` (Firestore emulator; needs Java). 332 tests
+- **Rules tests:** `cd tests && npm install && npm test` (Firestore emulator; needs Java). 333 tests
   on R14 (rules tests and the unit tests of the pure modules).
 - **Real page against the emulators:** `cd sim && npm run emulator` (needs `tests/` installed
   and Java). Runs the real FirestoreStore and Firebase Auth against local emulators with the
@@ -184,10 +184,12 @@ Full design and reference data (committee, candidates, questions, rules) live in
   paused screens (`logoutBar()`) have no header, so a `.gatebar` puts it in the same place; the
   applicant's times page uses `logoutBtn()`. Never draw one by hand: `logoutBtn()` and
   `paintLogout()` read `ui.logoutBusy`, so it says "Logging out…" (disabled) while `logOut()`
-  waits, even after a redraw. The question after 5 s is "Log out?" with Stay and Log out anyway;
+  waits, even after a redraw. The question after 5 s is "Log out?" with Stay and Log out anyway,
+  focus on Stay (`focus: "no"`, only there: Enter must never throw away unsaved work);
   the gate then says "You are logged out." (`ed_iv_bye`: `"1"` adds the scores line, as R13 set
   it; `"plain"` none). At 320 px the header's ED badge is hidden so the title stays on one line.
-  Pinned by `tests/logout.test.mjs` and `sim/logout.mjs` (320, 390 and 1280 px).
+  The header says "Logged in as" (R14). Pinned by `tests/logout.test.mjs` and `sim/logout.mjs`
+  (320, 390 and 1280 px).
 - **The access level is called "Admin" in every word anyone sees (R10, Alvin, Oct 18 2026).**
   It was "Leadership" until R9. Only visible words changed: the account emails (`admin@`,
   voting's `leadership@`), uids, stored values (`by: "leadership"`, `shortlistBy: "leadership"`,
