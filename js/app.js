@@ -8,33 +8,33 @@
 //  enforced by the Firestore rules (see config.js and firestore.rules).
 // ============================================================================
 import { firebaseConfig, ORG_NAME, CHAIR, COMMITTEE, SLOTS, ONEDRIVE,
-         LOCAL_CODES, AUTH, SCREENING_DEADLINE, PASSWORDS_PAGE } from "./config.js?v=R12";
-import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R12";
-import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R12";
-import { autoPanels, buildPanel } from "./panels.js?v=R12";
+         LOCAL_CODES, AUTH, SCREENING_DEADLINE, PASSWORDS_PAGE } from "./config.js?v=R13";
+import { buildXlsx, XLSX_MIME } from "./xlsx.js?v=R13";
+import { LocalStore, FirestoreStore, key, DEL } from "./store.js?v=R13";
+import { autoPanels, buildPanel } from "./panels.js?v=R13";
 import { escapeHtml, toast, avg, confirmDialog, downloadFile, withBusy, daysUntil, csvCell, lastKey,
-         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R12";
-import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R12";
+         ss, ls, storageWorks, dialogOpen, flowDialog, copyText, candKey, typedFirstKeys, firstKey } from "./util.js?v=R13";
+import { assignKeys, sharedSurnameText, sharedDocs, claimPlan, renamePlan, mergePlan, deletePlan, typeExactly } from "./candidates.js?v=R13";
 import { effectiveSlots, slotLabel, slotTimeLabel, groupByDate, checkSlot, splitRange, responseCounts,
-         newSlotId, isStructured, fmtDate } from "./slots.js?v=R12";
+         newSlotId, isStructured, fmtDate } from "./slots.js?v=R13";
 import { normalizeCommittee, interviewers as interviewersOf, pickable as pickableOf, memberName, memberStatus,
-         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R12";
+         idsWithInput, validMemberId, newMemberId, toStoredCommittee, hasInput, checkCommittee } from "./members.js?v=R13";
 import { fromLegacy, normalizeQuestions, liveQuestions, idsWithNotes, scoringStarted, checkEdit, newQuestionId,
-         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R12";
+         toStoredQuestions, SCALE_SIZE } from "./questions.js?v=R13";
 import { entry as hEntry, newHistoryId, panelUndo, shortlistUndo, screeningUndo, canUndo, undoneIds, textFor, whoFor, whenFor,
-         hashOf, toDate } from "./history.js?v=R12";
-import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R12";
-import { createRounds, pageId } from "./rounds.js?v=R12";
-import { signInPinned, roleOrderFor, isAdminHash } from "./signin.js?v=R12";
-import { icsEvent, icsCalendar } from "./ics.js?v=R12";
-import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R12";
+         hashOf, toDate } from "./history.js?v=R13";
+import { buildBackup, backupFileName, toState, parseBackup, checkBackup, planRestore, unchunk, RESTORE_ROWS, docHash } from "./backup.js?v=R13";
+import { createRounds, pageId } from "./rounds.js?v=R13";
+import { signInPinned, roleOrderFor, isAdminHash } from "./signin.js?v=R13";
+import { icsEvent, icsCalendar } from "./ics.js?v=R13";
+import { applicantInvite, panelInvite, availabilityReminder, mailtoLink, asText, longDate, salutation, whenText } from "./notify.js?v=R13";
 import { STAGES, STAGE_WORD, stageOpen, stageClosedAt, roundOpen, bookingFor, thresholdOf, isOnList, closePlan, reopenPlan,
-         lockEntry } from "./stages.js?v=R12";
+         lockEntry } from "./stages.js?v=R13";
 
 // The release this page is. Must equal version.json and every "?v=" in every
 // import (tests/versions.test.mjs). A page that sees a different version.json
 // was updated underneath it (section "Reload notice" below).
-const RELEASE = "R12";
+const RELEASE = "R13";
 
 // Interview questions (H2): the saved document (interviews_meta/questions), the
 // only copy since R7 (the old encrypted js/data.js was deleted in R8).
@@ -436,9 +436,9 @@ function syncAllowedNow(fromTimer) {
 
 async function loadFirestore() {
   const [a, f, au] = await Promise.all([
-    import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
-    import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"),
-    import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"),
+    import("https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js"),
+    import("https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js"),
+    import("https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js"),
   ]);
   const app = a.initializeApp(firebaseConfig);
   const auth = au.getAuth(app);
@@ -2749,8 +2749,13 @@ function renderCandidate() {
       // "Saved" and was never scheduled, which is the failure we're closing.
       err.textContent = ""; btn.disabled = true; btn.textContent = "Checking…";
       let k = null;
+      // Offline the check never answers (Firestore holds the write until the
+      // connection is back), so give up after SLOW_SAVE_MS. It writes nothing,
+      // so one that lands later changes nothing (R13).
+      const check = (t) => Promise.race([store.checkName(t),
+        new Promise((_, no) => setTimeout(() => no(new Error("no answer")), SLOW_SAVE_MS))]);
       try {
-        for (const t of tries) { if (await store.checkName(t)) { k = t; break; } }
+        for (const t of tries) { if (await check(t)) { k = t; break; } }
       } catch { // offline or misconfigured: don't accuse them of a wrong name
         err.textContent = "Couldn't reach the server. Check your connection and try again.";
         btn.disabled = false; btn.textContent = "Continue"; return;
@@ -2926,8 +2931,23 @@ async function saved(promise, stage) {
 }
 // Writes this page has sent and the server hasn't confirmed (log out waits for
 // them; the self-reload after a new release never happens while any are open).
-let pendingWrites = 0;
-function track(promise) { pendingWrites++; return Promise.resolve(promise).finally(() => { pendingWrites--; }); }
+// Offline, Firestore keeps a write in this page and sends it when the connection
+// is back: its promise neither resolves nor fails until then (only transactions
+// give up, after about 9 seconds). So once a write has waited SLOW_SAVE_MS, the
+// page says so (a toast, and a line under the header until every such write has
+// landed or failed) instead of a "Saving…" that looks stuck forever (R13).
+const SLOW_SAVE_MS = 10000;
+const SLOW_SAVE = "Not saved yet. Waiting for the connection. Keep this page open and it will save.";
+let pendingWrites = 0, slowWrites = 0;
+function track(promise) {
+  pendingWrites++;
+  let slow = false;
+  const t = setTimeout(() => { slow = true; if (!slowWrites++) { toast(SLOW_SAVE, "err"); renderUpdateLine(); } }, SLOW_SAVE_MS);
+  return Promise.resolve(promise).finally(() => {
+    clearTimeout(t); pendingWrites--;
+    if (slow && !--slowWrites) renderUpdateLine();
+  });
+}
 const unconfirmed = () => pendingWrites > 0 || Object.keys(inflight).length > 0;
 window.IV = {
   mToggle: (i) => { ui.mOpen = ui.mOpen || {}; ui.mOpen[i] = !ui.mOpen[i]; rerenderSettings(); },
@@ -3939,7 +3959,7 @@ window.IV = {
 window.CAND = {
   set: (id, v) => {
     const cur = (S.availCand[ui.candLast] || {})[id];
-    store.setAvail("cand", ui.candLast, id, cur === v ? null : v)
+    track(store.setAvail("cand", ui.candLast, id, cur === v ? null : v))
       .then(() => toast("Saved", "ok"), async (e) => {
         if (e && e.code === "permission-denied") {
           // booking may have closed or paused since the page was drawn: ask the
@@ -3963,7 +3983,7 @@ window.CAND = {
           { label: "Withdraw", kind: "danger", run: (k) => k.close(true) }] }));
       if (!go) return;
     }
-    try { await store.setReply(ui.candLast, v); }
+    try { await track(store.setReply(ui.candLast, v)); }
     catch (e) {
       if (e && e.code === "permission-denied") {
         let b = "open"; try { b = await store.refreshPublic(); } catch { /* keep */ }
@@ -4110,6 +4130,7 @@ function tryReload() {
 function renderUpdateLine() {
   const el = $("#updateLine"); if (!el) return;
   const lines = [];
+  if (slowWrites) lines.push(SLOW_SAVE);
   if (ui.newVersion) lines.push(`This page was updated. <button class="linky" onclick="location.reload()">Reload</button> to get the latest version.`);
   if (ui.role === "admin" && ui._allowed && ui._allowed.held)
     lines.push("Another open Physician Hiring tab is using an older version and keeps changing the applicant list. Reload or close the other tab.");

@@ -26,9 +26,9 @@
 //  with the server time. There is no "saved but not logged".
 // ============================================================================
 
-import { effectiveSlots, toStored } from "./slots.js?v=R12";
-import { lastKey, candKey, ls } from "./util.js?v=R12";
-import { ROUND_COLLECTIONS, quarantineSet, isQuarantined } from "./backup.js?v=R12";
+import { effectiveSlots, toStored } from "./slots.js?v=R13";
+import { lastKey, candKey, ls } from "./util.js?v=R13";
+import { ROUND_COLLECTIONS, quarantineSet, isQuarantined } from "./backup.js?v=R13";
 
 // R6 (review 3 m2): documents kept by a close because they changed after the
 // copy belong to no round until leadership decides. Every view leaves them out.
@@ -530,6 +530,9 @@ export class FirestoreStore extends BaseStore {
     // store needs (no writeBatch, serverTimestamp, getDocs...), so an Admin
     // save would fail in the minutes before that page reloads. Take the missing
     // ones from the same SDK module it loaded: already in memory, so at once.
+    // Every app.js before R1 loaded 10.12.2, so this stays 10.12.2 when app.js
+    // moves on (R13: 12.19.0): functions from another SDK copy refuse its db.
+    // A current app.js hands over every function, so this never runs for it.
     const NEED = ["writeBatch", "serverTimestamp", "getDoc", "getDocs", "deleteDoc", "Timestamp", "query", "orderBy", "limit", "startAfter",
       "deleteField", "runTransaction", "setDoc", "updateDoc"];
     if (NEED.some((k) => !fb[k])) {
