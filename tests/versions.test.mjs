@@ -98,3 +98,27 @@ test("js/passwords.js is gone and nothing imports it", () => {
     }
   }
 });
+
+// R13: the Firebase SDK comes from gstatic in ONE version for app, firestore
+// and auth (two copies would not share an app or a db). The only other version
+// is store.js's fill for a cached app.js from before R1, which loaded 10.12.2
+// and must get functions from that same copy. The sims read the address from
+// app.js, so they never fall behind it.
+test("one Firebase SDK version in app.js; store.js's pre-R1 fill stays 10.12.2", () => {
+  const SDK = /https:\/\/www\.gstatic\.com\/firebasejs\/(\d+\.\d+\.\d+)\/(firebase-[a-z-]+\.js)/g;
+  const app = readFileSync(new URL("js/app.js", root), "utf8");
+  const uses = [...app.matchAll(SDK)];
+  assert.deepEqual(uses.map((m) => m[2]).sort(), ["firebase-app.js", "firebase-auth.js", "firebase-firestore.js"]);
+  const versions = new Set(uses.map((m) => m[1]));
+  assert.equal(versions.size, 1, `app.js loads more than one SDK version: ${[...versions]}`);
+  const [v] = versions;
+  assert.notEqual(v, "10.12.2", "app.js is back on the old SDK");
+  for (const f of readdirSync(new URL("js/", root)).filter((n) => n.endsWith(".js") && n !== "app.js")) {
+    const found = [...readFileSync(new URL("js/" + f, root), "utf8").matchAll(SDK)].map((m) => m[1] + "/" + m[2]);
+    assert.deepEqual(found, f === "store.js" ? ["10.12.2/firebase-firestore.js"] : [], `${f} loads the SDK`);
+  }
+  for (const f of ["sim/auth.mjs", "sim/emulator.mjs"]) {
+    const src = readFileSync(new URL(f, root), "utf8");
+    assert.ok(!/firebasejs\/\d/.test(src), `${f} names an SDK version instead of reading app.js`);
+  }
+});

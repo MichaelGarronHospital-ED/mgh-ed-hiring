@@ -9,12 +9,16 @@
 // Needs Java (Firestore emulator) and the firebase-tools already installed in
 // ../tests (cd ../tests && npm install). Project id mgh-ed-hiring-test-emu only.
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { serve, browser, signIn, pickMember, landAsAdmin, tab, sleep, daysAhead } from "./drive.mjs";
 import * as emu from "./emu.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SITE = path.join(HERE, "site-emulator");
+// the Firebase SDK address app.js loads: a case that imports the SDK itself
+// must get the very same module copy (getApp() is per copy)
+const SDK = readFileSync(path.join(HERE, "..", "js", "app.js"), "utf8").match(/https:\/\/www\.gstatic\.com\/firebasejs\/\d+\.\d+\.\d+\//)[0];
 
 const COMMITTEE = [
   { name: "Abara", gender: "M" }, { name: "Bruns", gender: "F" }, { name: "Chen", gender: "M" },
@@ -110,14 +114,14 @@ export const cases = {
       problems.push(...ok(same || await gateUp(p), `${role}: after the change the page is neither in as the same role nor at the sign-in box`));
       // (2) the account under its new email signs in again in this tab (as the
       // live page will after R7d); this page's config still has the old email
-      await p.evaluate(async (to, pw) => {
-        const fbm = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
-        const appm = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
+      await p.evaluate(async (to, pw, SDK) => {
+        const fbm = await import(SDK + "firebase-auth.js");
+        const appm = await import(SDK + "firebase-app.js");
         const auth = fbm.getAuth(appm.getApp());
         await fbm.setPersistence(auth, fbm.browserSessionPersistence);
         await fbm.signInWithEmailAndPassword(auth, to, pw);
         sessionStorage.setItem("ed_iv_signedin", "1");
-      }, to, pw);
+      }, to, pw, SDK);
       await reload(p);
       let still = false; try { still = !(await gateUp(p)) && await landed(p); } catch { still = false; }
       problems.push(...ok(still, `${role}: an old page signed in as the account under its new email doesn't recognise the role after a reload`));
@@ -663,6 +667,86 @@ export const cases = {
     const card = await pick(JSON.stringify(other));
     problems.push(...ok(card.includes("not the round you are working on"), "another round's file was offered for missing items"));
     await closePage(a);
+    return [...problems, ...log];
+  },
+
+  // R13: offline, Firestore keeps a write in the page and sends it when the
+  // connection is back; until then its promise neither resolves nor fails. So a
+  // save never ended: "Saving…" stayed for good and an applicant's name check
+  // said "Checking…" for good, with no message (the old TODO "offline saves can
+  // hang"). Now, after 10 seconds, the page says the change is not saved yet and
+  // to keep the page open (it also shows for a very slow save, which is true
+  // then too); the line goes once it lands. The name check gives up after 20 s
+  // and says it couldn't reach the server (it writes nothing, so that is safe).
+  // Both fail on R12.
+  async offlineSavesSaySo() {
+    const problems = [], log = [];
+    const offline = (p) => p.setOfflineMode(true), online = (p) => p.setOfflineMode(false);
+    const line = (p) => p.$eval("#updateLine", (e) => (e.classList.contains("hidden") ? "" : e.textContent.trim()));
+    // a committee member's rating
+    const p = await freshPage({ log: [] });   // offline, the browser logs every failed request
+    await asED(p, "Bruns");
+    await offline(p);
+    await p.evaluate(() => window.IV.rate("c-1", 4));
+    const said = await until(async () => /Not saved yet/.test(await line(p)), 16000, 500);
+    problems.push(...ok(said, `offline rating: nothing said after 16 s (status "${await p.$eval("#saveStatus", (e) => e.textContent.trim())}", line "${await line(p)}")`));
+    await online(p);
+    const landed = await until(async () => { const d = await emu.getDocument("interviews_screening/Bruns~c-1"); return d && d.rating === 4; }, 20000, 500);
+    problems.push(...ok(landed, "the rating made offline never reached the server once back online"));
+    const gone = await until(async () => !(await line(p)), 10000, 300);
+    problems.push(...ok(gone, `the "not saved yet" line stayed after the save landed: "${await line(p)}"`));
+    problems.push(...ok(/Saved/.test(await p.$eval("#saveStatus", (e) => e.textContent)), "no Saved once it landed"));
+    await closePage(p);
+    // an applicant's name check
+    const a = await freshPage({ log: [] });
+    await signIn(a, "guestpw");
+    await a.waitForSelector("#candName", { timeout: 15000 });
+    await offline(a);
+    await a.type("#candFirst", "Rosalind"); await a.type("#candName", "Ashcombe");
+    await a.click("#candGo");
+    const told = await until(async () => /Couldn't reach the server/.test(await a.$eval("#candErr", (e) => e.textContent)), 26000, 500);
+    problems.push(...ok(told, `offline name check: still "${await a.$eval("#candGo", (b) => b.textContent)}" after 26 s`));
+    problems.push(...ok(!(await a.$eval("#candGo", (b) => b.disabled)), "the Continue button stayed disabled"));
+    await online(a);
+    await sleep(1500);
+    if (await a.$("#candGo")) await a.click("#candGo");   // R12 got in by itself once the held check landed
+    const inside = await until(async () => !!(await a.$("#candview .slotgrid")), 20000, 300);
+    problems.push(...ok(inside, "once back online the same name didn't get in"));
+    await closePage(a);
+    // R13 review: a transaction is never held for later (offline it fails after
+    // about 4 to 12 s), so it must never say "it will save". (1) Its server
+    // calls left unanswered, so it stays pending past 10 s every time (this
+    // fails on the first R13 build): no line, no toast. (2) Really offline: it
+    // ends with its own failure toast, and the line never shows.
+    const ad = await freshPage({ log: [] });
+    await asLeadership(ad);
+    const toastNow = (p) => p.$eval("#toast", (e) => (e.classList.contains("hide") ? "" : e.textContent.trim())).catch(() => "");
+    const watchQuiet = async (p, ms) => {   // every "it will save" seen while a transaction is out
+      const seen = new Set(); const t0 = Date.now();
+      while (Date.now() - t0 < ms) {
+        for (const s of [await line(p), await toastNow(p)]) if (/Not saved yet|it will save/.test(s)) seen.add(s);
+        await sleep(300);
+      }
+      return [...seen];
+    };
+    await ad.setRequestInterception(true);
+    ad.on("request", (r) => {
+      if (r.isInterceptResolutionHandled()) return;
+      if (/:(beginTransaction|commit|batchGet|runQuery)\b/.test(r.url())) return;   // left unanswered
+      r.continue();
+    });
+    await ad.evaluate(() => { window.IV.saveDeadlines(null); });
+    const stalled = await watchQuiet(ad, 14000);
+    problems.push(...ok(!stalled.length, `a transaction left unanswered said: ${stalled.join(" / ")}`));
+    await closePage(ad);
+    const ad2 = await freshPage({ log: [] });
+    await asLeadership(ad2);
+    await offline(ad2);
+    await ad2.evaluate(() => { window.IV.saveDeadlines(null); });
+    const quiet = await watchQuiet(ad2, 16000);
+    problems.push(...ok(!quiet.length, `an offline transaction said: ${quiet.join(" / ")}`));
+    await online(ad2);
+    await closePage(ad2);
     return [...problems, ...log];
   },
 };

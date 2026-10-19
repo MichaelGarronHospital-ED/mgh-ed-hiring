@@ -70,7 +70,7 @@ const cand = (page) => page.$eval("select[aria-label='Candidate to score']", (e)
     "5.1": null, "0.9": null, "6": null, "4.75": null, ".5": null, "abc": null, "-3": null, "1e0": null, "0x4": null, "4.50": 4.5, "5.00": 5, "4.70": 4.7, "4.05": null, "5.01": null };
   for (const [inp, want] of Object.entries(cases)) {
     await p.evaluate(() => { const e = document.querySelector("#overallIn"); e.value = ""; });
-    await p.click("#overallIn", { clickCount: 3 }); await p.evaluate(() => { document.querySelector("#overallIn").value = ""; });
+    await p.click("#overallIn", { count: 3 }); await p.evaluate(() => { document.querySelector("#overallIn").value = ""; });
     if (inp) await p.type("#overallIn", inp); else { await p.type("#overallIn", "x"); await p.keyboard.press("Backspace"); } await p.keyboard.press("Enter"); await sleep(120);
     const got = (await sc(p, "c-a")).overall;
     const msg = await p.$eval("#overallMsg", (e) => e.textContent);
@@ -111,7 +111,7 @@ const cand = (page) => page.$eval("select[aria-label='Candidate to score']", (e)
 // 11. retype: select all, delete, pause, type new value — saved score never cleared in between
 { const p = await fresh();
   await p.click("#overallIn"); await p.type("#overallIn", "4.1"); await p.keyboard.press("Enter"); await sleep(150);
-  await p.click("#overallIn", { clickCount: 3 }); await p.keyboard.press("Backspace"); await sleep(900);
+  await p.click("#overallIn", { count: 3 }); await p.keyboard.press("Backspace"); await sleep(900);
   const mid = (await sc(p, "c-a")).overall;
   await p.type("#overallIn", "4.3"); await p.keyboard.press("Enter"); await sleep(150);
   R("emptying mid-retype doesn't clear", mid === 4.1 && (await sc(p, "c-a")).overall === 4.3, `mid=${mid}`); await p.close(); }
@@ -155,7 +155,7 @@ const cand = (page) => page.$eval("select[aria-label='Candidate to score']", (e)
 // 14. deliberate clear
 { const p = await fresh();
   await p.click("#overallIn"); await p.type("#overallIn", "4.1"); await p.keyboard.press("Enter"); await sleep(150);
-  await p.click("#overallIn", { clickCount: 3 }); await p.keyboard.press("Backspace"); await p.keyboard.press("Enter"); await sleep(150);
+  await p.click("#overallIn", { count: 3 }); await p.keyboard.press("Backspace"); await p.keyboard.press("Enter"); await sleep(150);
   R("select-all, delete, Enter clears", !(await sc(p, "c-a")).overall && (await p.$eval("#overallIn", (e) => e.value)) === "", String((await sc(p, "c-a")).overall)); await p.close(); }
 
 // 15. typing on from valid into invalid never leaves "Saving…" stuck

@@ -32,7 +32,7 @@ serves the static files regardless of what lives in this folder.
 
 ## Run it
 
-Needs Node 18+ (for the built-in `node --test` runner) and Java, which the
+Needs Node 20+ (Firebase 12 and firebase-tools 15; GitHub uses 22) and Java, which the
 Firestore emulator requires.
 
 ```bash
@@ -46,7 +46,17 @@ npm test
 GitHub Actions runs this and `../sim` on every push and pull request
 (`../.github/workflows/tests.yml`).
 
-**Last run: Oct 16 2026 (rules v2): 190 tests, 190 pass.** The 109 from before v2 run
+**Tool versions (R13, Oct 19 2026).** `@firebase/rules-unit-testing` 5 (it needs `firebase` 12),
+`firebase` 12.19.0 and `firebase-tools` 15.34.0. `package.json` also has npm `overrides` for
+packages those still pull in at versions with known security issues, so `npm audit` is clean:
+`@grpc/grpc-js` 1.14 (Firestore's Node build asks for 1.9; this is what GitHub's automatic
+security fix could not do), and inside firebase-tools `chokidar` 4 (3 needs `braces`, which has
+no fixed version; the emulator only watches one rules file), `uuid` 11 for `gaxios` and
+`@opentelemetry/core` 2 for `@google-cloud/pubsub` (it only uses `W3CTraceContextPropagator`).
+Drop an override once `npm ls <name>` shows the parent asks for a fixed version itself.
+Dependabot (`../.github/dependabot.yml`) proposes updates once a month, one pull request here.
+
+**Last run: Oct 19 2026 (R13, new tool versions): 325 tests, 325 pass.** On Oct 16 2026 (rules v2): 190 tests, 190 pass. The 109 from before v2 run
 unchanged, which is the proof the page that was live before v2 still works;
 [`rules-v2.test.mjs`](rules-v2.test.mjs) adds 81 for stages, the round close, the
 applicant reply and notices, change history, the close-round archive and its lease

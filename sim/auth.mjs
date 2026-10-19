@@ -23,7 +23,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { serve, browser, signIn, pickMember, landAsAdmin, sleep, SITE } from "./drive.mjs";
 
-const GS = "https://www.gstatic.com/firebasejs/10.12.2/";
+// the Firebase SDK address app.js loads (one version for all three modules,
+// tests/versions.test.mjs), so the fakes answer whatever release is current
+const GS = fs.readFileSync(new URL("../js/app.js", import.meta.url), "utf8").match(/https:\/\/www\.gstatic\.com\/firebasejs\/\d+\.\d+\.\d+\//)[0];
 const { AUTH } = await import(new URL("../js/config.js", import.meta.url));
 const UID_BY_EMAIL = { [AUTH.adminEmail]: AUTH.uids.admin, [AUTH.committeeEmail]: AUTH.uids.committee, [AUTH.candidateEmail]: AUTH.uids.candidate };
 const STUB = {

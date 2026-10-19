@@ -28,14 +28,14 @@ Full design and reference data (committee, candidates, questions, rules) live in
 - **Run locally:** `python3 -m http.server 8000`, then open http://localhost:8000.
   This talks to the **live** Firebase project and real applicant data: look, don't edit.
   For a safe copy with Firebase switched off, use `sim/make-site.sh` (builds `sim/site/`).
-- **Rules tests:** `cd tests && npm install && npm test` (Firestore emulator; needs Java). 190 tests
-  (109 from before rules v2, unchanged, plus `rules-v2.test.mjs`).
+- **Rules tests:** `cd tests && npm install && npm test` (Firestore emulator; needs Java). 325 tests
+  on R13 (rules tests and the unit tests of the pure modules).
 - **Real page against the emulators:** `cd sim && npm run emulator` (needs `tests/` installed
   and Java). Runs the real FirestoreStore and Firebase Auth against local emulators with the
   real `firestore.rules` (`sim/emulator.mjs`); the patch that points the copy at the emulators
   lives only in `make-site.sh --emulator`, never in the repo's own files.
 - **UI simulations:** `cd sim && npm install && npm test`. Any Chrome works; set `$CHROME`
-  to pick one. All pass (15/15 scenarios, e2e, score, auth, fuzz; 2026-10-16). Fixture
+  to pick one. All pass (15/15 scenarios, e2e, score, auth, fuzz; R13, 2026-10-19; emulator 20/20). Fixture
   interview dates come from `daysAhead()` in `sim/drive.mjs`: never hard-code a
   date, because once it passes the tool adds a "date is in the past" dialog and the
   time-edit scenarios fail (that, not macOS, was the old 13/15).
@@ -44,6 +44,12 @@ Full design and reference data (committee, candidates, questions, rules) live in
   request. Free on a public repo. Actions are pinned by commit hash; runner image `ubuntu-24.04`.
 - **Deploy the site:** push to `main`; GitHub Pages is live about a minute later.
   Firestore rules are separate: see README (run `scripts/sync-allowed.mjs --apply` first).
+- **Firebase JS SDK:** 12.19.0 from gstatic, one version for app, firestore and auth (`js/app.js`;
+  `tests/versions.test.mjs`). Upgrade it as a release (new `?v=`), check each URL answers 200, and
+  run `npm run emulator`, the only check that loads the real SDK. `store.js`'s fill for a cached
+  page from before R1 stays on 10.12.2 (that page's SDK). Test tools: npm `overrides` in
+  `tests/package.json` and `scripts/package.json` keep `npm audit` clean (why: `tests/README.md`);
+  Dependabot (`.github/dependabot.yml`) proposes updates monthly, one grouped PR per folder.
 - **Accounts:** repo owned by the `MichaelGarronHospital-ED` org (department login
   `MGH-ED-Admin`). Firebase project `mgh-ed-hiring` is owned by the Google account on
   MGHEmergencyDepartmentAdministration@tehn.ca (second Owner: dralvinyang@gmail.com,
@@ -135,6 +141,16 @@ Full design and reference data (committee, candidates, questions, rules) live in
   tag of `passwords.html`, checked by `tests/versions.test.mjs`;
   a release between two numbered ones is `R7b`). Bump them all together each release. Never
   remove a module or an export in the release that stops using it; remove it one release later.
+- **Offline, a Firestore write waits; it never fails (R13).** The page keeps no offline copy, but
+  Firestore holds an unsent write in memory and sends it when the connection is back, so its
+  promise stays pending. Send every write through `track()`: after 10 s it says "Not saved yet.
+  Waiting for the connection..." (toast and `#updateLine`) until the write lands or fails, and
+  Log out waits for it. Transactions are never held: offline they fail after about 4 to 12 s
+  (5 tries, random waits) and report it themselves, so they go through `trackTx()` (no "it will
+  save"); so does the restore (`track(p, { queued: false })`), whose chunks can pass 10 s online
+  and show their own progress. Never put a timeout that rejects on a real write: it may still
+  land later, and the rollback would then show it as not saved. Only a probe that writes nothing
+  (`checkName`, 20 s) may give up. Pinned by `sim/emulator.mjs` `offlineSavesSaySo`.
 - **Backups read the server fresh (`store.snapshotRaw`); never build one from page state.**
   The Admin page mixes this browser's echo into its state and fills in defaults. The
   Excel workbook is built from the same fresh read (`toState` + `withState`).

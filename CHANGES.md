@@ -24,6 +24,60 @@ the three role-account sign-ins (see the console steps in README).
 
 ---
 
+## R13: Firebase SDK 12.19.0, saves say when there is no connection, upkeep (Oct 19 2026)
+
+Upkeep from the workspace TODO. No rules, stored values or data change; the look changes only
+for Windows high contrast.
+
+- **Firebase JS SDK 10.12.2 to 12.19.0** (`js/app.js`, the three gstatic modules; 13.0.0 is too
+  new). Reviewed against every function the page uses (app; Firestore `getFirestore` with the
+  default memory cache, documents, queries, listeners, batches, transactions,
+  `serverTimestamp`, `deleteField`, `Timestamp`; Auth email sign-in, `signOut`,
+  `onAuthStateChanged`, `authStateReady`, `setPersistence` with session or memory): none was
+  removed or changed. What changed underneath: the SDK is built for ES2020 (every browser in use
+  has it), Firestore's memory cache now clears unused documents by itself (the page keeps no
+  offline copy, so nothing to change), and since 12.15 Auth sends the site's address (origin
+  only) as the referrer, which the API key's referrer limit already accepts (the passwords page
+  and `scripts/diagnose-login.mjs` sign in the same way). The Firestore download is about 70 KB
+  bigger (compressed). There is no Content-Security-Policy on these pages, so none to change.
+  `store.js`'s fill for a cached page from before R1 stays on 10.12.2, the SDK that page
+  loaded. The sims read the SDK address from `app.js`; NEW check in `tests/versions.test.mjs`
+  (one SDK version for the three modules, no other in `js/`, no hard-coded one in the sims).
+- **A save made with no connection now says so (the TODO "offline saves can hang").** Offline,
+  Firestore keeps a write in the page and sends it when the connection is back; until then the
+  save neither finishes nor fails. So "Saving…" stayed for good, a button kept spinning, and an
+  applicant entering their name saw "Checking…" for good, with no message (still true on R12,
+  and on both SDK versions: see `sim/emulator.mjs` `offlineSavesSaySo`). Now, after 10 seconds,
+  the page says "Not saved yet. Waiting for the connection. Keep this page
+  open and it will save." (a toast, and a line under the header until it lands). Nothing is
+  thrown away and nothing is resent: the change still saves once the connection is back, as
+  before. The applicant's name check gives up after 20 seconds with "Couldn't reach the server.
+  Check your connection and try again." (it writes nothing, so a late one is harmless). An
+  applicant's time picks and confirm or withdraw now count as unsaved changes too, so Log out
+  waits for them like the committee's. Transactions (Admin's settings, stages, times, panels,
+  questions, undo) are never held for later: offline they fail by themselves after about 4 to
+  12 seconds with their own message, so they never say "it will save" (review); neither does a
+  restore, whose chunks can take over 10 seconds online and show their own progress line.
+- **Windows high contrast:** the focus ring is a box shadow, which high contrast mode hides, and
+  the outline was removed. Fields and buttons now keep a transparent 2px outline, which high
+  contrast mode draws (`css/ed-ui.css` copied from the dashboard master; `css/styles.css` the same
+  on the four focus rules).
+- **Test tools:** `tests/` on `@firebase/rules-unit-testing` 5, `firebase` 12.19.0 and
+  `firebase-tools` 15.34.0, with npm overrides for what those still pull in old (`@grpc/grpc-js`
+  1.14, the reason GitHub's automatic security fix failed; and `chokidar` 4, `uuid` 11,
+  `@opentelemetry/core` 2 inside firebase-tools); `sim/` on `puppeteer-core` 25.12 (the sims'
+  triple click is `count: 3` now; `clickCount` is gone); `scripts/` the same `@grpc/grpc-js`
+  override. `npm audit` is clean in all three. NEW `.github/dependabot.yml`: monthly, one grouped
+  pull request per folder (Actions, tests, sim, scripts), Actions still pinned by hash.
+- No module or export was removed. `firestore.rules` is unchanged.
+
+Tests: rules and unit tests 325/325; round simulations all pass (`npm test`, and `npm run
+stress` 0 failing); emulator 20/20 (the real page on SDK 12.19.0 against the Auth and Firestore
+emulators), including the new `offlineSavesSaySo`, which fails on R12 (rating: "Saving…" after
+16 s; name check: "Checking…" after 16 s, button disabled).
+
+---
+
 ## R12: an Admin link on the ED tools front page; "virtual" instead of "Zoom" (Oct 19 2026)
 
 Alvin asked for both. Page only: no rules, stored values or data change.
