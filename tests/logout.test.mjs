@@ -54,7 +54,8 @@ test("while it waits it reads Logging out…, and the question is the standard o
   // the safety logic stays as it was (H12, R13): the 5 s wait, the 3 s cap on signOut, the reload
   assert.match(fn, /while \(unconfirmed\(\) && Date\.now\(\) - t0 < 5000\)/);
   assert.match(fn, /Promise\.race\(\[fbAuth\.authFns\.signOut\(fbAuth\.auth\), new Promise\(\(r\) => setTimeout\(r, 3000\)\)\]\)/);
-  assert.match(fn, /location\.reload\(\);\n\}/);
+  // R15: the reload goes through leavePage(), so the browser doesn't ask "Leave page?" after it has asked
+  assert.match(fn, /leavePage\(\(\) => location\.reload\(\)\);\n\}/);
   // the confirm dialog takes the cancel button's label, and puts "Cancel" back for every other dialog
   assert.match(util, /no\.textContent = opts\.no \|\| "Cancel";/);
   // focus on the cancel button only when asked: every other dialog keeps its focus on yes (or alt)

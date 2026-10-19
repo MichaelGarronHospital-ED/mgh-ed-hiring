@@ -28,14 +28,14 @@ Full design and reference data (committee, candidates, questions, rules) live in
 - **Run locally:** `python3 -m http.server 8000`, then open http://localhost:8000.
   This talks to the **live** Firebase project and real applicant data: look, don't edit.
   For a safe copy with Firebase switched off, use `sim/make-site.sh` (builds `sim/site/`).
-- **Rules tests:** `cd tests && npm install && npm test` (Firestore emulator; needs Java). 333 tests
-  on R14 (rules tests and the unit tests of the pure modules).
+- **Rules tests:** `cd tests && npm install && npm test` (Firestore emulator; needs Java). 344 tests
+  on R15 (rules tests and the unit tests of the pure modules).
 - **Real page against the emulators:** `cd sim && npm run emulator` (needs `tests/` installed
   and Java). Runs the real FirestoreStore and Firebase Auth against local emulators with the
   real `firestore.rules` (`sim/emulator.mjs`); the patch that points the copy at the emulators
   lives only in `make-site.sh --emulator`, never in the repo's own files.
 - **UI simulations:** `cd sim && npm install && npm test`. Any Chrome works; set `$CHROME`
-  to pick one. All pass (15/15 scenarios, e2e, score, auth, logout 5/5, fuzz; R14, 2026-10-19; emulator 20/20). Fixture
+  to pick one. All pass (15/15 scenarios, e2e, score, auth, logout 7/7, fuzz; R15, 2026-10-19; emulator 21/21). Fixture
   interview dates come from `daysAhead()` in `sim/drive.mjs`: never hard-code a
   date, because once it passes the tool adds a "date is in the past" dialog and the
   time-edit scenarios fail (that, not macOS, was the old 13/15).
@@ -151,9 +151,21 @@ Full design and reference data (committee, candidates, questions, rules) live in
   and show their own progress. Never put a timeout that rejects on a real write: it may still
   land later, and the rollback would then show it as not saved. Only a probe that writes nothing
   (`checkName`, 20 s) may give up. Pinned by `sim/emulator.mjs` `offlineSavesSaySo`.
+  Closing the tab while a write waits loses it, so the browser's "Leave page?" (`beforeunload`)
+  asks exactly while `unconfirmed()`, after `flushPending()` (R15). Every reload or navigation
+  the page makes itself (Log out, which has asked already; a sign-in that ended; the new-release
+  reload; the "Open email" link, `stays: true`) goes through `leavePage()`, never a bare
+  `location.reload()` or `location.href =`; the only one left to the browser is the "Reload" link
+  the person taps. Pinned by `tests/leave.test.mjs`, `sim/logout.mjs` and `sim/emulator.mjs`
+  `leaveAndBackupOffline`.
 - **Backups read the server fresh (`store.snapshotRaw`); never build one from page state.**
   The Admin page mixes this browser's echo into its state and fills in defaults. The
-  Excel workbook is built from the same fresh read (`toState` + `withState`).
+  Excel workbook is built from the same fresh read (`toState` + `withState`). Fresh means the
+  server (R15): `getDocsFromServer`, no read while `navigator.onLine` is false, and an answer
+  `fromCache` refused, all as an `offline-read` error; offline, `serverRead()` says "Backup not
+  made: you seem to be offline. Connect and try again." and nothing downloads. Never fall back
+  to plain `getDocs` (offline it answers from the listeners' memory) except for an older cached
+  page that lacks `getDocsFromServer`, and never add it to `NEED` (the 10.12.2 fill).
 - **Every Admin change writes its history entry in the same batch or transaction**
   (`store.*(…, history)`), with no applicant name in it. Undo is offered only for hand-made
   panels, Admin on/off decisions and "make this a note" (`js/history.js`).

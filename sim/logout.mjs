@@ -256,7 +256,86 @@ const scenarios = {
     problems.push(...ok((await gateText(page)) === "", "the logged-out line came back after a reload"));
     return problems;
   },
+
+  // R15: closing the tab while a save is still waiting would lose it, so the
+  // browser asks "Leave page?" then, and only then (a rating, an applicant's
+  // pick). Checked with the event the browser sends and with the browser's
+  // real question on a reload. Fails on R14 (it never asked).
+  async leaveAsksOnlyWhileSaving(page, url) {
+    const problems = [];
+    await load(page, url, base(), "staffpw");
+    await pickMember(page, "Chen");
+    problems.push(...ok(!(await asksToLeave(page)), "asks with nothing waiting"));
+    await hold(page);
+    await page.evaluate(() => window.IV.rate("c-1", 2)); await sleep(100);
+    problems.push(...ok(await asksToLeave(page), "doesn't ask while a rating is still waiting"));
+    // the browser's own question, on a real reload: Stay keeps the page and the save
+    const seen = [];
+    const onDialog = (d) => { seen.push(d.type()); d.dismiss().catch(() => {}); };
+    page.on("dialog", onDialog);
+    try {
+      await page.click("#appHeader h1").catch(() => {});   // a real tap: browsers ask only after one
+      await page.reload({ waitUntil: "domcontentloaded", timeout: 3000 }).catch(() => {});
+      await sleep(300);
+    } finally { page.off("dialog", onDialog); }
+    problems.push(...ok(seen.includes("beforeunload"), `a reload with a save waiting was not questioned (${seen.join(",") || "no dialog"})`));
+    problems.push(...ok(await page.$eval("#app", (e) => !e.classList.contains("hidden")).catch(() => false), "Stay didn't keep the page"));
+    await release(page); await sleep(300);
+    problems.push(...ok(!(await asksToLeave(page)), "still asks after the rating landed"));
+    const st = await page.evaluate(() => JSON.parse(localStorage.getItem("ed_interviews_v1")).screening);
+    problems.push(...ok(st["Chen~c-1"] && st["Chen~c-1"].rating === 2, "the rating kept by Stay was not saved"));
+    // an applicant's pick
+    await applicantIn(page, url, base());
+    problems.push(...ok(!(await asksToLeave(page)), "the applicant's page asks with nothing waiting"));
+    await hold(page);
+    await page.evaluate(() => window.CAND.set("t0", "ip")); await sleep(100);
+    problems.push(...ok(await asksToLeave(page), "doesn't ask while an applicant's pick is still waiting"));
+    await release(page); await sleep(300);
+    problems.push(...ok(!(await asksToLeave(page)), "the applicant's page still asks after the pick landed"));
+    return problems;
+  },
+
+  // R15: the page's own reloads never ask. Log out with a save still waiting
+  // asks its own question once ("Log out?"); "Log out anyway" then reloads
+  // with no second question from the browser. The reload after a new release
+  // doesn't ask either.
+  async ownReloadsDontAsk(page, url) {
+    const problems = [], seen = [];
+    const onDialog = (d) => { seen.push(d.type()); d.accept().catch(() => {}); };
+    page.on("dialog", onDialog);
+    // after the page's own handler, record what it decided; kept across the reload
+    const record = () => page.evaluate(() => { sessionStorage.removeItem("__asked");
+      window.addEventListener("beforeunload", (e) => sessionStorage.setItem("__asked", String(e.defaultPrevented))); });
+    try {
+      await load(page, url, base(), "staffpw");
+      await pickMember(page, "Chen");
+      await hold(page);
+      await page.evaluate(() => window.IV.rate("c-1", 3)); await sleep(100);
+      await record();
+      await page.click("#logout");
+      await page.waitForSelector("#confirmWrap:not(.hidden)", { timeout: 8000 });
+      await reloaded(page, () => page.click("#confirmYes"));
+      const asked = await page.evaluate(() => sessionStorage.getItem("__asked"));
+      problems.push(...ok(asked === "false", `Log out anyway: the browser was told to ask "Leave page?" as well (${asked})`));
+      problems.push(...ok(!seen.length, `Log out anyway: a second question from the browser (${seen.join(",")})`));
+      problems.push(...ok((await gateShown(page)) && (await gateText(page)) === "You are logged out.", `after Log out anyway: ${await gateText(page)}`));
+      // the reload after a new release (Admin, nothing waiting)
+      seen.length = 0;
+      await load(page, url, base(), "adminpw");
+      await landAsAdmin(page);
+      await record();
+      await page.evaluate(() => { const f = window.fetch;
+        window.fetch = (u, o) => (String(u).includes("version.json") ? Promise.resolve(new Response('{ "release": "R999" }')) : f(u, o)); });
+      await reloaded(page, () => page.evaluate(() => window.__edCheckVersion()));
+      const asked2 = await page.evaluate(() => sessionStorage.getItem("__asked"));
+      problems.push(...ok(asked2 === "false", `the new-release reload: the browser was told to ask (${asked2})`));
+      problems.push(...ok(!seen.length, `the new-release reload was questioned (${seen.join(",")})`));
+    } finally { page.off("dialog", onDialog); }
+    return problems;
+  },
 };
+// Would the browser ask "Leave page?" now? (the event it sends before leaving)
+const asksToLeave = (page) => page.evaluate(() => { const e = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(e); return e.defaultPrevented; });
 
 export async function main(only) {
   makeSite();

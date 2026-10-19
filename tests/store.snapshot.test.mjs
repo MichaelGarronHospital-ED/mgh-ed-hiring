@@ -3,7 +3,7 @@
 // not. Stub Firestore, no emulator.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FirestoreStore } from "../js/store.js";
+import { FirestoreStore, OFFLINE_READ } from "../js/store.js";
 import { buildBackup, ROUND_COLLECTIONS } from "../js/backup.js";
 
 // a localStorage for the store's echo (util.js reads window.localStorage)
@@ -58,4 +58,68 @@ test("every raw field survives, reply included, and no defaults are added", asyn
   assert.deepEqual(r.interviews_meta.config, { flagThreshold: 2 });   // no committee/chair/slots defaults
   assert.deepEqual(r.interviews_meta.state, { interviewsComplete: true });
   assert.deepEqual(r.interviews_offers, {});
+});
+
+// R15: a backup must reflect the server. Offline, plain getDocs answers from
+// what this page's listeners hold in memory, so snapshotRaw reads with
+// getDocsFromServer, refuses an answer from the cache, and never reads at all
+// while the browser says it is offline. The refusal is an "offline-read" with
+// plain words, never a quiet cache copy.
+const withOnline = async (onLine, fn) => {
+  const keep = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.defineProperty(globalThis, "navigator", { value: { onLine }, configurable: true });
+  try { return await fn(); } finally { Object.defineProperty(globalThis, "navigator", keep); }
+};
+const refused = (e) => e && e.code === "offline-read" && e.message === OFFLINE_READ;
+
+test("OFFLINE_READ is plain words (no em dash)", () => {
+  assert.equal(OFFLINE_READ, "You seem to be offline. Connect and try again.");
+  assert.ok(!OFFLINE_READ.includes("—"));
+});
+
+test("snapshotRaw reads from the server when it can (getDocsFromServer, never getDocs)", async () => {
+  const server = { interviews_candidates: { "c-1": { name: "Dr Rosalind Ashcombe", removed: false } } };
+  const { fb, asked } = stub(server);
+  const fromServer = [], server_ = fb.getDocs;
+  fb.getDocsFromServer = async (ref) => { fromServer.push(ref.__coll); return server_(ref); };
+  const s = new FirestoreStore(fb, {});
+  fb.getDocs = async () => { throw new Error("getDocs used for a backup"); };
+  const r = await withOnline(true, () => s.snapshotRaw());
+  assert.deepEqual([...fromServer].sort(), [...ROUND_COLLECTIONS].sort());
+  assert.equal(asked.length, ROUND_COLLECTIONS.length, "each collection read once, through the server read");
+  assert.equal(r.interviews_candidates["c-1"].name, "Dr Rosalind Ashcombe");
+});
+
+test("offline: the server read fails, so the backup is refused, not made from memory", async () => {
+  const { fb } = stub({ interviews_candidates: { "c-1": { name: "x", removed: false } } });
+  fb.getDocsFromServer = async () => { const e = new Error("Failed to get documents from server."); e.code = "unavailable"; throw e; };
+  const s = new FirestoreStore(fb, {});
+  await assert.rejects(withOnline(true, () => s.snapshotRaw()), refused);
+});
+
+test("the browser says it is offline: refused before any read", async () => {
+  const { fb, asked } = stub({});
+  let tried = 0;
+  fb.getDocsFromServer = async (ref) => { tried++; return fb.getDocs(ref); };
+  const s = new FirestoreStore(fb, {});
+  await assert.rejects(withOnline(false, () => s.snapshotRaw()), refused);
+  assert.equal(tried + asked.length, 0, "it read anyway");
+});
+
+test("an older page that hands over only getDocs: an answer from the cache is refused", async () => {
+  const { fb } = stub({});
+  fb.getDocs = async () => ({ docs: [], metadata: { fromCache: true } });
+  const s = new FirestoreStore(fb, {});
+  await assert.rejects(withOnline(true, () => s.snapshotRaw()), refused);
+  // and the same answer from the server is fine
+  fb.getDocs = async () => ({ docs: [], metadata: { fromCache: false } });
+  const r = await withOnline(true, () => s.snapshotRaw());
+  assert.deepEqual(r.interviews_candidates, {});
+});
+
+test("any other failure is passed on as it is (not called offline)", async () => {
+  const { fb } = stub({});
+  fb.getDocsFromServer = async () => { const e = new Error("Missing or insufficient permissions."); e.code = "permission-denied"; throw e; };
+  const s = new FirestoreStore(fb, {});
+  await assert.rejects(withOnline(true, () => s.snapshotRaw()), (e) => e.code === "permission-denied");
 });

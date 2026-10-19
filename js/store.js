@@ -26,9 +26,9 @@
 //  with the server time. There is no "saved but not logged".
 // ============================================================================
 
-import { effectiveSlots, toStored } from "./slots.js?v=R14";
-import { lastKey, candKey, ls } from "./util.js?v=R14";
-import { ROUND_COLLECTIONS, quarantineSet, isQuarantined } from "./backup.js?v=R14";
+import { effectiveSlots, toStored } from "./slots.js?v=R15";
+import { lastKey, candKey, ls } from "./util.js?v=R15";
+import { ROUND_COLLECTIONS, quarantineSet, isQuarantined } from "./backup.js?v=R15";
 
 // R6 (review 3 m2): documents kept by a close because they changed after the
 // copy belong to no round until leadership decides. Every view leaves them out.
@@ -54,6 +54,11 @@ function quarantineRaw(raw) {
 }
 // Thrown when this page no longer holds the close (review 3 M1).
 export class TookOver extends Error { constructor() { super("Another Admin page took over closing. Nothing more was changed from this page."); this.code = "took-over"; } }
+// R15: a fresh read (snapshotRaw) that could not come from the server. Its
+// words are shown as they are wherever a caller doesn't reword them (restore,
+// bring back a past round); the backup and the Excel file say what wasn't made.
+export const OFFLINE_READ = "You seem to be offline. Connect and try again.";
+function offlineRead(cause) { const e = new Error(OFFLINE_READ); e.code = "offline-read"; if (cause) e.cause = cause; return e; }
 
 export const key = (member, candId) => `${member}~${candId}`;
 
@@ -710,9 +715,19 @@ export class FirestoreStore extends BaseStore {
   // Every document of every round collection, exactly as the server returns it
   // (backups, the restore preview and the close: never page state, which mixes
   // in this browser's echo and defaults). One-shot reads.
+  // R15: from the SERVER, or not at all. Offline, plain getDocs answers from
+  // what this page's listeners hold in memory, so a backup made then looked
+  // complete but was this page's copy. getDocsFromServer fails instead; a page
+  // whose app.js hands over only getDocs (an older cached one) is checked by
+  // the answer's fromCache. Either way: an "offline-read" error, never a cache copy.
   async snapshotRaw() {
-    const { db, collection, getDocs } = this._fb;
-    const snaps = await Promise.all(ROUND_COLLECTIONS.map((n) => getDocs(collection(db, n))));
+    const { db, collection, getDocs, getDocsFromServer } = this._fb;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) throw offlineRead();
+    const read = getDocsFromServer || getDocs;
+    let snaps;
+    try { snaps = await Promise.all(ROUND_COLLECTIONS.map((n) => read(collection(db, n)))); }
+    catch (e) { throw e && e.code === "unavailable" ? offlineRead(e) : e; }
+    if (snaps.some((s) => s && s.metadata && s.metadata.fromCache)) throw offlineRead();
     const raw = {};
     ROUND_COLLECTIONS.forEach((n, i) => { raw[n] = Object.fromEntries(snaps[i].docs.map((d) => [d.id, d.data()])); });
     return quarantineRaw(raw);

@@ -286,7 +286,8 @@ it, so every Admin save would fail.
   (never from what the page happens to hold). It includes the interview questions, the input
   of people who have left or were taken off the list, the applicants' replies and the change
   history. A later release can load it back in. **Download Excel** is the same read, for
-  people to look at. Both have applicant names and the committee's comments: save them with
+  people to look at. With no connection neither is made (R15): the page says "Backup not made:
+  you seem to be offline. Connect and try again." and nothing downloads. Both have applicant names and the committee's comments: save them with
   the CVs on OneDrive and don't email them.
 - **Setup, Change history** lists every change made with the Admin password, newest
   first, 50 at a time. It never stores an applicant's name (names are filled in when it is
@@ -369,7 +370,8 @@ it, so every Admin save would fail.
   browser's copy of your scores. The sign-in screen then says "You are logged out." (R14)
 - **With no connection** (R13), a change waits in the open page and saves when the connection is
   back. After 10 seconds the page says "Not saved yet. Waiting for the connection. Keep this page
-  open and it will save." until it does; closing the page before then loses it. Admin settings
+  open and it will save." until it does; closing the page before then loses it, so while a change
+  is waiting the browser asks "Leave page?" first (R15; never on the page's own reloads). Admin settings
   saves are not held: with no connection they fail after a few seconds and say so. An
   applicant's name check gives up after 20 seconds with "Couldn't reach the server".
 - **When a new version goes live**, an open page notices within 10 minutes and shows "This
