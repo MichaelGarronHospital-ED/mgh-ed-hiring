@@ -114,7 +114,7 @@ const planState = () => ({ ...S, availRaw: S.availRaw || Object.fromEntries(Obje
 const ROLE_EMAIL = { admin: AUTH.adminEmail, committee: AUTH.committeeEmail, candidate: AUTH.candidateEmail };
 const roleOfUser = (u) => (u && Object.keys(AUTH.uids).find((r) => AUTH.uids[r] === u.uid)) || null;
 const isRefusal = (e) => /wrong-password|invalid-credential|user-not-found|invalid-login-credentials/.test(String((e && e.code) || ""));
-const SIGNED_OUT_MSG = "You were signed out. Please sign in again.";
+const SIGNED_OUT_MSG = "You were logged out. Please log in again.";
 // The Admin link (index.html#admin, on the ED tools front page since R12) opens
 // the same page with an Admin sign-in screen. Any password still works there
 // and on the plain link, so an old bookmark never locks anyone out.
@@ -2718,14 +2718,15 @@ function renderCandidate() {
   const el = $("#candview");
   const slots = effectiveSlots(S.settings, SLOTS);
   const booking = bookingNow();
+  // R14: the paused and name screens are cards with no page header, so Log out
+  // sits in a bar of its own at the top right, where the header would have it.
   if (booking === "paused") {
-    el.innerHTML = `<div class="overlay"><div class="overlay-box" role="main"><div class="logo" aria-hidden="true">ED</div>
-      <h2>Interview availability</h2><p class="muted">Booking is paused. Please try again later.</p>
-      <p style="margin-top:16px"><button class="linky" onclick="CAND.logout()">Log out</button></p></div></div>`;
+    el.innerHTML = `<div class="overlay withbar">${logoutBar("CAND.logout()")}<div class="overlay-box" role="main"><div class="logo" aria-hidden="true">ED</div>
+      <h2>Interview availability</h2><p class="muted">Booking is paused. Please try again later.</p></div></div>`;
     return;
   }
   if (!ui.candLast) {
-    el.innerHTML = `<div class="overlay"><div class="overlay-box" role="main"><div class="logo" aria-hidden="true">ED</div>
+    el.innerHTML = `<div class="overlay withbar">${logoutBar("CAND.logout()")}<div class="overlay-box" role="main"><div class="logo" aria-hidden="true">ED</div>
       <h2>Interview availability</h2><p class="muted">${booking === "closed"
         ? "Booking is closed. If you need to change your times, reply to our email. If you have an interview time, enter your name to see it."
         : "Enter your name to pick the times that work for you. You won't see any other applicants or committee information."}</p>
@@ -2806,7 +2807,7 @@ function renderCandidate() {
   el.innerHTML = `<header class="page"><div class="brandrow"><div class="brandmark" aria-hidden="true">ED</div>
       <div class="grow"><h1>${escapeHtml(ORG_NAME)}</h1>
         <p class="muted">${escapeHtml(who)} · <button class="linky" onclick="CAND.rename()">Not you?</button></p></div>
-      <button class="linky" onclick="CAND.logout()">Log out</button></div></header>
+      ${logoutBtn("CAND.logout()")}</div></header>
     <main style="max-width:600px">
       ${notice === undefined ? `<p class="hint">Loading…</p>` : notice ? noticeCard(notice)
         : booking === "closed" ? `<div class="card">${empty(ICON.calendar, "Booking is closed", "If you need to change your times, reply to our email.")}</div>`
@@ -4014,7 +4015,12 @@ window.CAND = {
 // It used to do only the first half, so the Firebase sign-in outlived the
 // "logged out" page. signOut is local (no network), but it is capped at 3s so
 // a stuck SDK can never leave someone unable to log out.
+// R14 (the ED tools Log out standard): while it waits the button is disabled and
+// reads "Logging out…"; the gate then says "You are logged out."
 async function logOut(keys) {
+  if (ui.logoutBusy) return;   // already logging out: a second tap waits with the first
+  const from = document.activeElement;
+  ui.logoutBusy = true; paintLogout();
   // H12: save anything still pausing, give unconfirmed saves up to 5 seconds,
   // and ask before throwing any away. Then forget this browser's own copies of
   // your scores and screening (and an applicant's picks).
@@ -4022,21 +4028,42 @@ async function logOut(keys) {
   const t0 = Date.now();
   while (unconfirmed() && Date.now() - t0 < 5000) await new Promise((r) => setTimeout(r, 100));
   if (unconfirmed()) {
-    const ok = await confirmDialog("Some changes haven't reached the server yet. Log out anyway? They will be lost.",
-      { title: "Log out", yes: "Log out anyway" });
-    if (!ok) return;
+    const ok = await confirmDialog("Some changes haven't been saved yet. If you log out now they will be lost.",
+      { title: "Log out?", yes: "Log out anyway", no: "Stay" });
+    if (!ok) {
+      // Stay: the button is back as it was, with focus on it if it had it
+      ui.logoutBusy = false; paintLogout();
+      if (from && from.isConnected && from.matches && from.matches("[data-logout]")) from.focus();
+      return;
+    }
   }
   [...keys, "ed_iv_code", "ed_iv_signedin", "ed_iv_localrole"].forEach((k) => ss.del(k));
-  // say once, after the reload, that scores are saved but won't show here again
-  try { const e = JSON.parse(ls.get("ed_iv_echo_v1") || "{}"); if (Object.keys(e.scores || {}).length) ss.set("ed_iv_bye", "1"); } catch { /* nothing to say */ }
+  // Say once, after the reload, "You are logged out." "1" (what R13 and older
+  // set) adds that scores are saved but won't show on this device again.
+  let bye = "plain";
+  try { const e = JSON.parse(ls.get("ed_iv_echo_v1") || "{}"); if (Object.keys(e.scores || {}).length) bye = "1"; } catch { /* no scores line */ }
+  ss.set("ed_iv_bye", bye);
   ui.loggingOut = true;     // this sign-out is wanted: not "you were signed out"
   if (store) store.clearLocalCopies(); else { ls.del("ed_iv_echo_v1"); ls.del("ed_iv_cand_echo_v1"); }
   if (fbAuth) {
     try {
       await Promise.race([fbAuth.authFns.signOut(fbAuth.auth), new Promise((r) => setTimeout(r, 3000))]);
-    } catch (e) { console.warn("sign-out failed:", e && e.code); }
+    } catch (e) { console.warn("Firebase signOut failed:", e && e.code); }
   }
   location.reload();
+}
+// Every Log out on the page (the header, "Who are you?", the applicant's
+// screens) is the shared plain text button, marked data-logout, the last item
+// at the top right. The applicant's are drawn by renderCandidate, which can
+// redraw while logOut() waits, so they are drawn from ui.logoutBusy too.
+function logoutLabel() { return ui.logoutBusy ? "Logging out…" : "Log out"; }
+function logoutBtn(onclick) {
+  return `<button type="button" class="ed-btn ed-btn-plain" data-logout onclick="${onclick}"`
+    + `${ui.logoutBusy ? " disabled" : ""}>${logoutLabel()}</button>`;
+}
+function logoutBar(onclick) { return `<header class="gatebar">${logoutBtn(onclick)}</header>`; }
+function paintLogout() {
+  document.querySelectorAll("[data-logout]").forEach((b) => { b.disabled = !!ui.logoutBusy; b.textContent = logoutLabel(); });
 }
 
 // ------------------------------------------------- close the round (H1, R6)
@@ -4242,6 +4269,7 @@ $("#availability").addEventListener("focusout", flushSetup); // the times editor
 $("#setupModal").onclick = (e) => { if (e.target === $("#setupModal")) closeSetup(); };
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.defaultPrevented && setupOpen()) closeSetup(); });
 $("#logout").onclick = () => logOut(["ed_iv_member", "ed_iv_cand"]);
+$("#pickLogout").onclick = () => logOut(["ed_iv_member", "ed_iv_cand"]);   // on "Who are you?" (R14)
 // Tells the net in index.html that the module really did load and run. Without
 // this it shows "the page didn't finish loading" after 8 seconds.
 window.__edReady = true;
@@ -4256,12 +4284,15 @@ if (!storageWorks()) {
     everything you submit is saved. This device just won’t remember your own answers between visits.</div>`;
 }
 
-// H12: after Log out, the one line about scores (they are on the server, but
-// reviewers can't read scores back, so this device won't show them again)
-if (ss.get("ed_iv_bye")) {
+// After Log out, one grey line: "You are logged out." (R14), plus, when this
+// device held scores, that they are saved but won't show here again (H12:
+// reviewers can't read scores back from the server).
+const byeFlag = ss.get("ed_iv_bye");
+if (byeFlag) {
   ss.del("ed_iv_bye");
   const el = $("#gerr");
-  if (el) el.innerHTML = `<div style="text-align:left" class="muted">You are logged out. Your scores are saved, but this device won't show them to you again after you sign in.</div>`;
+  const more = byeFlag === "1" ? " Your scores are saved, but this device won't show them to you again when you log back in." : "";
+  if (el) el.innerHTML = `<div style="text-align:${more ? "left" : "center"}" class="muted">You are logged out.${more}</div>`;
 }
 
 if (gatePausedFor()) gateCountdown();

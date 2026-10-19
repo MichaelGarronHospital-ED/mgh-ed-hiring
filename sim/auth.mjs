@@ -16,7 +16,9 @@
 //   - a sign-in that ends while the page is open (a password changed
 //     elsewhere) returns to the gate and says why;
 //   - Log out (committee header and applicant page) calls Firebase signOut
-//     before reloading, and nothing signs in again afterwards;
+//     before reloading, and nothing signs in again afterwards; since R14 also
+//     the Log out on "Who are you?" and on the applicant's name screen, and
+//     the gate then says "You are logged out.";
 //   - a browser that blocks sessionStorage falls back to memory only and can
 //     still sign in.
 import fs from "node:fs";
@@ -120,6 +122,7 @@ async function page({ blockSession = false, hash = "" } = {}) {
 }
 const authLog = (p) => p.evaluate(() => JSON.parse(localStorage.getItem("__authlog") || "[]"));
 const gateShown = (p) => p.$eval("#gate", (e) => !e.classList.contains("hidden"));
+const gateText = (p) => p.$eval("#gerr", (e) => e.textContent.trim());
 async function reloaded(p, act) {
   await Promise.all([p.waitForNavigation({ waitUntil: "domcontentloaded" }), act()]);
   await p.waitForFunction("window.__edReady === true", { timeout: 15000 });
@@ -146,6 +149,14 @@ try {
     a = await authLog(p);
     R("ED: Log out signs out of Firebase, then shows the gate",
       a[a.length - 1] === "signOut" && (await gateShown(p)), a.join());
+    R("ED: the gate then says \"You are logged out.\"", (await gateText(p)) === "You are logged out.", await gateText(p));
+    // R14: "Who are you?" (no header there) has its own Log out at the top right
+    await signIn(p, "staffpw");
+    await p.waitForSelector("#memberpick:not(.hidden)");
+    await reloaded(p, () => p.click("#pickLogout"));
+    a = await authLog(p);
+    R("ED: Log out on \"Who are you?\" signs out of Firebase, then the gate says \"You are logged out.\"",
+      a[a.length - 1] === "signOut" && (await gateShown(p)) && (await gateText(p)) === "You are logged out.", a.join() + " / " + (await gateText(p)));
     await p.close(); }
 
   // ---- Admin password ------------------------------------------------------
@@ -172,6 +183,13 @@ try {
     await p.waitForSelector("#candview:not(.hidden)");
     let a = await authLog(p);
     R("Guest on an applicant link: Guest tried first", a.join() === "persist:SESSION,signIn:applicant@mgh-ed-hiring.invalid", a.join());
+    // R14: the name screen's Log out (top right), clicked like a person would
+    await reloaded(p, () => p.click("#candview [data-logout]"));
+    a = await authLog(p);
+    R("Guest: Log out on the name screen signs out", a[a.length - 1] === "signOut" && (await gateShown(p))
+      && (await gateText(p)) === "You are logged out.", a.join() + " / " + (await gateText(p)));
+    await signIn(p, "guestpw");
+    await p.waitForSelector("#candview:not(.hidden)");
     await reloaded(p, () => p.evaluate(() => window.CAND.logout()));
     a = await authLog(p);
     R("Guest: Log out signs out", a[a.length - 1] === "signOut" && (await gateShown(p)), a.join());
@@ -226,7 +244,7 @@ try {
     await reloaded(p, () => p.evaluate(() => window.__stubRevoke()));
     const msg = await p.$eval("#gerr", (e) => e.textContent);
     R("a revoked sign-in returns to the gate and says why",
-      (await gateShown(p)) && msg.includes("You were signed out. Please sign in again."), msg);
+      (await gateShown(p)) && msg.includes("You were logged out. Please log in again."), msg);
     await p.close(); }
 
   // ---- storage blocked ----------------------------------------------------
